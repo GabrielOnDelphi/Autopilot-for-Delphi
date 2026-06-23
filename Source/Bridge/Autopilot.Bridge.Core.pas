@@ -30,8 +30,8 @@ CONST
   // Free for noncommercial use, paid for commercial use (see repo LICENSE +
   // COMMERCIAL-LICENSE.md). The bridge exists only in AUTOPILOT (debug) builds,
   // so this reminder is logged once per startup to the developer's own log file,
-  // never shown to an end user. Set CommercialLicenseURL to the live buy page.
-  CommercialLicenseURL  = 'https://www.GabrielMoraru.com/autopilot';   // TODO: point at the Gumroad buy URL once the listing is live
+  // never shown to an end user.
+  CommercialLicenseURL  = 'https://store.payproglobal.com/checkout?products[1][id]=134850';   // PayProGlobal checkout — Autopilot per-developer license
   CommercialLicenseHint = 'Commercial use? License at ' + CommercialLicenseURL;
 
   // Per-command timeout defaults (ms). The MCP server can override per-call via the

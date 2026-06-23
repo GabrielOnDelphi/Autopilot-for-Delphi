@@ -52,7 +52,7 @@ The .md files in the repo root (`CLAUDE.md`, `HANDOVER.md`, `README.md`, `AI-INS
 
 Autopilot for Delphi — a three-process pipeline that lets an AI assistant take control of and operate a running Delphi VCL or FMX application from the outside (click controls, set text, read state, drive workflows), not merely inspect it: AI host ↔ stdio MCP server (`Autopilot.Mcp.exe`) ↔ named pipe ↔ target app (which links in the `Autopilot.Bridge` unit). Customer-facing version of this picture is in `README.md`; AI-facing tool reference is in `AI-INSTRUCTIONS.md`.
 
-**Status: NOT released yet.** Feature-complete in testing (12 MCP tools, VCL + FMX bridges, 101 tests passing; Android transport device-verified 2026-06-12, keep-screen-on device-verified 2026-06-14), but no public build, no GetIt/Gumroad listing, pricing not final. Operational state lives in `HANDOVER.md`.
+**Status: NOT released yet.** Feature-complete in testing (12 MCP tools, VCL + FMX bridges, 101 tests passing; Android transport device-verified 2026-06-12, keep-screen-on device-verified 2026-06-14), but no public build, no public listing, pricing not final. **Licensed PolyForm Noncommercial 1.0.0 (free noncommercial / paid commercial) since 2026-06-23** — see the License decision below. Operational state lives in `HANDOVER.md`.
 
 ---
 
@@ -146,6 +146,8 @@ These are decided. Do not relitigate unless the constraint that drove them has c
 
 - **Transport abstraction (2026-06-10/11, Phase B).** The session loop lives in `Autopilot.Bridge.Worker.pas` and drives an `IBridgeTransport` (`Autopilot.Bridge.Transport.pas`): `StartListening / AcceptConnection / ConnectionStream / RecycleConnection / WakeAndStop(AWorkerThread) / EndpointLabel`. Two implementations: `TPipeTransport` (Windows — absorbs the three pipe quirks: `ERROR_PIPE_CONNECTED` race, `FILE_FLAG_FIRST_PIPE_INSTANCE`, phantom self-connect swallowed via an internal stopping flag) and `TSocketTransport` (POSIX — AF_UNIX ABSTRACT socket `Autopilot.<pid>`, `select()` on {listen fd, self-pipe}, wake = one byte; fds close only in the destructor, after the worker join). Contracts: `AcceptConnection` returns TRUE only for a real serviceable client (FALSE = shutdown wake or transient failure, transport already cleaned up); `ConnectionStream` returns a NEW caller-freed stream per call (`THandleStream` in both transports — on POSIX its Read/Write map to `__read`/`__write`, valid on socket fds); `WakeAndStop` closes nothing and takes the worker `TThread` (the pipe needs its `Handle` for `CancelSynchronousIo`; the socket ignores it). The wire protocol is byte-identical across transports — a Phase-A MCP server talks to either bridge unmodified. The duplicated `StartBridgeInternal` in `Vcl.pas`/`Fmx.pas` stays duplicated on purpose (plan 05 risk rule 3).
 
+- **License model (2026-06-23): PolyForm Noncommercial 1.0.0 — free noncommercial, paid commercial.** Relicensed from MPL-2.0. Source-available, **NOT open source**. `LICENSE` = a dual-license header + the verbatim PolyForm text; `COMMERCIAL-LICENSE.md` = the $25/developer commercial tier (PayProGlobal checkout `products[1][id]=134850`). This supersedes the old §2.3 hybrid (bridge-MPL + MCP-server-closed) and reverses §3.3 in `_Competition\Commercialization.md`. **Going-forward only:** the whole tree (incl. the MCP server source) had been pushed under MPL on 2026-06-22, and MPL grants are irrevocable for anyone who cloned that commit. **In-product nudge — debug/AUTOPILOT only, LOG-ONLY, no UI, no browser** (the MCP server is headless and runs unattended; an auto-opened browser would steal focus, fire to an empty chair, and break the very automation — rejected): `CommercialLicenseURL` + `CommercialLicenseHint` in `Autopilot.Bridge.Core.pas`, logged once per `StartBridge` / MCP boot under tag `license`; plus a one-time Book 5 cross-promo after 5+ MCP launches (`Autopilot.Mcp.UsageCounter.pas`, counter in `%APPDATA%\Autopilot\usage.ini`, tag `book`). **Caution:** `134850` is the TOOL licence; the Book 5 promo URL is separate (a placeholder until the book's own checkout is set).
+
 ---
 
 ## Threading model (critical — read before writing bridge code)
@@ -224,7 +226,9 @@ JSON-RPC error envelope. Custom codes used across bridge and MCP server:
 
 ## Logging convention
 
-Both bridge and MCP server log to `%TEMP%\Autopilot\<ExeName>-<PID>.log`. Every command in/out, errors, dispatch timings. Per the global zero-tolerance rule: no swallowed exceptions — log and re-raise, or return a typed error response. Never silently pass.
+Both bridge and MCP server log to `%TEMP%\Autopilot\<ExeName>-<PID>.log`. Every command in/out, errors, dispatch timings. Per the global zero-tolerance rule: no swallowed exceptions — log and re-raise, or return a typed error response. Never silently pass. (Exception, same as the logger's own outer handler: the usage-counter promo in `Autopilot.Mcp.UsageCounter.pas` logs-and-continues rather than reraising — a cosmetic nudge must not crash the host.)
+
+Two product-nudge tags ride this same log, debug/AUTOPILOT only and never as UI (see the License decision above): `license` (the commercial-license reminder, every startup) and `book` (the one-time Book 5 link after 5+ MCP launches).
 
 ---
 

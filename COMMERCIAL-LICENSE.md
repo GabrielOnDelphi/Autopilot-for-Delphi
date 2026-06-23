@@ -23,7 +23,7 @@ The dividing line is **commercial vs. noncommercial use**, not *"individual vs. 
 
 ## How to buy
 
-- **Buy online:** <https://www.GabrielMoraru.com/autopilot>  *(buy link — live at launch)*
+- **Buy online ($25/developer):** <https://store.payproglobal.com/checkout?products[1][id]=134850>
 - **Or email** **i@gabrielmoraru.com** with your company name and developer count, and you get an invoice back.
 
 You receive the license key, an invoice, and the commercial license terms.
