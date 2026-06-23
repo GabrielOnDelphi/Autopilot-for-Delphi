@@ -10,12 +10,14 @@ Delphi-MCP-Server
 Four MCP-server units are derived from the Delphi-MCP-Server project by GDK
 Software:
 
-  - the JSON Schema generator (builds a tool's inputSchema from a params class
-    via RTTI),
-  - the tool-parameter deserializer (fills a params class from the incoming
-    JSON via RTTI),
-  - the parameter-annotation attributes ([Optional], [SchemaDescription]), and
-  - the tool-base scaffolding (the IMCPTool interface and its generic base).
+  - MCPServer.Schema.Generator.pas — the JSON Schema generator (builds a tool's
+    inputSchema from a params class via RTTI),
+  - MCPServer.Serializer.pas — the tool-parameter deserializer (fills a params
+    class from the incoming JSON via RTTI),
+  - MCPServer.Types.pas — the parameter-annotation attributes ([Optional],
+    [SchemaDescription]), and
+  - MCPServer.Tool.Base.pas — the tool-base scaffolding (the IMCPTool interface
+    and its generic base).
 
 The originals come from:
 
