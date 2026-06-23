@@ -1,0 +1,52 @@
+Autopilot for Delphi — Third-Party Notices
+==========================================
+
+This product includes 4 units derived from the following third-party project.
+
+
+Delphi-MCP-Server
+-----------------
+
+Four MCP-server units are derived from the Delphi-MCP-Server project by GDK
+Software:
+
+  - the JSON Schema generator (builds a tool's inputSchema from a params class
+    via RTTI),
+  - the tool-parameter deserializer (fills a params class from the incoming
+    JSON via RTTI),
+  - the parameter-annotation attributes ([Optional], [SchemaDescription]), and
+  - the tool-base scaffolding (the IMCPTool interface and its generic base).
+
+The originals come from:
+
+    https://github.com/GDKsoftware/Delphi-MCP-Server
+
+Used under the MIT License. The required copyright and permission notice
+follows verbatim:
+
+----------------------------------------------------------------------
+
+MIT License
+
+Copyright (c) 2025 GDK Software
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+----------------------------------------------------------------------
+Source: https://github.com/GDKsoftware/Delphi-MCP-Server
