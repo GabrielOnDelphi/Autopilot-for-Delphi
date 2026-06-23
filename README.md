@@ -199,7 +199,7 @@ That document covers: the twelve tools, efficiency rules (minimize turns!), how 
 Autopilot for Delphi is **dual-licensed — free for noncommercial use, paid for commercial use**:
 
 - **Noncommercial use is free** — personal projects, study, research, hobby work, and use by charities, schools, and government — under the [PolyForm Noncommercial License 1.0.0](LICENSE).
-- **Commercial use requires a paid license** — any use by or for a business, or with an anticipated commercial application. Per-developer, perpetual. See [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md) or email **i@gabrielmoraru.com**.
+- **Commercial use requires a paid license** — any use by or for a business, or with an anticipated commercial application. **$25/developer, perpetual.** [Buy](https://www.GabrielMoraru.com/autopilot) *(live at launch)* — details in [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md), or email **i@gabrielmoraru.com**.
 
 This is **source-available**, not open source: the noncommercial license restricts commercial use, which an OSI-approved open-source license cannot do.
 

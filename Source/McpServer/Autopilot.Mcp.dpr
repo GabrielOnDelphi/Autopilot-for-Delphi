@@ -65,6 +65,7 @@ BEGIN
   IsMultiThread := TRUE;
 
   BridgeLogInfo('mcp', 'server starting (stdio) v' + BridgeVersion);
+  BridgeLogInfo('license', CommercialLicenseHint);
 
   // Transport selection. No flag → Windows named-pipe path (unchanged). The
   // `--target adb:<hostPort>` flag routes every command over a loopback socket

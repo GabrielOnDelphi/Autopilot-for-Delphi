@@ -2389,6 +2389,7 @@ BEGIN
     if GWorker <> NIL then EXIT;
     ExeName := ExtractFileName(ParamStr(0));
     BridgeLogInfo('bridge', 'StartBridge exe=' + ExeName + ' pipe=' + APipeName);
+    BridgeLogInfo('license', CommercialLicenseHint);
     GWorker := TBridgeWorker.Create(TPipeTransport.Create(APipeName), ExeName, Dispatch);
   FINALLY
     GLock.Leave;

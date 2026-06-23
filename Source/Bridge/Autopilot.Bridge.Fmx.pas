@@ -1944,6 +1944,7 @@ BEGIN
     if GWorker <> NIL then EXIT;
     ExeName := ExtractFileName(ParamStr(0));
     BridgeLogInfo('bridge', 'StartBridge (FMX) exe=' + ExeName + ' endpoint=' + AEndpoint);
+    BridgeLogInfo('license', CommercialLicenseHint);
     {$IFDEF MSWINDOWS}
     GWorker := TBridgeWorker.Create(TPipeTransport.Create(AEndpoint), ExeName, Dispatch);
     {$ELSE}

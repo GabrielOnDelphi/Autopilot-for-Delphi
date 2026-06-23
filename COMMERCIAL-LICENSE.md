@@ -17,9 +17,16 @@ You do **not** need to pay — it stays free — for:
 
 The dividing line is **commercial vs. noncommercial use**, not *"individual vs. company"*. A freelancer doing paid work is commercial; a company evaluating it for a genuinely noncommercial purpose is not.
 
+## Price
+
+**$25 USD per developer.** Perpetual, one-time — no subscription. A 5-developer team buys 5 seats = $125, on one invoice with your company name.
+
 ## How to buy
 
-Email **i@gabrielmoraru.com** with your company name and the number of developers. You get back the price, an invoice, and the commercial license terms.
+- **Buy online:** <https://www.GabrielMoraru.com/autopilot>  *(buy link — live at launch)*
+- **Or email** **i@gabrielmoraru.com** with your company name and developer count, and you get an invoice back.
+
+You receive the license key, an invoice, and the commercial license terms.
 
 ## What you get
 
