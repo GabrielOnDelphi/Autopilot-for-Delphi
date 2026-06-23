@@ -31,7 +31,7 @@ CONST
   // COMMERCIAL-LICENSE.md). The bridge exists only in AUTOPILOT (debug) builds,
   // so this reminder is logged once per startup to the developer's own log file,
   // never shown to an end user.
-  CommercialLicenseURL  = 'https://store.payproglobal.com/checkout?products[1][id]=134850';   // PayProGlobal checkout — Autopilot per-developer license
+  CommercialLicenseURL  = 'https://www.GabrielMoraru.com/autopilot';   // overview / buy page — the soft nudge lands here, not the raw checkout (that is in COMMERCIAL-LICENSE.md)
   CommercialLicenseHint = 'Commercial use? License at ' + CommercialLicenseURL;
 
   // Per-command timeout defaults (ms). The MCP server can override per-call via the

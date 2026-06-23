@@ -37,9 +37,8 @@ USES
 CONST
   BookPromoAfterUses = 5;   // show on the 6th launch (count > 5)
 
-  // TODO: point at the Book 5 ("Delphi in All Its Glory") checkout. The PayProGlobal
-  // 134850 link is the Autopilot TOOL licence, NOT the book — do not reuse it here.
-  Book5URL  = 'https://www.GabrielMoraru.com/';
+  // The book's own page (NOT the PayProGlobal 134850 link — that is the Autopilot TOOL licence).
+  Book5URL  = 'https://gabrielmoraru.com/the-delphi-in-all-its-glory-book-5-ai-assisted-development-for-delphi/';
   Book5Hint = 'Enjoying Autopilot? The full AI-with-Delphi workflow is Book 5 of "Delphi in All Its Glory": ' + Book5URL;
 
 
