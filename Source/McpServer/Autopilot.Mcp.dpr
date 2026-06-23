@@ -45,6 +45,7 @@ USES
   Autopilot.Mcp.SocketClient   in '..\Common\Autopilot.Mcp.SocketClient.pas',
   Autopilot.Mcp.AdbForward     in '..\Common\Autopilot.Mcp.AdbForward.pas',
   Autopilot.Mcp.TargetMode     in 'Autopilot.Mcp.TargetMode.pas',
+  Autopilot.Mcp.UsageCounter   in 'Autopilot.Mcp.UsageCounter.pas',
   Autopilot.Mcp.ToolBase       in 'Autopilot.Mcp.ToolBase.pas',
   Autopilot.Mcp.Tool.Attach      in 'Autopilot.Mcp.Tool.Attach.pas',
   Autopilot.Mcp.Tool.ListTree    in 'Autopilot.Mcp.Tool.ListTree.pas',
@@ -66,6 +67,7 @@ BEGIN
 
   BridgeLogInfo('mcp', 'server starting (stdio) v' + BridgeVersion);
   BridgeLogInfo('license', CommercialLicenseHint);
+  TrackUsageAndMaybePromoteBook;
 
   // Transport selection. No flag → Windows named-pipe path (unchanged). The
   // `--target adb:<hostPort>` flag routes every command over a loopback socket
