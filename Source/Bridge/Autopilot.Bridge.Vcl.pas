@@ -1,6 +1,14 @@
 UNIT Autopilot.Bridge.Vcl;
 
 (*=====================================================
+   2026.06.24 — added 'dismiss_dialog' command: drives native Win32 dialogs (MessageBox,
+                Task Dialog, common dialogs) that have no TComponent and so are invisible
+                to list_tree / click. Enumerates this process's top-level dialog windows
+                (Win32, via Autopilot.Bridge.NativeDialogs, excluding our own VCL form
+                handles) and dispatches a button by role / caption / id. Runs on the main
+                thread like every other command — a visible dialog means a pumping modal
+                loop, so TThread.Queue still reaches us. Result: {dialogs[], supported,
+                platform, clicked?, clickedId?, clickedCaption?, reason?}.
    2026.06.10 — Delphi 11 compatibility: ColorToStringExt / csf* / TryStringToColor
                 only exist from Delphi 12 (System.UIConsts). Replaced with local
                 equivalents (ColorToWebHex / ColorToDelphiHex / TryStringToColorCompat)
@@ -82,7 +90,11 @@ USES
 PROCEDURE StartBridge;
 
 /// Stops the bridge, closes the pipe, deletes the discovery file.
-/// Called automatically on Application.OnDestroy if StartBridge succeeded.
+/// The host should call this once the message loop has ended (e.g. right after
+/// Application.Run returns). As a safety net, the unit's FINALIZATION calls it if
+/// the host forgot — so the worker is never leaked. NOTE: there is no automatic
+/// Application.OnDestroy hook; an earlier comment claimed one but none was ever
+/// installed (see HANDOVER.md, 2026-06-24).
 /// No-op in builds without AUTOPILOT defined.
 PROCEDURE StopBridge;
 
@@ -102,7 +114,7 @@ USES
   System.SysUtils, System.SyncObjs, System.JSON, System.Rtti, System.TypInfo,
   System.NetEncoding, System.UITypes, System.UIConsts,
   Vcl.Forms, Vcl.Controls, Vcl.StdCtrls, Vcl.ExtCtrls, Vcl.Graphics, Vcl.Imaging.PngImage,
-  Autopilot.Bridge.Core, Autopilot.Bridge.Log, Autopilot.Bridge.NamedPipe, Autopilot.Bridge.Worker;
+  Autopilot.Bridge.Core, Autopilot.Bridge.Log, Autopilot.Bridge.NamedPipe, Autopilot.Bridge.NativeDialogs, Autopilot.Bridge.Worker;
 {$ELSE}
 USES
   System.SysUtils;
@@ -2299,6 +2311,91 @@ BEGIN
 END;
 
 
+// Build the exclude list for native-dialog enumeration: every VCL form window plus the
+// hidden Application window. These are OUR windows — never OS dialogs — so excluding them
+// keeps the enumeration to genuine native dialogs. HandleAllocated guards against forcing
+// a handle on a form that isn't realized (an unrealized form is off-screen anyway).
+FUNCTION BuildVclDialogExclude: TArray<NativeUInt>;
+VAR
+  i, n: Integer;
+BEGIN
+  SetLength(Result, Screen.FormCount + 1);
+  n := 0;
+  for i := 0 to Screen.FormCount - 1 do
+    if Screen.Forms[i].HandleAllocated then
+    begin
+      Result[n] := NativeUInt(Screen.Forms[i].Handle);
+      Inc(n);
+    end;
+  Result[n] := NativeUInt(Application.Handle);
+  Inc(n);
+  SetLength(Result, n);
+END;
+
+
+// dismiss_dialog — reach native Win32 dialogs (MessageBox / Task Dialog / common dialogs)
+// that the component-tree tools cannot see. With no 'button' arg it just lists the dialogs
+// currently up (discovery); with 'button' it dispatches that button to dismiss one.
+FUNCTION HandleDismissDialog(CONST AReq: TBridgeRequest): TBridgeResponse;
+VAR
+  ButtonVal, HwndVal: TJSONValue;
+  Selector: String;
+  HasButton, Clicked: Boolean;
+  TargetDlg, ResolvedDlg: NativeUInt;
+  Exclude: TArray<NativeUInt>;
+  Wrap: TJSONObject;
+  ClickedId: Integer;
+  ClickedCap, Reason: String;
+BEGIN
+  Assert(GetCurrentThreadId = MainThreadID, 'HandleDismissDialog must run on the main thread');
+  Result := Default(TBridgeResponse);
+  Result.Id := AReq.Id;
+
+  Selector := '';
+  HasButton := FALSE;
+  TargetDlg := 0;
+  if AReq.Args <> NIL then
+  begin
+    ButtonVal := AReq.Args.GetValue('button');
+    if ButtonVal IS TJSONString then
+    begin
+      Selector := TJSONString(ButtonVal).Value;
+      HasButton := Trim(Selector) <> '';
+    end;
+    HwndVal := AReq.Args.GetValue('hwnd');
+    if HwndVal IS TJSONNumber then
+      TargetDlg := NativeUInt(TJSONNumber(HwndVal).AsInt64);
+  end;
+
+  Exclude := BuildVclDialogExclude;
+  Wrap := TJSONObject.Create;
+  TRY
+    Wrap.AddPair('dialogs', EnumerateNativeDialogs(Exclude));   // pre-click snapshot
+    Wrap.AddPair('supported', TJSONBool.Create(NativeDialogsSupported));
+    Wrap.AddPair('platform', 'windows');
+    if HasButton then
+    begin
+      Clicked := ClickNativeDialogButton(Exclude, TargetDlg, Selector, ClickedId, ClickedCap, ResolvedDlg, Reason);
+      Wrap.AddPair('clicked', TJSONBool.Create(Clicked));
+      if Clicked then
+      begin
+        Wrap.AddPair('clickedId', TJSONNumber.Create(ClickedId));
+        Wrap.AddPair('clickedCaption', ClickedCap);
+        Wrap.AddPair('dialogHwnd', TJSONNumber.Create(Int64(ResolvedDlg)));
+        Wrap.AddPair('via', 'WM_COMMAND');
+      end
+      else
+        Wrap.AddPair('reason', Reason);
+    end;
+    Result.Ok := TRUE;
+    Result.ResultJson := Wrap;
+    Wrap := NIL;   // ownership moved to Result
+  FINALLY
+    if Wrap <> NIL then FreeAndNil(Wrap);
+  END;
+END;
+
+
 // set_keep_awake — VCL/Windows target: always a no-op. The screen-off app freeze
 // that motivates keep-awake is Android power management; a Windows app is never
 // frozen by the OS while an automation client drives it. Accepted (not 'unknown
@@ -2358,6 +2455,8 @@ BEGIN
     Result := HandleExecuteAction(AReq)
   else if SameText(AReq.Cmd, 'set_keep_awake') then
     Result := HandleSetKeepAwake(AReq)
+  else if SameText(AReq.Cmd, 'dismiss_dialog') then
+    Result := HandleDismissDialog(AReq)
   else
   begin
     Result := Default(TBridgeResponse);
