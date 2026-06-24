@@ -21,6 +21,8 @@ PROGRAM Autopilot.Mcp;
      execute_action - fire a TAction's OnExecute by path (for shortcut-only / shared actions)
      wait_for       - poll a property until it matches a value
      screenshot     - capture the main form as a base64 PNG
+     set_keep_awake - keep the device screen on while driving (Android; no-op on Windows)
+     dismiss_dialog - list / dismiss native OS dialogs (MessageBox / Task Dialog / file dialogs)
 
    No HTTP transport, no settings.ini. The previous version embedded the
    GDKsoftware/Delphi-MCP-Server vendor stack — replaced 2026-05-19 by our
@@ -58,7 +60,8 @@ USES
   Autopilot.Mcp.Tool.ExecuteAction in 'Autopilot.Mcp.Tool.ExecuteAction.pas',
   Autopilot.Mcp.Tool.WaitFor     in 'Autopilot.Mcp.Tool.WaitFor.pas',
   Autopilot.Mcp.Tool.Screenshot  in 'Autopilot.Mcp.Tool.Screenshot.pas',
-  Autopilot.Mcp.Tool.SetKeepAwake in 'Autopilot.Mcp.Tool.SetKeepAwake.pas';
+  Autopilot.Mcp.Tool.SetKeepAwake in 'Autopilot.Mcp.Tool.SetKeepAwake.pas',
+  Autopilot.Mcp.Tool.DismissDialog in 'Autopilot.Mcp.Tool.DismissDialog.pas';
 
 
 BEGIN
