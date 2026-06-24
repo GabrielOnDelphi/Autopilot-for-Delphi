@@ -2,10 +2,7 @@
 
 > **This file is a briefing** for an AI coding assistant (Claude Code, Claude Desktop, Cursor, Cline, or any MCP-aware host) that has the `autopilot` MCP server registered and wants to drive a running Delphi VCL or FMX application. Read it once at the start of a session; you do not need to re-read.
 > 
-> **Who it's for.** Two audiences, same content:
-> 
-> 1. The **product developer** (us) — their CLAUDE.md links here so future sessions inside the Autopilot for Delphi repo find the rules.
-> 2. The **customer** — they drop a copy into their own Delphi project and link it from *their* CLAUDE.md so AI sessions opened in their project know how to drive their app.
+> **Two audiences, same content:** the **product developer** (us) links it from the repo CLAUDE.md; the **customer** drops a copy into their own Delphi project and links it from *their* CLAUDE.md so AI sessions there know how to drive their app.
 
 ---
 
