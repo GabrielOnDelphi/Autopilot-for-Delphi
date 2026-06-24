@@ -17,6 +17,7 @@ USES
   FormMain                    in 'FormMain.pas' {frmMain},
   Autopilot.Bridge.Core      in '..\Source\Bridge\Autopilot.Bridge.Core.pas',
   Autopilot.Bridge.NamedPipe in '..\Source\Bridge\Autopilot.Bridge.NamedPipe.pas',
+  Autopilot.Bridge.NativeDialogs in '..\Source\Bridge\Autopilot.Bridge.NativeDialogs.pas',
   Autopilot.Bridge.Vcl       in '..\Source\Bridge\Autopilot.Bridge.Vcl.pas';
 
 {$R *.res}
