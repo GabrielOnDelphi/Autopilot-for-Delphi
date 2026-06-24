@@ -10,6 +10,7 @@ uses
   Autopilot.Bridge.Transport,
   Autopilot.Bridge.Worker,
   Autopilot.Bridge.NamedPipe,
+  Autopilot.Bridge.NativeDialogs,
   Autopilot.Bridge.Vcl,
   Autopilot.Bridge.Fmx;
 
