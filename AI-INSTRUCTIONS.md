@@ -22,7 +22,7 @@
 
 ---
 
-## The twelve MCP tools — full reference
+## The thirteen MCP tools — full reference
 
 The MCP server is registered as `autopilot`. Tool names appear in your tool list as `mcp__autopilot__<name>`. Every tool accepts an optional `pid` argument when more than one Delphi target is running — omit it when only one target is present and the bridge auto-attaches.
 
@@ -188,6 +188,19 @@ Android only — keeps the device screen on while you drive the app, by setting 
 Response: `{enabled, platform:'android'|'windows', applied}`. `applied:true` means the window flag was changed; `applied:false` means the platform ignores it.
 
 Why it matters on Android: a backgrounded or screen-off app is frozen by the OS (it gets no CPU), which stalls the bridge. Keep-awake holds the screen on so the foreground app keeps running. It does NOT cover the cold-start window before the bridge starts — keep the device screen on through app launch.
+
+### `dismiss_dialog`
+
+`dismiss_dialog(button?, hwnd?, pid?)`
+
+Lists and dismisses native OS dialogs that the component tools cannot see. `Application.MessageBox`, a default `ShowMessage`/`MessageDlg` (a Vista Task Dialog), and the common file dialogs are raw Win32 windows with no `TComponent`, so `list_tree`/`click` return `-32001 not_found` against them. This tool reaches them through Win32 directly.
+
+- Call with **no `button`** to LIST the dialogs currently up. Response: `{dialogs:[{hwnd, class, caption, text, buttons:[{id, caption, enabled}]}], supported, platform}`.
+- Call with **`button`** to dismiss one. `button` is a role (`ok`/`cancel`/`yes`/`no`/`retry`/`abort`/`ignore`/`close`/`tryagain`/`continue`), a button caption (exact then substring, case-insensitive), or a numeric control id. `hwnd` targets a specific dialog when several are stacked; omit it for the topmost. Response adds `{clicked, clickedId, clickedCaption, reason?}`. `reason` is `no_dialog` or `button_not_found` when `clicked:false`.
+
+**The footgun this solves.** When you `click` a control whose `OnClick` opens a modal dialog, that click never returns — the main thread enters the dialog's modal loop — so the call ends in `-32004 main_thread_blocked` while the dialog stays up. Pass a short `timeoutMs` to that `click`, expect `main_thread_blocked`, then call `dismiss_dialog(button=...)`. The dialog's own modal loop still pumps the bridge, so the dismiss lands and the app unblocks.
+
+Windows targets only. Against an Android FMX target the response is `supported:false` (Android dialogs are ART windows, out of Win32 reach).
 
 ---
 
