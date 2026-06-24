@@ -80,7 +80,7 @@ USES
   System.SysUtils, System.SyncObjs, System.JSON, System.Rtti, System.TypInfo,
   System.NetEncoding, System.UITypes, System.UIConsts,
   FMX.Forms, FMX.Types, FMX.StdCtrls, FMX.Controls, FMX.Graphics,
-  Autopilot.Bridge.Core, Autopilot.Bridge.Log, Autopilot.Bridge.Worker,
+  Autopilot.Bridge.Core, Autopilot.Bridge.Log, Autopilot.Bridge.Worker, Autopilot.Bridge.NativeDialogs,
   {$IFDEF MSWINDOWS}
   Autopilot.Bridge.NamedPipe;
   {$ELSE}
@@ -1843,6 +1843,77 @@ BEGIN
 END;
 
 
+// dismiss_dialog — reach native Win32 dialogs (MessageBox / Task Dialog / common dialogs)
+// the component-tree tools cannot see. Real on FMX-Windows (the shared helper drives the
+// Win32 windows); on Android the helper returns supported:false (Android dialogs are ART
+// windows, out of Win32 reach). FMX forms are NOT native Win32 dialogs — FMX renders its
+// controls itself, so a form HWND has no child 'Button' windows and is not class '#32770',
+// and never matches the dialog filter — so no exclude list is needed here.
+FUNCTION HandleDismissDialog(CONST AReq: TBridgeRequest): TBridgeResponse;
+VAR
+  ButtonVal, HwndVal: TJSONValue;
+  Selector, PlatformName: String;
+  HasButton, Clicked: Boolean;
+  TargetDlg, ResolvedDlg: NativeUInt;
+  Exclude: TArray<NativeUInt>;
+  Wrap: TJSONObject;
+  ClickedId: Integer;
+  ClickedCap, Reason: String;
+BEGIN
+  Assert(TThread.CurrentThread.ThreadID = MainThreadID, 'HandleDismissDialog must run on the main thread');
+  Result := Default(TBridgeResponse);
+  Result.Id := AReq.Id;
+
+  Selector := '';
+  HasButton := FALSE;
+  TargetDlg := 0;
+  if AReq.Args <> NIL then
+  begin
+    ButtonVal := AReq.Args.GetValue('button');
+    if ButtonVal IS TJSONString then
+    begin
+      Selector := TJSONString(ButtonVal).Value;
+      HasButton := Trim(Selector) <> '';
+    end;
+    HwndVal := AReq.Args.GetValue('hwnd');
+    if HwndVal IS TJSONNumber then
+      TargetDlg := NativeUInt(TJSONNumber(HwndVal).AsInt64);
+  end;
+
+  Exclude := NIL;   // FMX forms never match the dialog filter (see header)
+
+  {$IFDEF MSWINDOWS} PlatformName := 'windows';
+  {$ELSE}{$IFDEF ANDROID} PlatformName := 'android';
+  {$ELSE} PlatformName := 'posix'; {$ENDIF}{$ENDIF}
+
+  Wrap := TJSONObject.Create;
+  TRY
+    Wrap.AddPair('dialogs', EnumerateNativeDialogs(Exclude));   // empty off Windows
+    Wrap.AddPair('supported', TJSONBool.Create(NativeDialogsSupported));
+    Wrap.AddPair('platform', PlatformName);
+    if HasButton then
+    begin
+      Clicked := ClickNativeDialogButton(Exclude, TargetDlg, Selector, ClickedId, ClickedCap, ResolvedDlg, Reason);
+      Wrap.AddPair('clicked', TJSONBool.Create(Clicked));
+      if Clicked then
+      begin
+        Wrap.AddPair('clickedId', TJSONNumber.Create(ClickedId));
+        Wrap.AddPair('clickedCaption', ClickedCap);
+        Wrap.AddPair('dialogHwnd', TJSONNumber.Create(Int64(ResolvedDlg)));
+        Wrap.AddPair('via', 'WM_COMMAND');
+      end
+      else
+        Wrap.AddPair('reason', Reason);
+    end;
+    Result.Ok := TRUE;
+    Result.ResultJson := Wrap;
+    Wrap := NIL;
+  FINALLY
+    if Wrap <> NIL then FreeAndNil(Wrap);
+  END;
+END;
+
+
 // set_keep_awake — toggles the device "keep screen on" state (see ApplyKeepScreenOn).
 // Android: applies the window flag, reports applied:true. Off Android: accepted but a
 // no-op (applied:false), so the shared MCP tool behaves uniformly against a VCL/Windows
@@ -1915,6 +1986,8 @@ BEGIN
     Result := HandleExecuteAction(AReq)
   else if SameText(AReq.Cmd, 'set_keep_awake') then
     Result := HandleSetKeepAwake(AReq)
+  else if SameText(AReq.Cmd, 'dismiss_dialog') then
+    Result := HandleDismissDialog(AReq)
   else
   begin
     Result := Default(TBridgeResponse);
