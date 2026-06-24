@@ -50,4 +50,13 @@ object frmMain: TfrmMain
     Text = ''
     OnChange = edtNameChange
   end
+  object btnDialog: TButton
+    Left = 16
+    Top = 160
+    Width = 161
+    Height = 33
+    Caption = 'Show Native Dialog'
+    TabOrder = 2
+    OnClick = btnDialogClick
+  end
 end
