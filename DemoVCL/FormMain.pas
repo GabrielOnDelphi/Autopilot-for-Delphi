@@ -24,8 +24,10 @@ TYPE
     edtName     : TEdit;
     lblNameEcho : TLabel;
     lblHeader   : TLabel;
+    btnDialog   : TButton;
     PROCEDURE btnIncrementClick(Sender: TObject);
     PROCEDURE edtNameChange(Sender: TObject);
+    PROCEDURE btnDialogClick(Sender: TObject);
   PRIVATE
     FCounter: Integer;
   END;
@@ -49,6 +51,16 @@ END;
 PROCEDURE TfrmMain.edtNameChange(Sender: TObject);
 BEGIN
   lblNameEcho.Caption := edtName.Text;
+END;
+
+
+// Raises a native Win32 modal dialog: the main thread now spins in MessageBox's own modal
+// loop, so this OnClick never returns until the dialog closes. The component tools cannot
+// see this dialog (it has no TComponent) — dismiss_dialog reaches it through Win32.
+PROCEDURE TfrmMain.btnDialogClick(Sender: TObject);
+BEGIN
+  Application.MessageBox('A native modal dialog is up. The main thread is blocked in its modal loop.',
+                        'Native Dialog', MB_YESNOCANCEL or MB_ICONWARNING);
 END;
 
 
