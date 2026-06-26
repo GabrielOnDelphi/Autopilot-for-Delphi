@@ -1,13 +1,14 @@
-PROGRAM Autopilot.Mcp;
+﻿PROGRAM Autopilot.Mcp;
 
-(*=====================================================
-   2026.05.19
+(*============================================================================================================
+   2026.06.04
+   GabrielMoraru.com/autopilot
+--------------------------------------------------------------------------------------------------------------
    Autopilot MCP server.
 
-   Stdio-only JSON-RPC translator between Claude Code and the bridge running
-   inside a Delphi target app. Claude Code spawns this exe, pipes JSON-RPC
-   over stdin/stdout. Each tool call resolves to a single named-pipe round-trip
-   to the target's bridge.
+   Stdio-only JSON-RPC translator between Claude Code and the bridge running inside a Delphi target app.
+   Claude Code spawns this exe, pipes JSON-RPC over stdin/stdout.
+   Each tool call resolves to a single named-pipe round-trip to the target's bridge.
 
    Tools exposed to the AI:
      attach         - list active targets / verify a pid
@@ -24,10 +25,9 @@ PROGRAM Autopilot.Mcp;
      set_keep_awake - keep the device screen on while driving (Android; no-op on Windows)
      dismiss_dialog - list / dismiss native OS dialogs (MessageBox / Task Dialog / file dialogs)
 
-   No HTTP transport, no settings.ini. The previous version embedded the
-   GDKsoftware/Delphi-MCP-Server vendor stack — replaced 2026-05-19 by our
-   own minimal MCP units under Mcp\.
-=====================================================*)
+   No HTTP transport, no settings.ini.
+   The previous version embedded the GDKsoftware/Delphi-MCP-Server vendor stack — replaced 2026-05-19 by our own minimal MCP units under Mcp\.
+============================================================================================================*)
 
 {$APPTYPE CONSOLE}
 
@@ -64,7 +64,7 @@ USES
   Autopilot.Mcp.Tool.DismissDialog in 'Autopilot.Mcp.Tool.DismissDialog.pas';
 
 
-BEGIN
+begin
   ReportMemoryLeaksOnShutdown := TRUE;
   IsMultiThread := TRUE;
 
@@ -78,12 +78,10 @@ BEGIN
   // server does NOT run `adb forward` itself yet — the device-side endpoint spec
   // (tcp vs localabstract) is a Phase-B decision (the device bridge isn't
   // listening until then). For now the operator runs `adb forward` out-of-band;
-  // Autopilot.Mcp.AdbForward provides the helper for the Phase-B wiring. See
-  // " Plans\05_AndroidTransport.md".
-  if ParseTargetModeFromCmdLine then
-    BridgeLogInfo('mcp', 'target mode = adb-socket, host port ' + IntToStr(AdbHostPort))
-  else
-    BridgeLogInfo('mcp', 'target mode = named-pipe (default)');
+  // Autopilot.Mcp.AdbForward provides the helper for the Phase-B wiring. See " Plans\05_AndroidTransport.md".
+  if ParseTargetModeFromCmdLine
+  then BridgeLogInfo('mcp', 'target mode = adb-socket, host port ' + IntToStr(AdbHostPort))
+  else BridgeLogInfo('mcp', 'target mode = named-pipe (default)');
 
   TRY
     RunStdioServer;
@@ -92,4 +90,4 @@ BEGIN
       BridgeLogError('mcp', 'fatal: ' + E.ClassName + ': ' + E.Message);
   END;
   BridgeLogInfo('mcp', 'server stopped');
-END.
+end.
