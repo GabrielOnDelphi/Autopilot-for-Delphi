@@ -22,3 +22,7 @@ A `TForm.ShowModal` dialog is an ordinary VCL/FMX form, so the component tools (
 | `Application.MessageBox`, `TOpenDialog` / `TSaveDialog` | `dismiss_dialog` |
 
 Windows targets only; against an Android FMX target `dismiss_dialog` reports `supported:false`.
+
+## Future plans  
+Support for Mac.
+Star this repository if you like it. I set priorities to my repositories based on their accumulated stars. 
