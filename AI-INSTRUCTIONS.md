@@ -135,7 +135,7 @@ Writes `Text` (or `Caption` for label-class controls) via RTTI. `OnChange` fires
 
 Comparison is type-aware: string identity, integer/int64 equality (TAlphaColor/TColor as 32-bit), boolean equality, enum/set ordinal equality (so `[fcRed,fcBlue]` elides against `[fcBlue,fcRed]`), float exact-bits (no epsilon). This means you can resend the same value harmlessly and the host app won't see a phantom `OnChange`.
 
-**Parent-inheritance auto-flip (VCL only):** when you write `Font.*`, `Color`, `BiDiMode`, `ShowHint`, `DoubleBuffered`, `CustomHint`, or `Ctl3D` on a control whose corresponding `Parent<X>` is `TRUE` (the VCL default), the bridge sets `Parent<X>:=FALSE` before the write. The VCL itself would do the same auto-flip inside its `SetColor`/`FontChanged` etc. handlers after a value-changing write — but only on a *value-changing* write. Pre-empting the flip on the bridge side guarantees `Parent<X>` is FALSE even on elided (no-op) resends, so the resulting state is always "the control owns this property", never "the control is still inheriting and the elided write was a lie". Silent — there is no extra field in the response. If you explicitly want the inherited value back, write `ParentFont:=true` (or the matching `Parent<X>`) after your customization. FMX has no equivalent mechanism, so the FMX bridge does not perform this flip.
+**Parent-inheritance auto-flip (VCL only):** when you write `Font.*`, `Color`, `BiDiMode`, `ShowHint`, `DoubleBuffered`, `CustomHint`, or `Ctl3D` on a control whose `Parent<X>` is `TRUE` (the VCL default), the bridge sets `Parent<X>:=FALSE` first. The VCL does the same flip inside `SetColor`/`FontChanged` — but only on a *value-changing* write; pre-empting it guarantees the flip even on an elided resend, so the state is always "the control owns this property", never a lying no-op. Silent (no response field). To restore inheritance, write `ParentFont:=true` (or the matching `Parent<X>`) afterward. FMX has no equivalent and does not flip.
 
 ### `read_property`
 
@@ -210,85 +210,21 @@ When you need to inspect the host app's state during a debug session, pick the c
 3. **Host-side `Log.Write` / `RamLog.AddInfo`** — when the value is NOT a published property (a local variable, a function return like `IsDarkStyle`, an intermediate computed value, or state inside a method during a specific code path). Add a logging call in the host source, recompile, run, then read the log file at `%TEMP%\Autopilot\<ExeBaseName>-<PID>.log` (the bridge's own log) — or in LightSaber projects, `AppData.RamLog`'s file.
 4. **Host-side `Diag.SaveToFile` scratchpad** — last resort. Only when (1)–(3) all fail to fit. Each scratchpad file you write requires a recompile cycle AND leaves a stray file in the host's data folder; prefer logging.
 
-**Critical anti-pattern: writing a scratchpad file when read_property would work.** If you find yourself patching the host source with something like:
-
-```delphi
-Diag.Add('PageColor = $' + IntToHex(SkinController.PageColor, 8));
-Diag.SaveToFile(AppData.AppDataFolder + 'skin-diag.txt');
-```
-
-…stop and ask: is `SkinController` a named component? Is `PageColor` published? If yes — delete the patch and call `read_property(path='frmMain.SkinController', propName='PageColor')` instead. No recompile, no scratchpad file, one round-trip.
-
-**When a recompile IS unavoidable**, batch all the values you want to inspect into ONE logging block, not separate `Diag.SaveToFile` calls. One recompile cycle, one file (or N log lines), one read.
+**Critical anti-pattern: writing a scratchpad file when read_property would work.** Before patching the host with `Diag.SaveToFile(...)` to dump a value, ask: is it a published property on a named component? If yes — call `read_property` instead (no recompile, one round-trip). **When a recompile IS unavoidable**, batch every value you want into ONE logging block, not separate `Diag.SaveToFile` calls — one cycle, one read.
 
 ---
 
 ## Efficiency rules — read once, follow always
 
-The bridge round-trip is sub-millisecond. The expensive part is **per-turn LLM inference**:
+The bridge round-trip is sub-millisecond; the cost is **per-turn LLM inference**:
 
 ```
 total_time ≈ (turns × per_turn_inference) + (tool_calls × ~1ms bridge_time)
 ```
 
-For Claude Opus 4.7: per-turn inference is ~1–8 s (depends on cache state, thinking budget, prompt size). For Claude Haiku 4.5: ~0.3–1 s. The bridge is noise next to either.
+Per-turn inference is ~1–8 s on Opus 4.7, ~0.3–1 s on Haiku 4.5 — the bridge is noise next to either. Measured warm-cache Opus 4.7 (2026-05): a turn costs ~20–26 s whether it carries one tool call or many, and `click(count=1000)` spent 62 ms of total bridge time. **The LLM turn dominates every scenario — the eight rules above all exist to remove *turns*, not bridge calls.** The one case where extra turns are unavoidable is a react-to-result loop ("click Save; if status shows 'error', read the error label"): the LLM must see each intermediate result, so use the most capable model and don't micro-optimize.
 
-**Measured on a warm-cache Opus 4.7 session (2026-05):**
-
-| Scenario                                                         | Wall-clock per turn     | Bridge time                   | Notes                                                                                          |
-| ---------------------------------------------------------------- | ----------------------- | ----------------------------- | ---------------------------------------------------------------------------------------------- |
-| Single `click`                                                   | ~26 s                   | 0 ms                          | One tool call, one turn                                                                        |
-| `click` + `get_text` in parallel (one turn, two tool_use blocks) | ~19 s                   | 0 ms each                     | Parallel tool_use at the LLM, sequential at the MCP bridge (~2.5 s apart)                      |
-| `click(count=100)`                                               | ~25 s                   | 9 ms total (~0.09 ms/click)   | One tool call, one turn — counter exists to bound runaway loops, not because bridge slows down |
-| `click(count=1000)`                                              | not measured separately | 62 ms total (~0.062 ms/click) | Hard cap is 1000                                                                               |
-
-The dominant cost in every scenario is the LLM turn itself (10–30 s). Bridge time is in the noise.
-
-### Decision recipes
-
-**Repetitive same-action on one control** ("click btnIncrement 100 times")
-
-- → Use `click(path=..., count=100)`. One tool call, one turn.
-- → Do NOT loop in conversation. Each "click again" is another full turn.
-
-**Multiple different actions, known up-front** ("click A, set text on B, then read C")
-
-- → Issue them as parallel tool_use blocks in ONE assistant turn. The MCP host runs them in parallel at the LLM level and returns all results in one user turn.
-- → Do NOT split into "Step 1: click A. Step 2: set B. Step 3: read C." — each step is a fresh turn.
-
-**Scripted sequence with no need to react to intermediate results** (replay, fixture setup, regression)
-
-- → On Claude Code with the `delphi-driver` subagent installed: delegate sequences of **≥ 5 sequential tool calls** to it (Haiku 4.5 at low effort — ~2.5 s/call). For 2–4 calls, keep them in the parent session (subagent spin-up overhead doesn't pay back).
-- → On other hosts (Cursor, Cline, Claude Desktop): bundle into one parallel tool_use turn.
-
-**React-to-result loops** ("click Save; if status shows 'error', read the error label")
-
-- → Multiple turns are unavoidable — the LLM has to see the intermediate result.
-- → Use the most capable model in the session (Opus on Claude Code). Don't try to micro-optimize.
-
-**Discovering writable surface** (you don't know the property name)
-
-- → Send a `set_property` with your best guess. On unknown name you get `availableProperties` with every writable property's name, kind, and current value in ONE round-trip.
-- → Do NOT pre-call `list_tree` to discover property names — `list_tree` only enumerates components, not their properties.
-
-**Visual debugging** (structured state is fine but something looks wrong)
-
-- → Single `screenshot`. Then `set_property`/`get_text` to fix.
-- → Do NOT loop `screenshot` to verify each step.
-
-### Anti-pattern catalogue
-
-| User asks                                            | Wasteful interpretation                                        | Efficient interpretation                                                                              |
-| ---------------------------------------------------- | -------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| "Click btnIncrement 100 times"                       | 100 separate `click` turns                                     | One `click(path=..., count=100)`. One turn.                                                           |
-| "Set Caption to 'X' on these 5 buttons"              | Five sequential turns                                          | One turn with 5 parallel `set_property` calls.                                                        |
-| "Verify the form is configured correctly"            | `screenshot` + visual inspection                               | One `list_tree` + targeted `get_text` calls in parallel.                                              |
-| "Try every value of Position and report which crash" | Sequential without `set_property` — fine, this DOES need turns | Acceptable (the AI must observe each crash).                                                          |
-| "Walk this 12-step test scenario"                    | Twelve back-and-forth turns                                    | One prompt with 12 parallel tool_use blocks — or delegate to `delphi-driver` subagent on Claude Code. |
-
-### Prompt-cache awareness
-
-Anthropic's prompt cache TTL is 5 minutes (cached input tokens cost 10% of base). Back-to-back tool calls within 5 minutes ride a warm cache; the first call after a long pause eats full input cost. If you're measuring latency, control for cache state — comparing a cold first call against a warm second call is meaningless.
+**Prompt-cache awareness.** Anthropic's prompt cache TTL is 5 minutes (cached input tokens cost 10% of base). Back-to-back calls within 5 minutes ride a warm cache; the first call after a long pause eats full input cost. When measuring latency, control for cache state — a cold first call against a warm second call is meaningless.
 
 ---
 
@@ -398,21 +334,14 @@ This is a fallback, not the preferred path — the MCP tools handle framing, ret
 
 ## Shutting down the target — prefer the bridge, kill only when it's actually faster
 
-Killing the process (`Stop-Process` / `taskkill` / `TerminateProcess`) is **allowed** when it is genuinely faster — e.g. the app is hung, the main thread isn't pumping, or you've decided a clean shutdown isn't worth the round-trips. But before you reach for it, weigh the real cost of each path:
+**Bridge close path** — one `click` on File→Exit or the form's close button. The app runs `OnCloseQuery`/`OnClose`/`FormPreRelease`, writes its INI, deletes the discovery file, tears down the pipe. One tool call, one turn, ~1 ms.
 
-**The bridge close path** — one `click` call on the File→Exit menu or the form's close button. The app runs `OnCloseQuery` / `OnClose` / `FormPreRelease`, the INI is written, the discovery file in `%TEMP%\Autopilot\active\` is deleted, the pipe is torn down. **Cost: one tool call, one turn, ~1 ms of bridge time.** That is almost always cheaper than the PowerShell route — see below.
+- `click(path='frmMain.mniFileExit')` — whatever the host names its File→Exit item. Click the menu item or button, NOT the `TAction` behind it (`-32005`, see the `click` reference). If the only close path is an unbound action, kill instead.
 
-- `click(path='frmMain.mniFileExit')` or whatever the host project names its File→Exit item. Click the menu item or button — NOT the `TAction` behind it (`click` on a `TAction` fails with `-32005`, see the `click` reference). If the only close path is an action with no control bound to it, kill the process instead.
-- `click(path='frmMain.btnClose')` if the app exposes a close button.
-
-**The kill path** — `Stop-Process -Id <pid> -Force` from PowerShell. Works, but in practice AI sessions burn turns on this because the one-liners around it (screenshot the window first, enumerate processes by name, etc.) keep failing with the same mistakes: `New-Object System.Drawing.Bitmap $w,$h` crashes with `Parameter is not valid` when the window rect is zero (minimized/hidden window), `Get-Process <ExeName>` returns `$null` when the EXE is renamed by the build, and most "kill if running" scripts don't actually verify the kill happened. **If you're going to kill, just kill — one line, no preamble:**
+**Kill path** — `Stop-Process` when the app is hung or its saved state is disposable. AI sessions waste turns wrapping this in a `Get-Process` pre-check, a screenshot, or window-rect math that fails on minimized/renamed targets. Just kill, one line — `-ErrorAction SilentlyContinue` makes the no-such-process case a no-op:
 
 ```powershell
 Stop-Process -Name OrinocoReaderFMX -Force -ErrorAction SilentlyContinue
 ```
 
-No `Get-Process` pre-check, no screenshot, no rect math. The `-ErrorAction SilentlyContinue` makes the no-such-process case a no-op. **One turn.**
-
-**Side effects of killing:** `FormPreRelease` does not run, so anything the app saves on close (INI position/size via TLightForm, AutoState GUI state, last-session data) is lost. The discovery file in `%TEMP%\Autopilot\active\` becomes stale until the next MCP server startup sweeps files older than 24 h. The pipe goes into `ERROR_BROKEN_PIPE` — harmless, the next launch creates a fresh one. If the app you're driving is the host project's own dogfood/demo, losing the INI is usually free; if it's a real user app, the bridge close path is the courteous default.
-
-**Rule of thumb:** if the app is responsive enough to answer a `click`, use the bridge close path — it's one turn either way and you don't lose state. Kill only when the app is hung, when you don't care about state, or when you've already established that the close menu path doesn't work for this target.
+**Side effects of killing:** `FormPreRelease` doesn't run, so INI position/size (TLightForm) + AutoState GUI state are lost; the discovery file goes stale until the next MCP startup sweeps files >24 h old; the pipe breaks harmlessly. **Rule of thumb:** if the app can answer a `click`, use the bridge close path — same one turn, no lost state. Kill only when hung, when state is disposable, or when the close path doesn't work for this target.
