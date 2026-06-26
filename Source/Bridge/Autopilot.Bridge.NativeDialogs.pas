@@ -1,42 +1,22 @@
-UNIT Autopilot.Bridge.NativeDialogs;
+﻿unit Autopilot.Bridge.NativeDialogs;
 
-(*=====================================================
-   2026.06.24
-   GabrielMoraru.com / SciVance Tech
+{=============================================================================================================
+   2026.06
+   www.GabrielMoraru.com
+--------------------------------------------------------------------------------------------------------------
+   - Native Win32 dialog escape hatch: reaches MessageBox / Task Dialog / common dialogs with no TComponent
+   - EnumerateNativeDialogs: lists this process's visible non-VCL top-level dialog windows as JSON
+   - ClickNativeDialogButton: dispatches a button by role keyword, caption, or control id
+   - Interface is stdlib-only (System.JSON + NativeUInt); the body is MSWINDOWS-only
+=============================================================================================================}
 
-   ┌──────────────────────────────┐
-   │  SHARED interface / WIN32 body  │   portable types; the body is MSWINDOWS-only
-   └──────────────────────────────┘
+interface
 
-   Native-dialog escape hatch.
-
-   The component-tree tools (list_tree / click / set_property) walk Screen.Forms[]
-   and the TComponent graph. An OS dialog raised by MessageBox / Application.MessageBox
-   / a Vista Task Dialog (ShowMessage, MessageDlg) / a common file dialog is NOT a
-   VCL/FMX component — it is a raw Win32 window with no TComponent and no RTTI, so the
-   path-based tools return -32001 not_found against it. This unit reaches those dialogs
-   directly through Win32 window messaging (EnumWindows + child Button HWNDs + WM_COMMAND),
-   which is independent of the component model.
-
-   Why this still works while a modal dialog "blocks" the app: a visible native dialog
-   means the main thread is running a nested modal message loop (that loop is the only
-   thing painting the dialog). That loop pumps WM_NULL -> TApplication.WndProc ->
-   CheckSynchronize (Vcl.Forms.pas:13085), so the bridge's TThread.Queue marshalling
-   still reaches the main thread. The dispatcher runs there, enumerates the dialog, and
-   SendMessage()s its button — same-thread, so it dispatches synchronously and EndDialog
-   unwinds the modal loop. See CLAUDE.md "Native dialogs".
-
-   The interface is stdlib-only (System.JSON + NativeUInt for handles) so .Vcl and .Fmx
-   can call it with no platform guard. On non-Windows the bodies return empty/unsupported.
-=====================================================*)
-
-INTERFACE
-
-USES
+uses
   System.JSON;
 
 /// TRUE on Windows (the only platform with Win32 dialogs the bridge can reach this way).
-FUNCTION NativeDialogsSupported: Boolean;
+function NativeDialogsSupported: Boolean;
 
 /// Enumerate native (non-component) top-level dialog windows of THIS process.
 /// AExclude = window handles to skip (the framework's own form windows + the app window),
@@ -44,7 +24,7 @@ FUNCTION NativeDialogsSupported: Boolean;
 /// Returns a JSON array (caller owns it); each node is
 /// { hwnd, class, caption, text, buttons:[{id,caption,enabled}] }.
 /// Empty array when no dialog is up, or always on non-Windows.
-FUNCTION EnumerateNativeDialogs(CONST AExclude: ARRAY OF NativeUInt): TJSONArray;
+function EnumerateNativeDialogs(const AExclude: array of NativeUInt): TJSONArray;
 
 /// Find a native dialog (ATargetDlg=0 -> the topmost one) and click the button picked
 /// by ASelector. ASelector accepts a role keyword ('ok'/'cancel'/'yes'/'no'/'retry'/
@@ -52,78 +32,78 @@ FUNCTION EnumerateNativeDialogs(CONST AExclude: ARRAY OF NativeUInt): TJSONArray
 /// substring, case-insensitive, '&' accelerator stripped), or a numeric control id.
 /// Returns TRUE and sets AClickedId / AClickedCaption / AResolvedDlg on a dispatched click.
 /// On FALSE, AReason is 'no_dialog' (nothing matched) or 'button_not_found'.
-FUNCTION ClickNativeDialogButton(CONST AExclude: ARRAY OF NativeUInt; ATargetDlg: NativeUInt;
-  CONST ASelector: String; OUT AClickedId: Integer; OUT AClickedCaption: String;
+function ClickNativeDialogButton(const AExclude: array of NativeUInt; ATargetDlg: NativeUInt;
+  const ASelector: String; OUT AClickedId: Integer; OUT AClickedCaption: String;
   OUT AResolvedDlg: NativeUInt; OUT AReason: String): Boolean;
 
 
-IMPLEMENTATION
+implementation
 
 {$IFDEF MSWINDOWS}
-USES
+uses
   Winapi.Windows, Winapi.Messages,
   System.SysUtils, System.StrUtils, System.Generics.Collections;
 
 
-FUNCTION NativeDialogsSupported: Boolean;
-BEGIN
+function NativeDialogsSupported: Boolean;
+begin
   Result := TRUE;
-END;
+end;
 
 
 { Win32 reads --------------------------------------------------------------- }
 
-FUNCTION WindowTextOf(AWnd: HWND): String;
-VAR
+function WindowTextOf(AWnd: HWND): String;
+var
   Len: Integer;
-BEGIN
+begin
   Len := GetWindowTextLength(AWnd);
-  if Len <= 0 then EXIT('');
+  if Len <= 0 then exit('');
   SetLength(Result, Len);
   Len := GetWindowText(AWnd, PChar(Result), Len + 1);   // nMaxCount includes the null terminator
   if Len < 0 then Len := 0;
   SetLength(Result, Len);
-END;
+end;
 
 
-FUNCTION ClassNameOf(AWnd: HWND): String;
-VAR
-  Buf: ARRAY[0..255] OF Char;
+function ClassNameOf(AWnd: HWND): String;
+var
+  Buf: array[0..255] of Char;
   N: Integer;
-BEGIN
+begin
   N := GetClassName(AWnd, Buf, Length(Buf));
   SetString(Result, Buf, N);
-END;
+end;
 
 
 // Drop '&' accelerator markers so a caption reported / matched is what the user sees.
-FUNCTION StripAmp(CONST S: String): String;
-BEGIN
+function StripAmp(const S: String): String;
+begin
   Result := StringReplace(S, '&', '', [rfReplaceAll]);
-END;
+end;
 
 
 { Child enumeration --------------------------------------------------------- }
 
-TYPE
-  TChildCtx = RECORD
+type
+  TChildCtx = record
     Buttons: TList<HWND>;
     Statics: TList<HWND>;
-  END;
+  end;
   PChildCtx = ^TChildCtx;
 
-  TTopCtx = RECORD
+  TTopCtx = record
     Pid : DWORD;
     List: TList<HWND>;
-  END;
+  end;
   PTopCtx = ^TTopCtx;
 
 
-FUNCTION ChildEnumProc(AWnd: HWND; AParam: LPARAM): BOOL; STDCALL;
-VAR
+function ChildEnumProc(AWnd: HWND; AParam: LPARAM): BOOL; stdcall;
+var
   Ctx: PChildCtx;
   Cls: String;
-BEGIN
+begin
   Ctx := PChildCtx(AParam);
   Cls := ClassNameOf(AWnd);
   if SameText(Cls, 'Button') then
@@ -131,60 +111,60 @@ BEGIN
   else if SameText(Cls, 'Static') then
     Ctx.Statics.Add(AWnd);
   Result := TRUE;
-END;
+end;
 
 
-PROCEDURE CollectChildren(ADlg: HWND; AButtons, AStatics: TList<HWND>);
-VAR
+procedure CollectChildren(ADlg: HWND; AButtons, AStatics: TList<HWND>);
+var
   Ctx: TChildCtx;
-BEGIN
+begin
   Ctx.Buttons := AButtons;
   Ctx.Statics := AStatics;
   EnumChildWindows(ADlg, @ChildEnumProc, LPARAM(@Ctx));
-END;
+end;
 
 
-FUNCTION TopEnumProc(AWnd: HWND; AParam: LPARAM): BOOL; STDCALL;
-VAR
+function TopEnumProc(AWnd: HWND; AParam: LPARAM): BOOL; stdcall;
+var
   Ctx: PTopCtx;
   WndPid: DWORD;
-BEGIN
+begin
   Ctx := PTopCtx(AParam);
   WndPid := 0;
   GetWindowThreadProcessId(AWnd, WndPid);
   if (WndPid = Ctx.Pid) and IsWindowVisible(AWnd) then
     Ctx.List.Add(AWnd);
   Result := TRUE;
-END;
+end;
 
 
-FUNCTION InExclude(AWnd: HWND; CONST AExclude: ARRAY OF NativeUInt): Boolean;
-VAR
+function InExclude(AWnd: HWND; const AExclude: array of NativeUInt): Boolean;
+var
   i: Integer;
-BEGIN
+begin
   for i := Low(AExclude) to High(AExclude) do
-    if HWND(AExclude[i]) = AWnd then EXIT(TRUE);
+    if HWND(AExclude[i]) = AWnd then exit(TRUE);
   Result := FALSE;
-END;
+end;
 
 
 // A native dialog = a visible top-level window of this process, not one of OUR windows,
 // that either uses the system dialog class '#32770' (MessageBox / common dialogs) or owns
 // at least one child Button (Task Dialog / custom dialog).
-FUNCTION LooksLikeDialog(AWnd: HWND; AButtonCount: Integer): Boolean;
-BEGIN
+function LooksLikeDialog(AWnd: HWND; AButtonCount: Integer): Boolean;
+begin
   Result := SameText(ClassNameOf(AWnd), '#32770') or (AButtonCount > 0);
-END;
+end;
 
 
 { JSON shaping -------------------------------------------------------------- }
 
-FUNCTION BuildButtonsArray(CONST AButtons: TList<HWND>): TJSONArray;
-VAR
+function BuildButtonsArray(const AButtons: TList<HWND>): TJSONArray;
+var
   i: Integer;
   B: HWND;
   Node: TJSONObject;
-BEGIN
+begin
   Result := TJSONArray.Create;
   for i := 0 to AButtons.Count - 1 do
   begin
@@ -195,14 +175,14 @@ BEGIN
     Node.AddPair('enabled', TJSONBool.Create(IsWindowEnabled(B)));
     Result.AddElement(Node);
   end;
-END;
+end;
 
 
-FUNCTION JoinStaticText(CONST AStatics: TList<HWND>): String;
-VAR
+function JoinStaticText(const AStatics: TList<HWND>): String;
+var
   i: Integer;
   S: String;
-BEGIN
+begin
   Result := '';
   for i := 0 to AStatics.Count - 1 do
   begin
@@ -211,33 +191,33 @@ BEGIN
     if Result <> '' then Result := Result + ' ';
     Result := Result + S;
   end;
-END;
+end;
 
 
-FUNCTION BuildDialogNode(ADlg: HWND; CONST AButtons, AStatics: TList<HWND>): TJSONObject;
-BEGIN
+function BuildDialogNode(ADlg: HWND; const AButtons, AStatics: TList<HWND>): TJSONObject;
+begin
   Result := TJSONObject.Create;
   Result.AddPair('hwnd', TJSONNumber.Create(Int64(ADlg)));
   Result.AddPair('class', ClassNameOf(ADlg));
   Result.AddPair('caption', WindowTextOf(ADlg));
   Result.AddPair('text', JoinStaticText(AStatics));
   Result.AddPair('buttons', BuildButtonsArray(AButtons));
-END;
+end;
 
 
 { Public: enumerate --------------------------------------------------------- }
 
-FUNCTION EnumerateNativeDialogs(CONST AExclude: ARRAY OF NativeUInt): TJSONArray;
-VAR
+function EnumerateNativeDialogs(const AExclude: array of NativeUInt): TJSONArray;
+var
   Ctx: TTopCtx;
   i: Integer;
   W: HWND;
   Buttons, Statics: TList<HWND>;
-BEGIN
+begin
   Result := TJSONArray.Create;
   Ctx.Pid := GetCurrentProcessId;
   Ctx.List := TList<HWND>.Create;
-  TRY
+  try
     EnumWindows(@TopEnumProc, LPARAM(@Ctx));
     for i := 0 to Ctx.List.Count - 1 do
     begin
@@ -245,57 +225,57 @@ BEGIN
       if InExclude(W, AExclude) then Continue;
       Buttons := TList<HWND>.Create;
       Statics := TList<HWND>.Create;
-      TRY
+      try
         CollectChildren(W, Buttons, Statics);
         if LooksLikeDialog(W, Buttons.Count) then
           Result.AddElement(BuildDialogNode(W, Buttons, Statics));
-      FINALLY
+      finally
         Buttons.Free;
         Statics.Free;
-      END;
+      end;
     end;
-  FINALLY
+  finally
     Ctx.List.Free;
-  END;
-END;
+  end;
+end;
 
 
 { Button selection ---------------------------------------------------------- }
 
 // Standard dialog control ids (Winapi.Windows): IDOK=1 .. IDCONTINUE=11.
-FUNCTION RoleToId(CONST S: String): Integer;
-VAR
+function RoleToId(const S: String): Integer;
+var
   L: String;
-BEGIN
+begin
   L := LowerCase(Trim(S));
-  if L = 'ok'       then EXIT(IDOK);
-  if L = 'cancel'   then EXIT(IDCANCEL);
-  if L = 'abort'    then EXIT(IDABORT);
-  if L = 'retry'    then EXIT(IDRETRY);
-  if L = 'ignore'   then EXIT(IDIGNORE);
-  if L = 'yes'      then EXIT(IDYES);
-  if L = 'no'       then EXIT(IDNO);
-  if L = 'close'    then EXIT(IDCLOSE);
-  if L = 'help'     then EXIT(IDHELP);
-  if (L = 'tryagain') or (L = 'try again') then EXIT(IDTRYAGAIN);
-  if L = 'continue' then EXIT(IDCONTINUE);
+  if L = 'ok'       then exit(IDOK);
+  if L = 'cancel'   then exit(IDCANCEL);
+  if L = 'abort'    then exit(IDABORT);
+  if L = 'retry'    then exit(IDRETRY);
+  if L = 'ignore'   then exit(IDIGNORE);
+  if L = 'yes'      then exit(IDYES);
+  if L = 'no'       then exit(IDNO);
+  if L = 'close'    then exit(IDCLOSE);
+  if L = 'help'     then exit(IDHELP);
+  if (L = 'tryagain') or (L = 'try again') then exit(IDTRYAGAIN);
+  if L = 'continue' then exit(IDCONTINUE);
   Result := 0;
-END;
+end;
 
 
 // Resolve ASelector against the dialog's buttons. On success ABtn is the matching
 // button HWND (0 when matched by id/role but the button is not separately enumerable,
 // e.g. a Task Dialog — the caller can still dispatch WM_COMMAND by id) and AId its id.
-FUNCTION ResolveButton(CONST AButtons: TList<HWND>; CONST ASelector: String;
+function ResolveButton(const AButtons: TList<HWND>; const ASelector: String;
   OUT ABtn: HWND; OUT AId: Integer; OUT ACap: String): Boolean;
-VAR
+var
   i, NumId, RoleId: Integer;
   Sel, Cap: String;
   B: HWND;
-BEGIN
+begin
   ABtn := 0; AId := 0; ACap := ''; Result := FALSE;
   Sel := Trim(ASelector);
-  if Sel = '' then EXIT;
+  if Sel = '' then exit;
 
   { # By numeric id }
   if TryStrToInt(Sel, NumId) then
@@ -304,26 +284,23 @@ BEGIN
       if GetDlgCtrlID(AButtons[i]) = NumId then
       begin
         ABtn := AButtons[i]; AId := NumId; ACap := StripAmp(WindowTextOf(ABtn));
-        EXIT(TRUE);
+        exit(TRUE);
       end;
-    AId := NumId; EXIT(TRUE);   // not enumerable as a child Button; dispatch by id
+    AId := NumId; exit(TRUE);   // not enumerable as a child Button; dispatch by id
   end;
 
-  { # By caption — exact then substring }
+  { # By caption — exact }
   for i := 0 to AButtons.Count - 1 do
   begin
     B := AButtons[i]; Cap := StripAmp(WindowTextOf(B));
     if SameText(Cap, Sel) then
-    begin ABtn := B; AId := GetDlgCtrlID(B); ACap := Cap; EXIT(TRUE); end;
-  end;
-  for i := 0 to AButtons.Count - 1 do
-  begin
-    B := AButtons[i]; Cap := StripAmp(WindowTextOf(B));
-    if (Cap <> '') and ContainsText(Cap, Sel) then
-    begin ABtn := B; AId := GetDlgCtrlID(B); ACap := Cap; EXIT(TRUE); end;
+    begin ABtn := B; AId := GetDlgCtrlID(B); ACap := Cap; exit(TRUE); end;
   end;
 
   { # By role keyword }
+  // Ahead of the substring pass: a role word ('ok'/'no'/...) is a deliberate intent and must
+  // beat a loose caption substring (e.g. 'no' inside 'Ignore'). Also reaches a localized common
+  // button — 'ok' -> IDOK works even when the caption reads 'Aceptar'.
   RoleId := RoleToId(Sel);
   if RoleId <> 0 then
   begin
@@ -331,19 +308,27 @@ BEGIN
       if GetDlgCtrlID(AButtons[i]) = RoleId then
       begin
         ABtn := AButtons[i]; AId := RoleId; ACap := StripAmp(WindowTextOf(ABtn));
-        EXIT(TRUE);
+        exit(TRUE);
       end;
-    AId := RoleId; EXIT(TRUE);   // common button without a separate HWND; dispatch by id
+    AId := RoleId; exit(TRUE);   // common button without a separate HWND; dispatch by id
   end;
-END;
+
+  { # By caption — substring (loosest, last) }
+  for i := 0 to AButtons.Count - 1 do
+  begin
+    B := AButtons[i]; Cap := StripAmp(WindowTextOf(B));
+    if (Cap <> '') and ContainsText(Cap, Sel) then
+    begin ABtn := B; AId := GetDlgCtrlID(B); ACap := Cap; exit(TRUE); end;
+  end;
+end;
 
 
 { Public: click ------------------------------------------------------------- }
 
-FUNCTION ClickNativeDialogButton(CONST AExclude: ARRAY OF NativeUInt; ATargetDlg: NativeUInt;
-  CONST ASelector: String; OUT AClickedId: Integer; OUT AClickedCaption: String;
+function ClickNativeDialogButton(const AExclude: array of NativeUInt; ATargetDlg: NativeUInt;
+  const ASelector: String; OUT AClickedId: Integer; OUT AClickedCaption: String;
   OUT AResolvedDlg: NativeUInt; OUT AReason: String): Boolean;
-VAR
+var
   Ctx: TTopCtx;
   i: Integer;
   W, Dlg, MatchBtn: HWND;
@@ -352,7 +337,7 @@ VAR
   MatchCap: String;
   Res: DWORD_PTR;
   WParam: Winapi.Windows.WPARAM;
-BEGIN
+begin
   Result := FALSE;
   AClickedId := 0; AClickedCaption := ''; AResolvedDlg := 0; AReason := '';
 
@@ -360,7 +345,7 @@ BEGIN
   Dlg := 0;
   Ctx.Pid := GetCurrentProcessId;
   Ctx.List := TList<HWND>.Create;
-  TRY
+  try
     EnumWindows(@TopEnumProc, LPARAM(@Ctx));   // Z-order: first match is topmost
     for i := 0 to Ctx.List.Count - 1 do
     begin
@@ -368,7 +353,7 @@ BEGIN
       if InExclude(W, AExclude) then Continue;
       Buttons := TList<HWND>.Create;
       Statics := TList<HWND>.Create;
-      TRY
+      try
         CollectChildren(W, Buttons, Statics);
         if not LooksLikeDialog(W, Buttons.Count) then Continue;
         if (ATargetDlg = 0) or (HWND(ATargetDlg) = W) then
@@ -376,31 +361,31 @@ BEGIN
           Dlg := W;
           Break;
         end;
-      FINALLY
+      finally
         Buttons.Free;
         Statics.Free;
-      END;
+      end;
     end;
-  FINALLY
+  finally
     Ctx.List.Free;
-  END;
+  end;
 
   if Dlg = 0 then
   begin
     AReason := 'no_dialog';
-    EXIT;
+    exit;
   end;
   AResolvedDlg := NativeUInt(Dlg);
 
   { # Resolve + dispatch the button }
   Buttons := TList<HWND>.Create;
   Statics := TList<HWND>.Create;
-  TRY
+  try
     CollectChildren(Dlg, Buttons, Statics);
     if not ResolveButton(Buttons, ASelector, MatchBtn, MatchId, MatchCap) then
     begin
       AReason := 'button_not_found';
-      EXIT;
+      exit;
     end;
 
     // Same-thread send (the dialog lives on the main thread, where this runs), so the
@@ -420,34 +405,34 @@ BEGIN
     AClickedId := MatchId;
     AClickedCaption := MatchCap;
     Result := TRUE;
-  FINALLY
+  finally
     Buttons.Free;
     Statics.Free;
-  END;
-END;
+  end;
+end;
 
 {$ELSE}   // Non-Windows: no Win32 dialogs to reach. Uniform empty/unsupported answers.
 
-FUNCTION NativeDialogsSupported: Boolean;
-BEGIN
+function NativeDialogsSupported: Boolean;
+begin
   Result := FALSE;
-END;
+end;
 
-FUNCTION EnumerateNativeDialogs(CONST AExclude: ARRAY OF NativeUInt): TJSONArray;
-BEGIN
+function EnumerateNativeDialogs(const AExclude: array of NativeUInt): TJSONArray;
+begin
   Result := TJSONArray.Create;
-END;
+end;
 
-FUNCTION ClickNativeDialogButton(CONST AExclude: ARRAY OF NativeUInt; ATargetDlg: NativeUInt;
-  CONST ASelector: String; OUT AClickedId: Integer; OUT AClickedCaption: String;
+function ClickNativeDialogButton(const AExclude: array of NativeUInt; ATargetDlg: NativeUInt;
+  const ASelector: String; OUT AClickedId: Integer; OUT AClickedCaption: String;
   OUT AResolvedDlg: NativeUInt; OUT AReason: String): Boolean;
-BEGIN
+begin
   AClickedId := 0; AClickedCaption := ''; AResolvedDlg := 0;
   AReason := 'unsupported_platform';
   Result := FALSE;
-END;
+end;
 
 {$ENDIF}
 
 
-END.
+end.
