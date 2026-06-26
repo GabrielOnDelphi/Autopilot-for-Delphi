@@ -1,29 +1,20 @@
-UNIT Autopilot.Bridge.Core;
+﻿unit Autopilot.Bridge.Core;
 
-{=====================================================
-   2026.05.12
-   GabrielMoraru.com / SciVance Tech
+{=============================================================================================================
+   2026.06
+   www.GabrielMoraru.com
+--------------------------------------------------------------------------------------------------------------
+   - Shared protocol types and wire-framing helpers for the Autopilot bridge (all platforms)
+   - Stdlib-only: no VCL, no FMX, no LightSaber — usable by both the pipe and socket transports
+   - Defines TBridgeRequest, TBridgeResponse, TBridgeDispatcher, TBridgeWire, and JSON-RPC error codes
+=============================================================================================================}
 
-   ┌──────────────────────────────┐
-   │  SHARED  (all platforms)     │   pipe + socket transports both depend on it
-   └──────────────────────────────┘
+interface
 
-   Shared protocol types for the Autopilot bridge.
-
-   This unit is stdlib-only. No VCL, no FMX, no LightSaber.
-   The bridge worker thread (.NamedPipe) and the dispatcher (.Vcl, .Fmx)
-   both depend on this unit but not on each other.
-
-   Locked decisions live in CLAUDE.md "Architectural decisions already locked".
-   Wire format: see Plans/01_TargetUnit.md "Wire framing" and "Protocol version handshake".
-=====================================================}
-
-INTERFACE
-
-USES
+uses
   System.SysUtils, System.Classes, System.JSON;
 
-CONST
+const
   ProtocolVersion = 1;
   BridgeVersion   = '0.1.0';
 
@@ -53,59 +44,65 @@ CONST
   ErrInvalidRequest      = -32600;
   ErrInternalError       = -32603;
 
-TYPE
+type
   /// Owned-result record returned by the main-thread dispatcher.
   /// Caller frees ResultJson / ErrorMessage strings normally; the JSON is owned.
-  TBridgeResponse = RECORD
+  TBridgeResponse = record
     Id           : Int64;
     Ok           : Boolean;
     ResultJson   : TJSONObject;   // when Ok=TRUE, the result body. Bridge owns it; serializer frees.
     ErrorCode    : Integer;       // when Ok=FALSE
     ErrorMessage : String;        // when Ok=FALSE
     ErrorData    : TJSONObject;   // optional, when Ok=FALSE — JSON-RPC error.data. Bridge owns; serializer frees.
-  END;
+  end;
 
   /// Parsed request as the worker thread sees it before handing off to the dispatcher.
-  TBridgeRequest = RECORD
+  TBridgeRequest = record
     Id        : Int64;
     Cmd       : String;
-    Args      : TJSONObject;       // weak reference into the parsed root; do NOT free here
+    Args      : TJSONObject;       // weak reference into the parsed root; do not free here
     TimeoutMs : Cardinal;          // 0 = caller didn't specify, use per-command default
-  END;
+  end;
 
   /// Signature the worker thread calls (already on the main thread) to do the actual work.
   /// Implementations live in Autopilot.Bridge.Vcl (VCL) or Autopilot.Bridge.Fmx (FMX-future).
-  TBridgeDispatcher = REFERENCE TO FUNCTION(CONST Req: TBridgeRequest): TBridgeResponse;
+  TBridgeDispatcher = reference to function(const Req: TBridgeRequest): TBridgeResponse;
 
   /// Wire framing helpers — 4-byte little-endian length + UTF-8 payload.
   /// Exposed here (rather than buried in NamedPipe) so the test suite can reuse them.
-  TBridgeWire = CLASS
-  PUBLIC
+  TBridgeWire = class
+  public
     /// Read one length-prefixed UTF-8 frame from the stream. Blocks until full frame arrives.
     /// Returns FALSE on EOF/broken pipe (so caller can recycle the connection).
     /// On success, S contains the decoded UTF-8 JSON payload (no trailing newline).
-    CLASS FUNCTION TryReadFrame(AStream: TStream; OUT S: String): Boolean; STATIC;
+    class function TryReadFrame(AStream: TStream; OUT S: String): Boolean; static;
 
     /// Write one length-prefixed UTF-8 frame to the stream. Raises on I/O failure.
-    CLASS PROCEDURE WriteFrame(AStream: TStream; CONST S: String); STATIC;
-  END;
+    class procedure WriteFrame(AStream: TStream; const S: String); static;
+  end;
 
   /// Build a hello frame (target-side handshake). Caller owns the returned object.
-  FUNCTION BuildHelloJson(CONST AExeName: String; APid: Cardinal): TJSONObject;
+  function BuildHelloJson(const AExeName: String; APid: Cardinal): TJSONObject;
 
-  /// Parse a top-level frame into a TBridgeRequest. Caller owns ARoot (must NOT be freed
+  /// Parse a top-level frame into a TBridgeRequest. Caller owns ARoot (must not be freed
   /// until the response is built — Req.Args is a weak reference into it).
   /// Returns FALSE if the frame doesn't look like a valid request (id/cmd missing).
-  FUNCTION TryParseRequest(ARoot: TJSONObject; OUT Req: TBridgeRequest): Boolean;
+  function TryParseRequest(ARoot: TJSONObject; OUT Req: TBridgeRequest): Boolean;
 
   /// Build a response frame as a JSON string ready for WriteFrame.
   /// Consumes Resp.ResultJson (frees it after serialization) so callers don't have to track ownership.
-  FUNCTION SerializeResponse(VAR Resp: TBridgeResponse): String;
+  function SerializeResponse(var Resp: TBridgeResponse): String;
+
+  /// Parse a JSON value as an Int64 WITHOUT raising. TRUE only when AVal is a TJSONNumber whose
+  /// text is a valid integer; FALSE for nil / non-number / fractional / out-of-range. Use for
+  /// caller-supplied numeric args so a malformed value lands in ErrInvalidRequest instead of
+  /// escaping as the EConvertError that TJSONNumber.AsInt64 (= StrToInt64) would raise.
+  function TryJsonInt64(AVal: TJSONValue; OUT AOut: Int64): Boolean;
 
 
-IMPLEMENTATION
+implementation
 
-USES
+uses
   System.NetEncoding;
 
 { TBridgeWire ------------------------------------------------------------- }
@@ -114,33 +111,33 @@ USES
 // legal on a byte-mode named pipe even with PIPE_WAIT: ReadFile returns as
 // soon as the writer's WriteFile completes, even if fewer bytes than requested
 // arrived. Returns FALSE on first zero-byte read (EOF / broken pipe).
-FUNCTION ReadFully(AStream: TStream; VAR Buf; ACount: Integer): Boolean;
-VAR
+function ReadFully(AStream: TStream; var Buf; ACount: Integer): Boolean;
+var
   Total, Got: Integer;
   P: PByte;
-BEGIN
+begin
   P := PByte(@Buf);
   Total := 0;
-  WHILE Total < ACount DO
-  BEGIN
+  while Total < ACount do
+  begin
     Got := AStream.Read(P[Total], ACount - Total);
-    if Got <= 0 then EXIT(FALSE);
+    if Got <= 0 then exit(FALSE);
     Inc(Total, Got);
-  END;
+  end;
   Result := TRUE;
-END;
+end;
 
 
-CLASS FUNCTION TBridgeWire.TryReadFrame(AStream: TStream; OUT S: String): Boolean;
-VAR
+class function TBridgeWire.TryReadFrame(AStream: TStream; OUT S: String): Boolean;
+var
   Len: UInt32;
   Buf: TBytes;
-BEGIN
+begin
   Result := FALSE;
   S := '';
   // First 4 bytes: little-endian length. Use ReadFully to handle short reads,
   // which a byte-mode pipe is allowed to produce. Clean FALSE on EOF.
-  if not ReadFully(AStream, Len, SizeOf(Len)) then EXIT;
+  if not ReadFully(AStream, Len, SizeOf(Len)) then exit;
 
   // Sanity cap: refuse frames >64 MiB. Anything bigger is almost certainly a protocol bug,
   // not a real payload. Adjust upward only when Phase-2 screenshots actually need it.
@@ -150,36 +147,36 @@ BEGIN
   if Len = 0 then
   begin
     Result := TRUE;
-    EXIT;
+    exit;
   end;
 
   SetLength(Buf, Len);
-  if not ReadFully(AStream, Buf[0], Integer(Len)) then EXIT;
+  if not ReadFully(AStream, Buf[0], Integer(Len)) then exit;
 
   S := TEncoding.UTF8.GetString(Buf);
   Result := TRUE;
-END;
+end;
 
 
-CLASS PROCEDURE TBridgeWire.WriteFrame(AStream: TStream; CONST S: String);
-VAR
+class procedure TBridgeWire.WriteFrame(AStream: TStream; const S: String);
+var
   Buf: TBytes;
   Len: UInt32;
-BEGIN
+begin
   Buf := TEncoding.UTF8.GetBytes(S);
   Len := Length(Buf);
   AStream.WriteBuffer(Len, SizeOf(Len));
   if Len > 0 then
     AStream.WriteBuffer(Buf[0], Len);
-END;
+end;
 
 
 { Module-level helpers ---------------------------------------------------- }
 
-FUNCTION BuildHelloJson(CONST AExeName: String; APid: Cardinal): TJSONObject;
-VAR
+function BuildHelloJson(const AExeName: String; APid: Cardinal): TJSONObject;
+var
   Hello: TJSONObject;
-BEGIN
+begin
   Hello := TJSONObject.Create;
   Hello.AddPair('protocolVersion', TJSONNumber.Create(ProtocolVersion));
   Hello.AddPair('bridgeVersion',   BridgeVersion);
@@ -187,59 +184,64 @@ BEGIN
   Hello.AddPair('exe',             AExeName);
   Result := TJSONObject.Create;
   Result.AddPair('hello', Hello);
-END;
+end;
 
 
-FUNCTION TryParseRequest(ARoot: TJSONObject; OUT Req: TBridgeRequest): Boolean;
-VAR
-  IdNum: TJSONNumber;
-  CmdStr: TJSONString;
+function TryJsonInt64(AVal: TJSONValue; OUT AOut: Int64): Boolean;
+begin
+  AOut := 0;
+  Result := (AVal is TJSONNumber) and TryStrToInt64(TJSONNumber(AVal).Value, AOut);
+end;
+
+
+function TryParseRequest(ARoot: TJSONObject; OUT Req: TBridgeRequest): Boolean;
+var
+  CmdVal: TJSONValue;
   ArgsVal: TJSONValue;
-  TimeoutVal: TJSONValue;
   Int64Val: Int64;
-BEGIN
+begin
   Result := FALSE;
   Req := Default(TBridgeRequest);
 
-  IdNum := ARoot.GetValue('id') AS TJSONNumber;
-  if IdNum = NIL then EXIT;
-  Req.Id := IdNum.AsInt64;
+  // id must be a clean integer. TryJsonInt64 (not AsInt64) so a missing / non-number /
+  // fractional id fails the parse here instead of raising EConvertError up the worker loop.
+  if not TryJsonInt64(ARoot.GetValue('id'), Req.Id) then exit;
 
-  CmdStr := ARoot.GetValue('cmd') AS TJSONString;
-  if CmdStr = NIL then EXIT;
-  Req.Cmd := CmdStr.Value;
+  // cmd must be a string. Use an `is` test, not `as TJSONString`: a present-but-non-string
+  // cmd (e.g. {"cmd":5}) would make `as` raise EInvalidCast, which escapes the worker's
+  // ServeOneRequest (no except there, only a finally) and tears down the whole client
+  // session instead of returning a clean ErrInvalidRequest for that one frame. `is` returns
+  // FALSE for both nil (missing) and a non-string, matching this function's documented
+  // "id/cmd missing -> FALSE" contract — and matching how id/timeoutMs are parsed below.
+  CmdVal := ARoot.GetValue('cmd');
+  if not (CmdVal is TJSONString) then exit;
+  Req.Cmd := TJSONString(CmdVal).Value;
 
   ArgsVal := ARoot.GetValue('args');
-  if ArgsVal IS TJSONObject then
+  if ArgsVal is TJSONObject then
     Req.Args := TJSONObject(ArgsVal)
   else
     Req.Args := NIL;   // some commands take no args
 
-  // timeoutMs is optional. We accept any non-negative integer up to High(Cardinal);
-  // anything out of range, negative, or unparseable becomes 0 (= "use defaults") so
-  // a single malformed value can never tear down the pipe session.
-  TimeoutVal := ARoot.GetValue('timeoutMs');
+  // timeoutMs is optional. We accept any non-negative integer up to High(Cardinal); anything
+  // out of range, negative, or unparseable degrades to 0 (= "use defaults") so a single
+  // malformed value can never tear down the pipe session. TryJsonInt64 returns FALSE (leaving
+  // TimeoutMs at 0) rather than raising on a fractional / garbage value — no swallowed exception.
   Req.TimeoutMs := 0;
-  if TimeoutVal IS TJSONNumber then
-    TRY
-      Int64Val := TJSONNumber(TimeoutVal).AsInt64;
-      if (Int64Val >= 0) and (Int64Val <= Int64(High(Cardinal))) then
-        Req.TimeoutMs := Cardinal(Int64Val);
-    EXCEPT
-      // StrToInt64 raises EConvertError on overflow / garbage. Swallow.
-      Req.TimeoutMs := 0;
-    END;
+  if TryJsonInt64(ARoot.GetValue('timeoutMs'), Int64Val)
+     and (Int64Val >= 0) and (Int64Val <= Int64(High(Cardinal))) then
+    Req.TimeoutMs := Cardinal(Int64Val);
 
   Result := TRUE;
-END;
+end;
 
 
-FUNCTION SerializeResponse(VAR Resp: TBridgeResponse): String;
-VAR
+function SerializeResponse(var Resp: TBridgeResponse): String;
+var
   Root, ErrObj: TJSONObject;
-BEGIN
+begin
   Root := TJSONObject.Create;
-  TRY
+  try
     Root.AddPair('id', TJSONNumber.Create(Resp.Id));
     Root.AddPair('ok', TJSONBool.Create(Resp.Ok));
     if Resp.Ok then
@@ -268,10 +270,10 @@ BEGIN
         FreeAndNil(Resp.ResultJson);
     end;
     Result := Root.ToJSON;
-  FINALLY
+  finally
     FreeAndNil(Root);  // also frees ResultJson (now owned) and ErrObj
-  END;
-END;
+  end;
+end;
 
 
-END.
+end.
