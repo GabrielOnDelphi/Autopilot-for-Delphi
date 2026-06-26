@@ -1,73 +1,70 @@
-UNIT Autopilot.Mcp.Tool.Attach;
+unit Autopilot.Mcp.Tool.Attach;
 
-(*=====================================================
-   2026.05.12
-   GabrielMoraru.com / SciVance Tech
+{=============================================================================================================
+   2026.06
+   www.GabrielMoraru.com
+--------------------------------------------------------------------------------------------------------------
+   - MCP tool: attach
+   - Lists active Autopilot targets discovered via %TEMP%\Autopilot\active\.
+   - Optional pid: also verifies the named pid is alive and pipe is reachable.
+   - Runs in Autopilot.Mcp.exe (Windows PC-side MCP server); target may be any platform.
+=============================================================================================================}
 
-   ┌──────────────────────────────────────┐
-   │  WINDOWS  (PC-side MCP server)       │   runs in Autopilot.Mcp.exe; target may be any platform
-   └──────────────────────────────────────┘
+interface
 
-   MCP tool: attach
-   Lists the active Autopilot targets discovered via %TEMP%\Autopilot\active\.
-   Optional pid: also verifies the named pid is alive and pipe is reachable.
-=====================================================*)
-
-INTERFACE
-
-USES
+uses
   System.SysUtils, System.JSON,
   MCPServer.Tool.Base, MCPServer.Types,
   Autopilot.Mcp.PipeClient;
 
-TYPE
-  TAttachParams = CLASS
-  PRIVATE
+type
+  TAttachParams = class
+  private
     FPid: Integer;
-  PUBLIC
+  public
     [Optional]
     [SchemaDescription('Optional process ID. Without it, returns all discovered targets.')]
-    PROPERTY Pid: Integer READ FPid WRITE FPid;
-  END;
+    property Pid: Integer read FPid write FPid;
+  end;
 
-  TAttachTool = CLASS(TMCPToolBase<TAttachParams>)
-  PROTECTED
-    FUNCTION ExecuteWithParams(CONST Params: TAttachParams): String; OVERRIDE;
-  PUBLIC
-    CONSTRUCTOR Create; OVERRIDE;
-  END;
+  TAttachTool = class(TMCPToolBase<TAttachParams>)
+  protected
+    function ExecuteWithParams(const Params: TAttachParams): String; override;
+  public
+    constructor Create; override;
+  end;
 
 
-IMPLEMENTATION
+implementation
 
-USES
+uses
   MCPServer.Registration;
 
 
-CONSTRUCTOR TAttachTool.Create;
-BEGIN
+constructor TAttachTool.Create;
+begin
   inherited;
   FName := 'attach';
   FDescription := 'List active Autopilot targets, or verify a specific PID is reachable.';
-END;
+end;
 
 
-FUNCTION TAttachTool.ExecuteWithParams(CONST Params: TAttachParams): String;
-VAR
+function TAttachTool.ExecuteWithParams(const Params: TAttachParams): String;
+var
   Targets: TTargetList;
   Root: TJSONObject;
   Arr: TJSONArray;
   Item: TJSONObject;
   i: Integer;
   Filter: Cardinal;
-BEGIN
+begin
   Targets := ListTargets;
   Filter := Cardinal(Params.Pid);
 
   Arr := TJSONArray.Create;
   for i := 0 to High(Targets) do
-    if (Filter = 0) or (Targets[i].Pid = Filter) then
-    begin
+    if (Filter = 0) or (Targets[i].Pid = Filter)
+    then begin
       Item := TJSONObject.Create;
       Item.AddPair('pid', TJSONNumber.Create(Targets[i].Pid));
       Item.AddPair('pipe', Targets[i].PipeName);
@@ -75,23 +72,23 @@ BEGIN
     end;
 
   Root := TJSONObject.Create;
-  TRY
+  try
     Root.AddPair('targets', Arr);
     Root.AddPair('count', TJSONNumber.Create(Arr.Count));
     Result := Root.ToJSON;
-  FINALLY
-    Root.Free;
-  END;
-END;
+  finally
+    FreeAndNil(Root);
+  end;
+end;
 
 
-INITIALIZATION
+initialization
   TMCPRegistry.RegisterTool('attach',
-    FUNCTION: IMCPTool
-    BEGIN
+    function: IMCPTool
+    begin
       Result := TAttachTool.Create;
-    END
+    end
   );
 
 
-END.
+end.
