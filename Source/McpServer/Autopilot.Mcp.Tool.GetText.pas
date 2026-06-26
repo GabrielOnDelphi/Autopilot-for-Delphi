@@ -1,79 +1,76 @@
-UNIT Autopilot.Mcp.Tool.GetText;
+unit Autopilot.Mcp.Tool.GetText;
 
-(*=====================================================
-   2026.05.12
-   GabrielMoraru.com / SciVance Tech
+{=============================================================================================================
+   2026.06
+   www.GabrielMoraru.com
+--------------------------------------------------------------------------------------------------------------
+   - MCP tool: get_text
+   - Reads the Text or Caption of a control in the target app.
+   - Runs in Autopilot.Mcp.exe (Windows PC-side MCP server); target may be any platform.
+=============================================================================================================}
 
-   ┌──────────────────────────────────────┐
-   │  WINDOWS  (PC-side MCP server)       │   runs in Autopilot.Mcp.exe; target may be any platform
-   └──────────────────────────────────────┘
+interface
 
-   MCP tool: get_text
-   Reads the Text or Caption of a control in the target app.
-=====================================================*)
-
-INTERFACE
-
-USES
+uses
   System.SysUtils, System.JSON,
   MCPServer.Tool.Base, MCPServer.Types,
   Autopilot.Mcp.ToolBase;
 
-TYPE
-  TGetTextParams = CLASS
-  PRIVATE
+type
+  TGetTextParams = class
+  private
     FPath: String;
     FPid : Integer;
-  PUBLIC
+  public
     [SchemaDescription('Path to the control. See list_tree for available paths. ' +
                        'Forms: "Form", "Form.Leaf", "Form.A.B.C". Unnamed components: "@TButton#N".')]
-    PROPERTY Path: String READ FPath WRITE FPath;
+    property Path: String read FPath write FPath;
 
     [Optional]
     [SchemaDescription('Optional PID to disambiguate when multiple targets are active.')]
-    PROPERTY Pid: Integer READ FPid WRITE FPid;
-  END;
+    property Pid: Integer read FPid write FPid;
+  end;
 
-  TGetTextTool = CLASS(TMCPToolBase<TGetTextParams>)
-  PROTECTED
-    FUNCTION ExecuteWithParams(CONST Params: TGetTextParams): String; OVERRIDE;
-  PUBLIC
-    CONSTRUCTOR Create; OVERRIDE;
-  END;
+  TGetTextTool = class(TMCPToolBase<TGetTextParams>)
+  protected
+    function ExecuteWithParams(const Params: TGetTextParams): String; override;
+  public
+    constructor Create; override;
+  end;
 
 
-IMPLEMENTATION
+implementation
 
-USES
+uses
   MCPServer.Registration;
 
 
-CONSTRUCTOR TGetTextTool.Create;
-BEGIN
+constructor TGetTextTool.Create;
+begin
   inherited;
   FName := 'get_text';
   FDescription := 'Read the Text/Caption of a control in the running target app.';
-END;
+end;
 
 
-FUNCTION TGetTextTool.ExecuteWithParams(CONST Params: TGetTextParams): String;
-VAR
+function TGetTextTool.ExecuteWithParams(const Params: TGetTextParams): String;
+var
   Args: TJSONObject;
-BEGIN
+begin
   Args := TJSONObject.Create;
   Args.AddPair('path', Params.Path);
   Result := RunCommandOnTarget(Cardinal(Params.Pid),
                                BuildRequest(1, 'get_text', Args));
-END;
+end;
 
 
-INITIALIZATION
+initialization
   TMCPRegistry.RegisterTool('get_text',
-    FUNCTION: IMCPTool
-    BEGIN
+    function: IMCPTool
+    begin
       Result := TGetTextTool.Create;
-    END
+    end
   );
 
 
-END.
+end.

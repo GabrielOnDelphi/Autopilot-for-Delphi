@@ -1,51 +1,48 @@
-UNIT Autopilot.Mcp.Tool.ListTree;
+unit Autopilot.Mcp.Tool.ListTree;
 
-(*=====================================================
-   2026.05.12
-   GabrielMoraru.com / SciVance Tech
+{=============================================================================================================
+   2026.06
+   www.GabrielMoraru.com
+--------------------------------------------------------------------------------------------------------------
+   - MCP tool: list_tree
+   - Enumerates every form + component in the target app. Returns the bridge's raw JSON response as a string
+     so the AI sees the full payload.
+   - Runs in Autopilot.Mcp.exe (Windows PC-side MCP server); target may be any platform.
+=============================================================================================================}
 
-   ┌──────────────────────────────────────┐
-   │  WINDOWS  (PC-side MCP server)       │   runs in Autopilot.Mcp.exe; target may be any platform
-   └──────────────────────────────────────┘
+interface
 
-   MCP tool: list_tree
-   Enumerates every form + component in the target app. Returns the bridge's
-   raw JSON response as a string so the AI sees the full payload.
-=====================================================*)
-
-INTERFACE
-
-USES
+uses
   System.SysUtils,
   MCPServer.Tool.Base, MCPServer.Types,
   Autopilot.Mcp.ToolBase;
 
-TYPE
-  TListTreeParams = CLASS
-  PRIVATE
+type
+  TListTreeParams = class
+  private
     FPid: Integer;
-  PUBLIC
+  public
     [Optional]
     [SchemaDescription('Optional PID to disambiguate when multiple targets are active.')]
-    PROPERTY Pid: Integer READ FPid WRITE FPid;
-  END;
+    property Pid: Integer read FPid write FPid;
+  end;
 
-  TListTreeTool = CLASS(TMCPToolBase<TListTreeParams>)
-  PROTECTED
-    FUNCTION ExecuteWithParams(CONST Params: TListTreeParams): String; OVERRIDE;
-  PUBLIC
-    CONSTRUCTOR Create; OVERRIDE;
-  END;
+  TListTreeTool = class(TMCPToolBase<TListTreeParams>)
+  protected
+    function ExecuteWithParams(const Params: TListTreeParams): String; override;
+  public
+    constructor Create; override;
+  end;
 
 
-IMPLEMENTATION
+implementation
 
-USES
+uses
   MCPServer.Registration;
 
 
-CONSTRUCTOR TListTreeTool.Create;
-BEGIN
+constructor TListTreeTool.Create;
+begin
   inherited;
   FName := 'list_tree';
   FDescription :=
@@ -58,23 +55,23 @@ BEGIN
     '"Form.A.B.C" (anchored — each segment is a direct child of the previous). ' +
     'Unnamed components show up as "@TButton#N" (N = ComponentIndex in owner); ' +
     'prefer anchored paths for synthetic IDs since the index is owner-relative.';
-END;
+end;
 
 
-FUNCTION TListTreeTool.ExecuteWithParams(CONST Params: TListTreeParams): String;
-BEGIN
+function TListTreeTool.ExecuteWithParams(const Params: TListTreeParams): String;
+begin
   Result := RunCommandOnTarget(Cardinal(Params.Pid),
-                               BuildRequest(1, 'list_tree', NIL));
-END;
+                               BuildRequest(1, 'list_tree', nil));
+end;
 
 
-INITIALIZATION
+initialization
   TMCPRegistry.RegisterTool('list_tree',
-    FUNCTION: IMCPTool
-    BEGIN
+    function: IMCPTool
+    begin
       Result := TListTreeTool.Create;
-    END
+    end
   );
 
 
-END.
+end.
