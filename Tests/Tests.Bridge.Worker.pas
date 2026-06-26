@@ -1,65 +1,57 @@
-UNIT Tests.Bridge.Worker;
+﻿unit Tests.Bridge.Worker;
 
-{=====================================================
-   2026.06.10
-   Tests for the shared bridge worker (Autopilot.Bridge.Worker), extracted from
-   NamedPipe.pas in Phase B of the Android transport work.
+{=============================================================================================================
+   2026.06
+   www.GabrielMoraru.com
+--------------------------------------------------------------------------------------------------------------
+   - DUnitX tests for TBridgeWorker driven through a TFakeTransport (in-memory IBridgeTransport implementation — no pipe, no socket).
+   - Pins the transport contract: hello/helloAck handshake, request dispatch, and clean WakeAndStop from a blocked AcceptConnection.
+=============================================================================================================}
 
-   These tests drive TBridgeWorker through a FAKE in-memory IBridgeTransport —
-   no pipe, no socket. They pin the transport contract itself:
-     - the worker completes the hello/helloAck handshake and serves a request
-       through ANY transport that honours the interface;
-     - the worker's destructor returns promptly when the worker is parked in
-       AcceptConnection (the WakeAndStop contract).
+interface
 
-   The pipe-specific behaviour (ACL, discovery file, CSI wake) stays covered by
-   the existing Bridge.Tests over a real pipe.
-=====================================================}
-
-INTERFACE
-
-USES
+uses
   DUnitX.TestFramework;
 
-TYPE
+type
   [TestFixture]
-  TBridgeWorkerTests = CLASS
-  PUBLIC
-    [Test] PROCEDURE Test_WorkerServesHandshakeAndRequestThroughFakeTransport;
-    [Test] PROCEDURE Test_WorkerShutsDownCleanlyFromBlockedAccept;
-  END;
+  TBridgeWorkerTests = class
+  public
+    [Test] procedure Test_WorkerServesHandshakeAndRequestThroughFakeTransport;
+    [Test] procedure Test_WorkerShutsDownCleanlyFromBlockedAccept;
+  end;
 
 
-IMPLEMENTATION
+implementation
 
-USES
+uses
   System.SysUtils, System.Classes, System.SyncObjs, System.JSON,
   Autopilot.Bridge.Core, Autopilot.Bridge.Transport, Autopilot.Bridge.Worker;
 
 
-TYPE
-  TFakeTransport = CLASS;
+type
+  TFakeTransport = class;
 
   // A TStream view over the fake connection. Read consumes the scripted inbound
   // bytes; Write appends to the outbound capture. The read cursor lives on the
   // TRANSPORT (not the stream), because the worker creates a fresh stream per
   // handshake/request — exactly like THandleStream over one pipe handle.
-  TFakeConnStream = CLASS(TStream)
-  STRICT PRIVATE
+  TFakeConnStream = class(TStream)
+  strict private
     FOwner: TFakeTransport;
-  PUBLIC
-    CONSTRUCTOR Create(AOwner: TFakeTransport);
-    FUNCTION Read (VAR   Buffer; Count: Longint): Longint; OVERRIDE;
-    FUNCTION Write(CONST Buffer; Count: Longint): Longint; OVERRIDE;
-    FUNCTION Seek (CONST Offset: Int64; Origin: TSeekOrigin): Int64; OVERRIDE;
-  END;
+  public
+    constructor Create(AOwner: TFakeTransport);
+    function Read (var   Buffer; Count: Longint): Longint; override;
+    function Write(const Buffer; Count: Longint): Longint; override;
+    function Seek (const Offset: Int64; Origin: TSeekOrigin): Int64; override;
+  end;
 
 
   // In-memory IBridgeTransport. One scripted session: the first AcceptConnection
-  // returns TRUE; every later call parks on an event until WakeAndStop — the same
+  // returns True; every later call parks on an event until WakeAndStop — the same
   // blocking shape as a real listener.
-  TFakeTransport = CLASS(TInterfacedObject, IBridgeTransport)
-  STRICT PRIVATE
+  TFakeTransport = class(TInterfacedObject, IBridgeTransport)
+  strict private
     FLock        : TCriticalSection;
     FInbound     : TBytes;      // scripted client->bridge bytes
     FInPos       : Integer;
@@ -69,135 +61,135 @@ TYPE
     FAcceptCalls : Integer;     // worker thread only
     FBlockFirstAccept : Boolean;
     FWakeAndStopCalls : Integer;
-  PUBLIC
-    CONSTRUCTOR Create(ABlockFirstAccept: Boolean);
-    DESTRUCTOR Destroy; OVERRIDE;
+  public
+    constructor Create(ABlockFirstAccept: Boolean);
+    destructor Destroy; override;
 
     /// Append one length-prefixed frame to the inbound script (call before the worker reads).
-    PROCEDURE QueueInboundFrame(CONST AJson: String);
+    procedure QueueInboundFrame(const AJson: String);
     /// Parse the captured outbound bytes into whole frames (thread-safe snapshot).
-    FUNCTION  OutboundFrames: TArray<String>;
-    FUNCTION  WakeAndStopCalls: Integer;
+    function  OutboundFrames: TArray<String>;
+    function  WakeAndStopCalls: Integer;
 
     // Stream plumbing, called from TFakeConnStream.
-    FUNCTION  ReadInbound(VAR Buffer; Count: Longint): Longint;
-    FUNCTION  WriteOutbound(CONST Buffer; Count: Longint): Longint;
+    function  ReadInbound(var Buffer; Count: Longint): Longint;
+    function  WriteOutbound(const Buffer; Count: Longint): Longint;
 
     { IBridgeTransport }
-    PROCEDURE StartListening;
-    FUNCTION  AcceptConnection: Boolean;
-    FUNCTION  ConnectionStream: TStream;
-    PROCEDURE RecycleConnection;
-    PROCEDURE WakeAndStop(AWorkerThread: TThread);
-    FUNCTION  EndpointLabel: String;
-  END;
+    procedure StartListening;
+    function  AcceptConnection: Boolean;
+    function  ConnectionStream: TStream;
+    procedure RecycleConnection;
+    procedure WakeAndStop(AWorkerThread: TThread);
+    function  EndpointLabel: String;
+  end;
 
 
 { TFakeConnStream -------------------------------------------------------- }
 
-CONSTRUCTOR TFakeConnStream.Create(AOwner: TFakeTransport);
-BEGIN
+constructor TFakeConnStream.Create(AOwner: TFakeTransport);
+begin
   inherited Create;
   FOwner := AOwner;
-END;
+end;
 
-FUNCTION TFakeConnStream.Read(VAR Buffer; Count: Longint): Longint;
-BEGIN
+function TFakeConnStream.Read(var Buffer; Count: Longint): Longint;
+begin
   Result := FOwner.ReadInbound(Buffer, Count);
-END;
+end;
 
-FUNCTION TFakeConnStream.Write(CONST Buffer; Count: Longint): Longint;
-BEGIN
+function TFakeConnStream.Write(const Buffer; Count: Longint): Longint;
+begin
   Result := FOwner.WriteOutbound(Buffer, Count);
-END;
+end;
 
-FUNCTION TFakeConnStream.Seek(CONST Offset: Int64; Origin: TSeekOrigin): Int64;
-BEGIN
+function TFakeConnStream.Seek(const Offset: Int64; Origin: TSeekOrigin): Int64;
+begin
   Result := 0;   // non-seekable, like a pipe/socket
-END;
+end;
 
 
 { TFakeTransport --------------------------------------------------------- }
 
-CONSTRUCTOR TFakeTransport.Create(ABlockFirstAccept: Boolean);
-BEGIN
+constructor TFakeTransport.Create(ABlockFirstAccept: Boolean);
+begin
   inherited Create;
   FLock     := TCriticalSection.Create;
   FOutbound := TBytesStream.Create;
-  FWake     := TEvent.Create(NIL, TRUE, FALSE, '');
+  FWake     := TEvent.Create(nil, True, False, '');
   FBlockFirstAccept := ABlockFirstAccept;
-END;
+end;
 
-DESTRUCTOR TFakeTransport.Destroy;
-BEGIN
+destructor TFakeTransport.Destroy;
+begin
   FreeAndNil(FWake);
   FreeAndNil(FOutbound);
   FreeAndNil(FLock);
   inherited;
-END;
+end;
 
-PROCEDURE TFakeTransport.QueueInboundFrame(CONST AJson: String);
-VAR
+procedure TFakeTransport.QueueInboundFrame(const AJson: String);
+var
   Tmp: TBytesStream;
   OldLen: Integer;
-BEGIN
+begin
   Tmp := TBytesStream.Create;
-  TRY
+  try
     TBridgeWire.WriteFrame(Tmp, AJson);
     FLock.Enter;
-    TRY
+    try
       OldLen := Length(FInbound);
       SetLength(FInbound, OldLen + Tmp.Size);
       Move(Tmp.Bytes[0], FInbound[OldLen], Tmp.Size);
-    FINALLY
+    finally
       FLock.Leave;
-    END;
-  FINALLY
+    end;
+  finally
     FreeAndNil(Tmp);
-  END;
-END;
+  end;
+end;
 
-FUNCTION TFakeTransport.OutboundFrames: TArray<String>;
-VAR
+function TFakeTransport.OutboundFrames: TArray<String>;
+var
   Snapshot: TBytesStream;
   Frame: String;
-BEGIN
-  Result := NIL;
+begin
+  Result := nil;
   Snapshot := TBytesStream.Create;
-  TRY
+  try
     FLock.Enter;
-    TRY
+    try
       if FOutbound.Size > 0 then
         Snapshot.WriteBuffer(FOutbound.Bytes[0], FOutbound.Size);
-    FINALLY
+    finally
       FLock.Leave;
-    END;
+    end;
     Snapshot.Position := 0;
     // Reuse the production framing to split the capture — whole frames only.
-    WHILE (Snapshot.Position < Snapshot.Size) and TBridgeWire.TryReadFrame(Snapshot, Frame) DO
-    BEGIN
+    while (Snapshot.Position < Snapshot.Size) and TBridgeWire.TryReadFrame(Snapshot, Frame) do
+    begin
       SetLength(Result, Length(Result) + 1);
       Result[High(Result)] := Frame;
-    END;
-  FINALLY
+    end;
+  finally
     FreeAndNil(Snapshot);
-  END;
-END;
+  end;
+end;
 
-FUNCTION TFakeTransport.WakeAndStopCalls: Integer;
-BEGIN
+function TFakeTransport.WakeAndStopCalls: Integer;
+begin
   FLock.Enter;
-  TRY
+  try
     Result := FWakeAndStopCalls;
-  FINALLY
+  finally
     FLock.Leave;
-  END;
-END;
+  end;
+end;
 
-FUNCTION TFakeTransport.ReadInbound(VAR Buffer; Count: Longint): Longint;
-BEGIN
+function TFakeTransport.ReadInbound(var Buffer; Count: Longint): Longint;
+begin
   FLock.Enter;
-  TRY
+  try
     Result := Length(FInbound) - FInPos;
     if Result > Count then
       Result := Count;
@@ -208,64 +200,64 @@ BEGIN
     end
     else
       Result := 0;   // script exhausted = clean EOF, like a closed pipe
-  FINALLY
+  finally
     FLock.Leave;
-  END;
-END;
+  end;
+end;
 
-FUNCTION TFakeTransport.WriteOutbound(CONST Buffer; Count: Longint): Longint;
-BEGIN
+function TFakeTransport.WriteOutbound(const Buffer; Count: Longint): Longint;
+begin
   FLock.Enter;
-  TRY
+  try
     FOutbound.WriteBuffer(Buffer, Count);
     Result := Count;
-  FINALLY
+  finally
     FLock.Leave;
-  END;
-END;
+  end;
+end;
 
-PROCEDURE TFakeTransport.StartListening;
-BEGIN
+procedure TFakeTransport.StartListening;
+begin
   // Nothing to arm in memory.
-END;
+end;
 
-FUNCTION TFakeTransport.AcceptConnection: Boolean;
-BEGIN
-  if FStopping then EXIT(FALSE);
+function TFakeTransport.AcceptConnection: Boolean;
+begin
+  if FStopping then Exit(False);
   Inc(FAcceptCalls);
-  if (FAcceptCalls = 1) and not FBlockFirstAccept then EXIT(TRUE);
+  if (FAcceptCalls = 1) and not FBlockFirstAccept then Exit(True);
   // Park like a real listener until WakeAndStop. Bounded so a broken contract
   // fails the test instead of hanging the suite.
   FWake.WaitFor(10000);
-  Result := FALSE;
-END;
+  Result := False;
+end;
 
-FUNCTION TFakeTransport.ConnectionStream: TStream;
-BEGIN
+function TFakeTransport.ConnectionStream: TStream;
+begin
   Result := TFakeConnStream.Create(Self);
-END;
+end;
 
-PROCEDURE TFakeTransport.RecycleConnection;
-BEGIN
+procedure TFakeTransport.RecycleConnection;
+begin
   // Nothing to close in memory.
-END;
+end;
 
-PROCEDURE TFakeTransport.WakeAndStop(AWorkerThread: TThread);
-BEGIN
+procedure TFakeTransport.WakeAndStop(AWorkerThread: TThread);
+begin
   FLock.Enter;
-  TRY
+  try
     Inc(FWakeAndStopCalls);
-  FINALLY
+  finally
     FLock.Leave;
-  END;
-  FStopping := TRUE;
+  end;
+  FStopping := True;
   FWake.SetEvent;
-END;
+end;
 
-FUNCTION TFakeTransport.EndpointLabel: String;
-BEGIN
+function TFakeTransport.EndpointLabel: String;
+begin
   Result := 'fake:in-memory';
-END;
+end;
 
 
 { Helpers ----------------------------------------------------------------- }
@@ -274,25 +266,25 @@ END;
 // captured at least AFrameCount outbound frames. The worker's dispatcher call is
 // queued to the main thread, so without CheckSynchronize the request would
 // dead-wait exactly like a blocked GUI app.
-PROCEDURE PumpUntilFrames(AFake: TFakeTransport; AFrameCount: Integer; ATimeoutMs: Cardinal);
-VAR
+procedure PumpUntilFrames(AFake: TFakeTransport; AFrameCount: Integer; ATimeoutMs: Cardinal);
+var
   Deadline: UInt64;
-BEGIN
+begin
   Deadline := TThread.GetTickCount64 + ATimeoutMs;
-  WHILE Length(AFake.OutboundFrames) < AFrameCount DO
-  BEGIN
+  while Length(AFake.OutboundFrames) < AFrameCount do
+  begin
     CheckSynchronize(10);
     if TThread.GetTickCount64 > Deadline then
       Assert.Fail('PumpUntilFrames: worker produced ' + IntToStr(Length(AFake.OutboundFrames)) +
                   ' of ' + IntToStr(AFrameCount) + ' frames within ' + IntToStr(ATimeoutMs) + ' ms');
-  END;
-END;
+  end;
+end;
 
 
 { TBridgeWorkerTests ------------------------------------------------------ }
 
-PROCEDURE TBridgeWorkerTests.Test_WorkerServesHandshakeAndRequestThroughFakeTransport;
-VAR
+procedure TBridgeWorkerTests.Test_WorkerServesHandshakeAndRequestThroughFakeTransport;
+var
   Fake      : TFakeTransport;
   Transport : IBridgeTransport;
   Worker    : TBridgeWorker;
@@ -301,8 +293,8 @@ VAR
   Frames    : TArray<String>;
   Root      : TJSONValue;
   Hello     : TJSONObject;
-BEGIN
-  Fake := TFakeTransport.Create(FALSE);
+begin
+  Fake := TFakeTransport.Create(False);
   Transport := Fake;   // test holds one ref; the worker takes its own
   Fake.QueueInboundFrame('{"helloAck":{"protocolVersion":1}}');
   Fake.QueueInboundFrame('{"id":7,"cmd":"ping","args":{"x":41}}');
@@ -310,72 +302,72 @@ BEGIN
   DispatchedCmd  := '';
   DispatchedArgX := 0;
   Worker := TBridgeWorker.Create(Transport, 'FakeExe.exe',
-    FUNCTION(CONST Req: TBridgeRequest): TBridgeResponse
-    BEGIN
+    function(const Req: TBridgeRequest): TBridgeResponse
+    begin
       DispatchedCmd := Req.Cmd;
-      if Req.Args <> NIL then
+      if Req.Args <> nil then
         DispatchedArgX := Req.Args.GetValue<Integer>('x', 0);
       Result := Default(TBridgeResponse);
       Result.Id := Req.Id;
-      Result.Ok := TRUE;
+      Result.Ok := True;
       Result.ResultJson := TJSONObject.Create;
-      Result.ResultJson.AddPair('pong', TJSONBool.Create(TRUE));
-    END);
-  TRY
+      Result.ResultJson.AddPair('pong', TJSONBool.Create(True));
+    end);
+  try
     PumpUntilFrames(Fake, 2, 5000);
     Frames := Fake.OutboundFrames;
     Assert.AreEqual(2, Length(Frames), 'expected hello frame + response frame');
 
     // Frame 1: the hello the worker sends through ANY transport.
     Root := TJSONObject.ParseJSONValue(Frames[0]);
-    TRY
+    try
       Assert.IsNotNull(Root, 'hello frame must be JSON');
       Hello := (Root AS TJSONObject).GetValue('hello') AS TJSONObject;
       Assert.IsNotNull(Hello, 'first frame must carry hello');
       Assert.AreEqual(ProtocolVersion, Hello.GetValue<Integer>('protocolVersion', -1));
       Assert.AreEqual('FakeExe.exe',   Hello.GetValue<String>('exe', ''));
-    FINALLY
+    finally
       FreeAndNil(Root);
-    END;
+    end;
 
     // Frame 2: the dispatcher's response, serialized by the worker.
     Root := TJSONObject.ParseJSONValue(Frames[1]);
-    TRY
+    try
       Assert.IsNotNull(Root, 'response frame must be JSON');
       Assert.AreEqual<Int64>(7, (Root AS TJSONObject).GetValue<Int64>('id', -1));
-      Assert.IsTrue((Root AS TJSONObject).GetValue<Boolean>('ok', FALSE), 'response must be ok');
-      Assert.IsTrue((Root AS TJSONObject).GetValue<Boolean>('result.pong', FALSE), 'result.pong must be true');
-    FINALLY
+      Assert.IsTrue((Root AS TJSONObject).GetValue<Boolean>('ok', False), 'response must be ok');
+      Assert.IsTrue((Root AS TJSONObject).GetValue<Boolean>('result.pong', False), 'result.pong must be true');
+    finally
       FreeAndNil(Root);
-    END;
+    end;
 
     // The dispatcher really ran (on this thread, via TThread.Queue) and saw the cloned args.
     Assert.AreEqual('ping', DispatchedCmd);
     Assert.AreEqual(41, DispatchedArgX);
-  FINALLY
+  finally
     FreeAndNil(Worker);    // drops the worker's transport ref
-    Transport := NIL;      // drops the test's ref — fake destroys here
-  END;
-END;
+    Transport := nil;      // drops the test's ref — fake destroys here
+  end;
+end;
 
 
-PROCEDURE TBridgeWorkerTests.Test_WorkerShutsDownCleanlyFromBlockedAccept;
-VAR
+procedure TBridgeWorkerTests.Test_WorkerShutsDownCleanlyFromBlockedAccept;
+var
   Fake      : TFakeTransport;
   Transport : IBridgeTransport;
   Worker    : TBridgeWorker;
   T0        : UInt64;
-BEGIN
+begin
   // No session at all: the very first AcceptConnection parks. Destroy must come
   // back promptly via the WakeAndStop contract, never serving anything.
-  Fake := TFakeTransport.Create(TRUE);
+  Fake := TFakeTransport.Create(True);
   Transport := Fake;
   Worker := TBridgeWorker.Create(Transport, 'FakeExe.exe',
-    FUNCTION(CONST Req: TBridgeRequest): TBridgeResponse
-    BEGIN
+    function(const Req: TBridgeRequest): TBridgeResponse
+    begin
       Result := Default(TBridgeResponse);
       Assert.Fail('dispatcher must never run — no client ever connected');
-    END);
+    end);
 
   TThread.Sleep(50);   // let the worker reach (or pass) AcceptConnection
   T0 := TThread.GetTickCount64;
@@ -383,13 +375,13 @@ BEGIN
   Assert.IsTrue(TThread.GetTickCount64 - T0 < 3000, 'Destroy must not hang on a parked AcceptConnection');
   Assert.IsTrue(Fake.WakeAndStopCalls >= 1, 'Destroy must wake the transport via WakeAndStop');
   Assert.AreEqual(0, Length(Fake.OutboundFrames), 'no client connected, so nothing may be written');
-  Transport := NIL;
-END;
+  Transport := nil;
+end;
 
 
-INITIALIZATION
+initialization
   // This project's fixtures self-register explicitly — [TestFixture] attribute
   // auto-discovery is NOT active here (HANDOVER footgun).
   TDUnitX.RegisterTestFixture(TBridgeWorkerTests);
 
-END.
+end.

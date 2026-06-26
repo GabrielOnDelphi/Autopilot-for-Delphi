@@ -1,96 +1,67 @@
-UNIT Tests.LeakSuppressor;
+﻿unit Tests.LeakSuppressor;
 
-{=====================================================
-   2026-06-03
-   Autopilot — workaround for a 3rd-party shutdown leak.
+{=============================================================================================================
+   2026.06
+   www.GabrielMoraru.com
+--------------------------------------------------------------------------------------------------------------
+   - Workaround for a 3rd-party DUnitX shutdown leak: installs a vectored exception handler that pre-registers EInOutError objects with FastMM via RegisterExpectedMemoryLeak.
+   - Covers both the exception object (~36 bytes) and its FMessage UnicodeString heap block (~236 bytes) so ReportMemoryLeaksOnShutdown stays silent for this known RTL/DUnitX race.
+   - All other leak types are unaffected. Windows-only (vectored exception handler + Win32 exception record layout).
+=============================================================================================================}
 
-   Symptom: in ~20-50% of test runs (under stdout redirection),
-   ReportMemoryLeaksOnShutdown reports:
-     29 - 36  bytes: EInOutError x 1
-     221 - 236 bytes: Unknown      x 1
+interface
 
-   Diagnosis: while Runner.Execute is running, an EInOutError is raised
-   (almost certainly by Pascal Text-file I/O somewhere we cannot directly
-   patch — disabling the console logger and the NUnit logger does NOT
-   eliminate it). Immediately after, an EInvalidPointer cascades from the
-   same call address. The two exceptions racing through the RTL unwind
-   path leak one of the EInOutError objects.
-
-   We cannot fix the root cause without patching either the RTL or the
-   3rd-party (DUnitX) sources. Workaround:
-
-   Install a vectored exception handler that, every time it sees a
-   Delphi-raised EInOutError, pre-registers two things with FastMM via
-   RegisterExpectedMemoryLeak:
-     1. The exception object itself (~36 bytes).
-     2. The heap block backing its FMessage UnicodeString (~236 bytes).
-   If the exception IS freed normally (the common case), the registrations
-   are harmless — FastMM only matches live blocks at shutdown.
-
-   Side effect: zero leak reports for EInOutError and its message buffer.
-   Other leak types are unaffected. ReportMemoryLeaksOnShutdown still
-   catches any other leak.
-
-   Earlier experiments tried to patch the vendor writer (a
-   TQuietConsoleWriter that bypassed Pascal Text-file I/O); that did NOT
-   eliminate the leak, proving the writer is not the actual source.
-   Disabling all loggers entirely still reproduced the leak at ~27% rate.
-   The real source is deeper in the RTL/DUnitX Text-file I/O path.
-=====================================================}
-
-INTERFACE
-
-PROCEDURE InstallEInOutErrorLeakSuppressor;
+procedure InstallEInOutErrorLeakSuppressor;
 
 
-IMPLEMENTATION
+implementation
 
-USES
+uses
   Winapi.Windows,
   System.SysUtils;
 
-TYPE
-  TLocalExceptionRecord = RECORD
+type
+  TLocalExceptionRecord = record
     ExceptionCode       : DWORD;
     ExceptionFlags      : DWORD;
     ExceptionRecord     : Pointer;
     ExceptionAddress    : Pointer;
     NumberParameters    : DWORD;
     ExceptionInformation: array[0..14] of NativeUInt;
-  END;
+  end;
   PLocalExceptionRecord = ^TLocalExceptionRecord;
 
-  TLocalExceptionPointers = RECORD
+  TLocalExceptionPointers = record
     ExceptionRecord: PLocalExceptionRecord;
     ContextRecord  : Pointer;
-  END;
+  end;
   PLocalExceptionPointers = ^TLocalExceptionPointers;
 
 
-FUNCTION AddVectoredExceptionHandler(First: DWORD; Handler: Pointer): Pointer; STDCALL;
-  EXTERNAL kernel32 NAME 'AddVectoredExceptionHandler';
+function AddVectoredExceptionHandler(First: DWORD; Handler: Pointer): Pointer; stdcall;
+  external kernel32 name 'AddVectoredExceptionHandler';
 
-CONST
+const
   cDelphiExceptionCode    = $0EEDFADE;
   cExceptionContinueSearch = LONG(0);
 
 
-FUNCTION VehCallback(ExceptionInfo: PLocalExceptionPointers): LONG; STDCALL;
-VAR
+function VehCallback(ExceptionInfo: PLocalExceptionPointers): LONG; stdcall;
+var
   ER  : PLocalExceptionRecord;
   Obj : TObject;
   Exc : Exception;
   Msg : String;
   Ptr : Pointer;
-BEGIN
+begin
   Result := cExceptionContinueSearch;   // we never handle, only observe
   ER := ExceptionInfo^.ExceptionRecord;
   if (ER^.ExceptionCode = cDelphiExceptionCode) and (ER^.NumberParameters >= 2) then
-  BEGIN
+  begin
     // Win32 layout: ExceptionInformation[1] = the Delphi exception object pointer.
     Obj := TObject(Pointer(ER^.ExceptionInformation[1]));
-    if (Obj <> NIL) and (Obj.ClassName = 'EInOutError') then
-    BEGIN
+    if (Obj <> nil) and (Obj.ClassName = 'EInOutError') then
+    begin
       // Pre-register the exception OBJECT itself. If it leaks, FastMM ignores it.
       // RegisterExpectedMemoryLeak is flagged `platform` in System.pas; this unit
       // is Win32-only by construction (Win32 EInOutError layout above), so the
@@ -103,23 +74,23 @@ BEGIN
       // heap pointer (one cell before the data ptr) and register it as well.
       Exc := Exception(Obj);
       Msg := Exc.Message;
-      if Pointer(Msg) <> NIL then
-      BEGIN
+      if Pointer(Msg) <> nil then
+      begin
         // UnicodeString data ptr -> the header lives at data_ptr - SizeOf(StrRec).
         // StrRec is 12 bytes on Win32 (codePage:Word, elemSize:Word, refCnt:LongInt, length:LongInt).
         Ptr := Pointer(NativeUInt(Pointer(Msg)) - 12);
         RegisterExpectedMemoryLeak(Ptr);
         {$WARN SYMBOL_PLATFORM DEFAULT}
-      END;
-    END;
-  END;
-END;
+      end;
+    end;
+  end;
+end;
 
 
-PROCEDURE InstallEInOutErrorLeakSuppressor;
-BEGIN
+procedure InstallEInOutErrorLeakSuppressor;
+begin
   AddVectoredExceptionHandler(1, @VehCallback);
-END;
+end;
 
 
-END.
+end.

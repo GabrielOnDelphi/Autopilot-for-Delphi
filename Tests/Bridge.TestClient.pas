@@ -1,190 +1,192 @@
-UNIT Bridge.TestClient;
+﻿unit Bridge.TestClient;
 
-{=====================================================
-   Minimal named-pipe client + helpers used by the DUnitX suite.
-   Stdlib + Win32 only — does NOT use the bridge units directly so the test
-   really exercises the wire protocol, not internal calls.
-=====================================================}
+{=============================================================================================================
+   2026.06
+   www.GabrielMoraru.com
+--------------------------------------------------------------------------------------------------------------
+   - Minimal named-pipe test client used by the DUnitX suite — exercises the wire protocol directly, not internal calls.
+   - TBridgeTestClient: ConnectAndHandshake, Call (one request/response round-trip). GetOkResult/GetErrorCode/GetErrorData helpers for response inspection.
+=============================================================================================================}
 
-INTERFACE
+interface
 
-USES
+uses
   Winapi.Windows,
   System.SysUtils, System.Classes, System.JSON,
   Autopilot.Bridge.Core;
 
-TYPE
-  TBridgeTestClient = CLASS
-  STRICT PRIVATE
+type
+  TBridgeTestClient = class
+  strict private
     FPipe   : THandle;
     FStream : THandleStream;
-  PUBLIC
-    /// Try to open the pipe until ATimeoutMs elapses. Returns FALSE on timeout.
+  public
+    /// Try to open the pipe until ATimeoutMs elapses. Returns False on timeout.
     /// Also performs the hello/helloAck handshake.
-    FUNCTION  ConnectAndHandshake(CONST APipeName: String; ATimeoutMs: Cardinal): Boolean;
+    function  ConnectAndHandshake(const APipeName: String; ATimeoutMs: Cardinal): Boolean;
 
     /// Sends one request frame, reads one response frame, parses it.
     /// Returned root object is OWNED by caller and must be Freed.
-    FUNCTION  Call(AId: Int64; CONST ACmd: String; AArgs: TJSONObject;
+    function  Call(AId: Int64; const ACmd: String; AArgs: TJSONObject;
                    ATimeoutMs: Cardinal = 0): TJSONObject;
 
-    DESTRUCTOR Destroy; OVERRIDE;
-  END;
+    destructor Destroy; override;
+  end;
 
-/// Helper: get the "result" sub-object of a successful response (or NIL).
+/// Helper: get the "result" sub-object of a successful response (or nil).
 /// Does NOT take ownership; the parent root still owns it.
-FUNCTION GetOkResult(ARoot: TJSONObject): TJSONObject;
+function GetOkResult(ARoot: TJSONObject): TJSONObject;
 
 /// Helper: extract error code from a failed response. Returns 0 if ARoot is OK or malformed.
-FUNCTION GetErrorCode(ARoot: TJSONObject): Integer;
+function GetErrorCode(ARoot: TJSONObject): Integer;
 
-/// Helper: extract the optional 'data' sub-object from a failed response. Returns NIL
+/// Helper: extract the optional 'data' sub-object from a failed response. Returns nil
 /// when the response is OK, malformed, or has no error.data. Does NOT take ownership.
-FUNCTION GetErrorData(ARoot: TJSONObject): TJSONObject;
+function GetErrorData(ARoot: TJSONObject): TJSONObject;
 
 
-IMPLEMENTATION
+implementation
 
-FUNCTION TBridgeTestClient.ConnectAndHandshake(CONST APipeName: String; ATimeoutMs: Cardinal): Boolean;
-VAR
+function TBridgeTestClient.ConnectAndHandshake(const APipeName: String; ATimeoutMs: Cardinal): Boolean;
+var
   Deadline: UInt64;
   HelloFrame: String;
   HelloRoot: TJSONValue;
   AckObj: TJSONObject;
   ResponseAck: TJSONObject;
-BEGIN
-  Result := FALSE;
+begin
+  Result := False;
   Deadline := GetTickCount64 + ATimeoutMs;
 
   FPipe := INVALID_HANDLE_VALUE;
-  WHILE GetTickCount64 < Deadline DO
-  BEGIN
+  while GetTickCount64 < Deadline do
+  begin
     FPipe := CreateFileW(PWideChar(APipeName), GENERIC_READ or GENERIC_WRITE,
-                         0, NIL, OPEN_EXISTING, 0, 0);
+                         0, nil, OPEN_EXISTING, 0, 0);
     if FPipe <> INVALID_HANDLE_VALUE then Break;
     if GetLastError <> ERROR_FILE_NOT_FOUND then Break;
     Sleep(25);
-  END;
-  if FPipe = INVALID_HANDLE_VALUE then EXIT;
+  end;
+  if FPipe = INVALID_HANDLE_VALUE then Exit;
 
   FStream := THandleStream.Create(FPipe);
 
   // Read bridge's hello.
-  if not TBridgeWire.TryReadFrame(FStream, HelloFrame) then EXIT;
+  if not TBridgeWire.TryReadFrame(FStream, HelloFrame) then Exit;
   HelloRoot := TJSONObject.ParseJSONValue(HelloFrame);
-  TRY
-    if not (HelloRoot IS TJSONObject) then EXIT;
+  try
+    if not (HelloRoot IS TJSONObject) then Exit;
     // Don't bother verifying contents in detail — the dedicated test does that.
-  FINALLY
+  finally
     HelloRoot.Free;
-  END;
+  end;
 
   // Send helloAck.
   AckObj := TJSONObject.Create;
   ResponseAck := TJSONObject.Create;
-  TRY
+  try
     AckObj.AddPair('protocolVersion', TJSONNumber.Create(ProtocolVersion));
     ResponseAck.AddPair('helloAck', AckObj);
-    AckObj := NIL;
+    AckObj := nil;
     TBridgeWire.WriteFrame(FStream, ResponseAck.ToJSON);
-  FINALLY
+  finally
     AckObj.Free;
     ResponseAck.Free;
-  END;
+  end;
 
-  Result := TRUE;
-END;
+  Result := True;
+end;
 
 
-FUNCTION TBridgeTestClient.Call(AId: Int64; CONST ACmd: String; AArgs: TJSONObject;
+function TBridgeTestClient.Call(AId: Int64; const ACmd: String; AArgs: TJSONObject;
                                 ATimeoutMs: Cardinal): TJSONObject;
-VAR
+var
   Req: TJSONObject;
   Frame: String;
   Parsed: TJSONValue;
-BEGIN
-  Result := NIL;
+begin
+  Result := nil;
   Req := TJSONObject.Create;
-  TRY
+  try
     Req.AddPair('id', TJSONNumber.Create(AId));
     Req.AddPair('cmd', ACmd);
-    if AArgs <> NIL then
+    if AArgs <> nil then
       Req.AddPair('args', AArgs)
     else
       Req.AddPair('args', TJSONObject.Create);
     if ATimeoutMs > 0 then
       Req.AddPair('timeoutMs', TJSONNumber.Create(ATimeoutMs));
     TBridgeWire.WriteFrame(FStream, Req.ToJSON);
-  FINALLY
+  finally
     Req.Free;
-  END;
+  end;
 
-  if not TBridgeWire.TryReadFrame(FStream, Frame) then EXIT;
+  if not TBridgeWire.TryReadFrame(FStream, Frame) then Exit;
   Parsed := TJSONObject.ParseJSONValue(Frame);
   if Parsed IS TJSONObject then
     Result := TJSONObject(Parsed)
   else
     Parsed.Free;
-END;
+end;
 
 
-DESTRUCTOR TBridgeTestClient.Destroy;
-BEGIN
+destructor TBridgeTestClient.Destroy;
+begin
   FreeAndNil(FStream);
   if FPipe <> INVALID_HANDLE_VALUE then
     CloseHandle(FPipe);
   inherited;
-END;
+end;
 
 
-FUNCTION GetOkResult(ARoot: TJSONObject): TJSONObject;
-VAR
+function GetOkResult(ARoot: TJSONObject): TJSONObject;
+var
   V: TJSONValue;
-BEGIN
-  Result := NIL;
-  if ARoot = NIL then EXIT;
+begin
+  Result := nil;
+  if ARoot = nil then Exit;
   V := ARoot.GetValue('ok');
-  if not (V IS TJSONBool) or not TJSONBool(V).AsBoolean then EXIT;
+  if not (V IS TJSONBool) or not TJSONBool(V).AsBoolean then Exit;
   V := ARoot.GetValue('result');
   if V IS TJSONObject then
     Result := TJSONObject(V);
-END;
+end;
 
 
-FUNCTION GetErrorCode(ARoot: TJSONObject): Integer;
-VAR
+function GetErrorCode(ARoot: TJSONObject): Integer;
+var
   V: TJSONValue;
   Err: TJSONObject;
-BEGIN
+begin
   Result := 0;
-  if ARoot = NIL then EXIT;
+  if ARoot = nil then Exit;
   V := ARoot.GetValue('ok');
-  if (V IS TJSONBool) and TJSONBool(V).AsBoolean then EXIT;
+  if (V IS TJSONBool) and TJSONBool(V).AsBoolean then Exit;
   V := ARoot.GetValue('error');
-  if not (V IS TJSONObject) then EXIT;
+  if not (V IS TJSONObject) then Exit;
   Err := TJSONObject(V);
   V := Err.GetValue('code');
   if V IS TJSONNumber then
     Result := TJSONNumber(V).AsInt;
-END;
+end;
 
 
-FUNCTION GetErrorData(ARoot: TJSONObject): TJSONObject;
-VAR
+function GetErrorData(ARoot: TJSONObject): TJSONObject;
+var
   V: TJSONValue;
   Err: TJSONObject;
-BEGIN
-  Result := NIL;
-  if ARoot = NIL then EXIT;
+begin
+  Result := nil;
+  if ARoot = nil then Exit;
   V := ARoot.GetValue('ok');
-  if (V IS TJSONBool) and TJSONBool(V).AsBoolean then EXIT;
+  if (V IS TJSONBool) and TJSONBool(V).AsBoolean then Exit;
   V := ARoot.GetValue('error');
-  if not (V IS TJSONObject) then EXIT;
+  if not (V IS TJSONObject) then Exit;
   Err := TJSONObject(V);
   V := Err.GetValue('data');
   if V IS TJSONObject then
     Result := TJSONObject(V);
-END;
+end;
 
 
-END.
+end.

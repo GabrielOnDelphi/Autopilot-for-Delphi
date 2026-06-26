@@ -1,90 +1,89 @@
-UNIT Tests.Bridge.NativeDialogs;
+﻿unit Tests.Bridge.NativeDialogs;
 
-{=====================================================
-   DUnitX tests for the native-dialog escape hatch (Autopilot.Bridge.NativeDialogs).
+{=============================================================================================================
+   2026.06
+   www.GabrielMoraru.com
+--------------------------------------------------------------------------------------------------------------
+   - DUnitX tests for the native-dialog escape hatch (Autopilot.Bridge.NativeDialogs).
+   - Raises a real Win32 MessageBox on a background thread, then enumerates and dismisses it by role from the test thread — the harder cross-thread path.
+   - A cancel-fallback in the finally block guarantees the MessageBox is always closed, so a failing test cannot hang the suite on TThread.WaitFor.
+=============================================================================================================}
 
-   A native MessageBox has no TComponent, so the path-based bridge tools cannot see it.
-   This fixture raises a REAL MessageBox on a background thread (which blocks that thread
-   in its own modal loop), then from the main test thread enumerates the dialog and
-   dispatches one of its buttons by role — exactly what HandleDismissDialog does on the
-   bridge's main thread, but here the click is cross-thread, which is the harder path.
+interface
 
-   Safety: a cancel-fallback in the finally block guarantees the MessageBox is closed even
-   if the assertion path fails, so a regression cannot hang the whole suite on TThread.WaitFor.
-=====================================================}
-
-INTERFACE
-
-USES
+uses
   DUnitX.TestFramework;
 
-TYPE
+type
   [TestFixture]
-  TNativeDialogTests = CLASS
-  PUBLIC
-    [Test] PROCEDURE Test_EnumerateFindsMessageBox_AndDismissByRole;
-    [Test] PROCEDURE Test_NoDialogUp_ClickReturnsNoDialog;
-  END;
+  TNativeDialogTests = class
+  public
+    [Test] procedure Test_EnumerateFindsMessageBox_AndDismissByRole;
+    [Test] procedure Test_DismissByRole_RoleBeatsCaptionSubstring;
+    [Test] procedure Test_NoDialogUp_ClickReturnsNoDialog;
+  end;
 
 
-IMPLEMENTATION
+implementation
 
-USES
+uses
   Winapi.Windows,
   System.SysUtils, System.Classes, System.SyncObjs, System.JSON, System.Generics.Collections,
   Autopilot.Bridge.NativeDialogs;
 
-TYPE
+type
   // Owns a MessageBox on its own thread. Done is set after the box returns, so the test
   // can wait on it WITHOUT a blocking TThread.WaitFor (which would hang if the box stayed up).
-  TMsgBoxThread = CLASS(TThread)
-  PUBLIC
+  TMsgBoxThread = class(TThread)
+  public
     Caption : String;
+    Flags   : Cardinal;
     Returned: Integer;
     Done    : TEvent;
-    CONSTRUCTOR Create(CONST ACaption: String);
-    DESTRUCTOR Destroy; OVERRIDE;
-    PROCEDURE Execute; OVERRIDE;
-  END;
+    constructor Create(const ACaption: String; AFlags: Cardinal);
+    destructor Destroy; override;
+    procedure Execute; override;
+  end;
 
 
-CONSTRUCTOR TMsgBoxThread.Create(CONST ACaption: String);
-BEGIN
+constructor TMsgBoxThread.Create(const ACaption: String; AFlags: Cardinal);
+begin
   Caption  := ACaption;
+  Flags    := AFlags;
   Returned := 0;
-  Done     := TEvent.Create(NIL, TRUE, FALSE, '');
-  inherited Create(FALSE);   // FreeOnTerminate stays FALSE — the test controls lifetime
-END;
+  Done     := TEvent.Create(nil, True, False, '');
+  inherited Create(False);   // FreeOnTerminate stays False — the test controls lifetime
+end;
 
 
-DESTRUCTOR TMsgBoxThread.Destroy;
-BEGIN
+destructor TMsgBoxThread.Destroy;
+begin
   inherited;                 // TThread.Destroy: Terminate + WaitFor (safe only once Done is signalled)
   FreeAndNil(Done);
-END;
+end;
 
 
-PROCEDURE TMsgBoxThread.Execute;
-BEGIN
-  Returned := MessageBox(0, 'A native modal dialog from the test.', PChar(Caption), MB_YESNOCANCEL or MB_ICONQUESTION);
+procedure TMsgBoxThread.Execute;
+begin
+  Returned := MessageBox(0, 'A native modal dialog from the test.', PChar(Caption), Flags);
   Done.SetEvent;
-END;
+end;
 
 
 // Find the enumerated dialog whose caption matches, returning its hwnd (0 if absent) and
 // how many buttons it reported.
-FUNCTION FindDialogByCaption(CONST ACaption: String; OUT AButtonCount: Integer): NativeUInt;
-VAR
+function FindDialogByCaption(const ACaption: String; out AButtonCount: Integer): NativeUInt;
+var
   NoExclude: TArray<NativeUInt>;
   Arr, Btns: TJSONArray;
   i: Integer;
   Node: TJSONObject;
-BEGIN
+begin
   Result := 0;
   AButtonCount := 0;
-  NoExclude := NIL;
+  NoExclude := nil;
   Arr := EnumerateNativeDialogs(NoExclude);
-  TRY
+  try
     for i := 0 to Arr.Count - 1 do
     begin
       Node := Arr.Items[i] AS TJSONObject;
@@ -92,20 +91,20 @@ BEGIN
       begin
         Result := NativeUInt(Node.GetValue<Int64>('hwnd'));
         Btns := Node.GetValue('buttons') AS TJSONArray;
-        if Btns <> NIL then AButtonCount := Btns.Count;
-        EXIT;
+        if Btns <> nil then AButtonCount := Btns.Count;
+        Exit;
       end;
     end;
-  FINALLY
+  finally
     Arr.Free;
-  END;
-END;
+  end;
+end;
 
 
-PROCEDURE TNativeDialogTests.Test_EnumerateFindsMessageBox_AndDismissByRole;
-CONST
+procedure TNativeDialogTests.Test_EnumerateFindsMessageBox_AndDismissByRole;
+const
   UniqueCap = 'AP_TEST_DIALOG_7731';
-VAR
+var
   Th: TMsgBoxThread;
   Dlg, Resolved: NativeUInt;
   BtnCount, ClickedId: Integer;
@@ -113,10 +112,10 @@ VAR
   Deadline: UInt64;
   Clicked: Boolean;
   Junk: TArray<NativeUInt>;
-BEGIN
-  Junk := NIL;
-  Th := TMsgBoxThread.Create(UniqueCap);
-  TRY
+begin
+  Junk := nil;
+  Th := TMsgBoxThread.Create(UniqueCap, MB_YESNOCANCEL or MB_ICONQUESTION);
+  try
     { # Wait for the box to appear }
     Dlg := 0; BtnCount := 0;
     Deadline := TThread.GetTickCount64 + 5000;
@@ -136,7 +135,7 @@ BEGIN
     { # The box must have returned IDNO }
     Assert.IsTrue(Th.Done.WaitFor(3000) = wrSignaled, 'MessageBox did not close after dismiss');
     Assert.AreEqual(IDNO, Th.Returned, 'MessageBox returned the wrong button');
-  FINALLY
+  finally
     // If anything above failed with the box still up, force it closed so Th.Free's WaitFor
     // cannot hang the runner.
     if Th.Done.WaitFor(0) <> wrSignaled then
@@ -144,28 +143,85 @@ BEGIN
       ClickNativeDialogButton(Junk, 0, 'cancel', ClickedId, ClickedCap, Resolved, Reason);
       Th.Done.WaitFor(2000);
     end;
-    Th.Free;
-  END;
-END;
+    // Th.Free -> TThread.Destroy does an UNTIMED Terminate+WaitFor; Execute is parked in a
+    // blocking MessageBox that ignores Terminated, so Free only returns once the box is gone.
+    // If the cancel fallback ALSO failed to close it, Done is still unsignalled here -> Free
+    // would hang the whole runner. Leak the parked thread instead (it dies with the process)
+    // and fail loudly: a leaked thread in an already-failing test beats a frozen suite.
+    if Th.Done.WaitFor(0) = wrSignaled
+    then Th.Free
+    else Assert.Fail('MessageBox could not be dismissed; thread left parked to avoid an untimed WaitFor hang');
+  end;
+end;
 
 
-PROCEDURE TNativeDialogTests.Test_NoDialogUp_ClickReturnsNoDialog;
-VAR
+// Selector precedence: a role keyword must beat a loose caption substring.
+// Abort/Retry/Ignore has no 'No' button, but 'Ignore' contains the substring 'no'. With the
+// substring pass ahead of the role pass, selector 'no' wrongly resolves to IDIGNORE; with role
+// ahead of substring it correctly resolves to IDNO (no IDNO control exists, so it falls through
+// to id-dispatch, MatchBtn=0, and the box stays up — exactly what we assert and then clean up).
+procedure TNativeDialogTests.Test_DismissByRole_RoleBeatsCaptionSubstring;
+const
+  UniqueCap = 'AP_TEST_DIALOG_ROLE_5520';
+var
+  Th: TMsgBoxThread;
+  Dlg, Resolved: NativeUInt;
+  BtnCount, ClickedId: Integer;
+  ClickedCap, Reason: String;
+  Deadline: UInt64;
+  Clicked: Boolean;
+  Junk: TArray<NativeUInt>;
+begin
+  Junk := nil;
+  Th := TMsgBoxThread.Create(UniqueCap, MB_ABORTRETRYIGNORE or MB_ICONERROR);
+  try
+    { # Wait for the box to appear }
+    Dlg := 0; BtnCount := 0;
+    Deadline := TThread.GetTickCount64 + 5000;
+    while (Dlg = 0) and (TThread.GetTickCount64 < Deadline) do
+    begin
+      Dlg := FindDialogByCaption(UniqueCap, BtnCount);
+      if Dlg = 0 then TThread.Sleep(50);
+    end;
+    Assert.IsTrue(Dlg <> 0, 'native MessageBox was not found by EnumerateNativeDialogs');
+
+    { # 'no' must resolve by role (IDNO), not by the 'Ig[no]re' substring (IDIGNORE) }
+    Clicked := ClickNativeDialogButton(Junk, Dlg, 'no', ClickedId, ClickedCap, Resolved, Reason);
+    Assert.IsTrue(Clicked, 'ClickNativeDialogButton returned false (' + Reason + ')');
+    Assert.AreEqual(IDNO, ClickedId, 'selector ''no'' resolved by caption substring (Ignore) instead of role IDNO');
+  finally
+    // IDNO has no control on this box, so the resolve above left it up; dismiss it via a real
+    // button (Abort). Under a regression the substring path already closed it via Ignore, so
+    // Done is signalled and this block is a no-op. Done-gated Free avoids an untimed WaitFor hang.
+    if Th.Done.WaitFor(0) <> wrSignaled then
+    begin
+      ClickNativeDialogButton(Junk, 0, 'abort', ClickedId, ClickedCap, Resolved, Reason);   // 0 = topmost (our box is the only dialog up)
+      Th.Done.WaitFor(2000);
+    end;
+    if Th.Done.WaitFor(0) = wrSignaled
+    then Th.Free
+    else Assert.Fail('MessageBox could not be dismissed; thread left parked to avoid an untimed WaitFor hang');
+  end;
+end;
+
+
+procedure TNativeDialogTests.Test_NoDialogUp_ClickReturnsNoDialog;
+var
   ClickedId: Integer;
   ClickedCap, Reason: String;
   Resolved: NativeUInt;
   NoExclude: TArray<NativeUInt>;
-BEGIN
-  NoExclude := NIL;
+begin
+  NoExclude := nil;
   // No native dialog is up in this fixture, so the topmost-dialog lookup finds nothing.
   Assert.IsFalse(ClickNativeDialogButton(NoExclude, 0, 'ok', ClickedId, ClickedCap, Resolved, Reason),
                  'click should fail when no dialog is up');
   Assert.AreEqual('no_dialog', Reason, 'expected reason no_dialog');
-END;
+end;
 
 
-INITIALIZATION
+initialization
   TDUnitX.RegisterTestFixture(TNativeDialogTests);
 
 
-END.
+end.

@@ -1,41 +1,32 @@
-UNIT Tests.Mcp.SocketClient;
+﻿unit Tests.Mcp.SocketClient;
 
-(*=====================================================
-   2026.06.04
-   DUnitX tests for the MCP-side adb socket client (Autopilot.Mcp.SocketClient).
+{=============================================================================================================
+   2026.06
+   www.GabrielMoraru.com
+--------------------------------------------------------------------------------------------------------------
+   - DUnitX tests for Autopilot.Mcp.SocketClient: PC-side proof using a synthetic TFakeBridgeListener that runs on a background thread and speaks the wire protocol (hello frame, request/response round-trip).
+   - Covers connect+handshake, response field inspection, and connect-refused timeout behaviour.
+   - No physical Android device needed. Stdlib + Winsock only.
+=============================================================================================================}
 
-   This is the PC-side Phase-A proof: it stands up a SYNTHETIC loopback TCP
-   listener that speaks the same wire protocol the Android bridge will (writes a
-   hello frame on accept, reads the request frame, writes a canned response),
-   then drives CallTargetSocket against it. No phone, no Phase-B Socket.pas body
-   — it verifies that the PC-side framing / handshake / round-trip is correct
-   TODAY, over a real socket.
+interface
 
-   The listener reuses TSocketStream (a plain TStream over a socket fd) to frame
-   its side with TBridgeWire. That is fine: we are testing the client's connect +
-   handshake + round-trip, and the listener is just a protocol-correct peer.
-
-   Stdlib + Winsock only.
-=====================================================*)
-
-INTERFACE
-
-USES
+uses
   DUnitX.TestFramework;
 
-TYPE
+type
   [TestFixture]
-  TSocketClientTests = CLASS
-  PUBLIC
-    [Test] PROCEDURE Test_RoundTrip_EchoesResponse;
-    [Test] PROCEDURE Test_Response_CarriesResultFields;
-    [Test] PROCEDURE Test_ConnectRefused_RaisesWithinTimeout;
-  END;
+  TSocketClientTests = class
+  public
+    [Test] procedure Test_RoundTrip_EchoesResponse;
+    [Test] procedure Test_Response_CarriesResultFields;
+    [Test] procedure Test_ConnectRefused_RaisesWithinTimeout;
+  end;
 
 
-IMPLEMENTATION
+implementation
 
-USES
+uses
   Winapi.Windows, Winapi.WinSock2,
   System.SysUtils, System.Classes, System.JSON, System.SyncObjs,
   Autopilot.Bridge.Core,
@@ -49,29 +40,29 @@ USES
 // response the test gave it → close. Runs on its own thread so the test thread
 // can drive CallTargetSocket synchronously. Picks an ephemeral port (bind :0)
 // and exposes it via Port once StartListening returns.
-TYPE
-  TFakeBridgeListener = CLASS(TThread)
-  STRICT PRIVATE
+type
+  TFakeBridgeListener = class(TThread)
+  strict private
     FListenSock : TSocket;
     FPort       : Word;
     FResponse   : String;     // canned response JSON written back to the client
     FReady      : TEvent;     // signalled once bound+listening (Port is valid)
     FSawRequest : String;     // the request frame the client sent (for assertions)
-  PROTECTED
-    PROCEDURE Execute; OVERRIDE;
-  PUBLIC
-    CONSTRUCTOR Create(CONST AResponseJson: String);
-    DESTRUCTOR Destroy; OVERRIDE;
-    PROCEDURE WaitUntilReady;
-    PROPERTY Port: Word READ FPort;
-    PROPERTY SawRequest: String READ FSawRequest;
-  END;
+  protected
+    procedure Execute; override;
+  public
+    constructor Create(const AResponseJson: String);
+    destructor Destroy; override;
+    procedure WaitUntilReady;
+    property Port: Word read FPort;
+    property SawRequest: String read FSawRequest;
+  end;
 
 
-CONSTRUCTOR TFakeBridgeListener.Create(CONST AResponseJson: String);
-VAR
+constructor TFakeBridgeListener.Create(const AResponseJson: String);
+var
   WsaData: TWSAData;
-BEGIN
+begin
   // The listener thread calls socket()/bind() directly, so Winsock must be up
   // BEFORE the thread starts — we can't rely on the client's WsaAcquire winning
   // the startup race. WSAStartup is itself ref-counted by Winsock, so this pairs
@@ -79,14 +70,14 @@ BEGIN
   if WSAStartup($0202, WsaData) <> 0 then
     raise Exception.CreateFmt('FakeBridgeListener: WSAStartup failed (code %d)', [WSAGetLastError]);
   FResponse := AResponseJson;
-  FReady    := TEvent.Create(NIL, TRUE, FALSE, '');   // manual-reset
+  FReady    := TEvent.Create(nil, True, False, '');   // manual-reset
   FListenSock := INVALID_SOCKET;
-  inherited Create(FALSE);   // start immediately
-END;
+  inherited Create(False);   // start immediately
+end;
 
 
-DESTRUCTOR TFakeBridgeListener.Destroy;
-BEGIN
+destructor TFakeBridgeListener.Destroy;
+begin
   if FListenSock <> INVALID_SOCKET then
   begin
     closesocket(FListenSock);
@@ -95,168 +86,168 @@ BEGIN
   inherited;     // joins the thread
   FReady.Free;
   WSACleanup;    // pairs with the WSAStartup in Create
-END;
+end;
 
 
-PROCEDURE TFakeBridgeListener.WaitUntilReady;
-BEGIN
+procedure TFakeBridgeListener.WaitUntilReady;
+begin
   if FReady.WaitFor(5000) <> wrSignaled then
     raise Exception.Create('FakeBridgeListener never became ready');
-END;
+end;
 
 
-PROCEDURE TFakeBridgeListener.Execute;
-VAR
+procedure TFakeBridgeListener.Execute;
+var
   Addr     : TSockAddrIn;
   AddrLen  : Integer;
   ConnSock : TSocket;
   Stream   : TSocketStream;
   Hello    : TJSONObject;
   ReqFrame : String;
-BEGIN
+begin
   FListenSock := socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-  if FListenSock = INVALID_SOCKET then EXIT;
+  if FListenSock = INVALID_SOCKET then Exit;
 
   FillChar(Addr, SizeOf(Addr), 0);
   Addr.sin_family      := AF_INET;
   Addr.sin_port        := 0;                       // ephemeral — kernel picks
   Addr.sin_addr.S_addr := htonl(INADDR_LOOPBACK);
-  if bind(FListenSock, TSockAddr(Addr), SizeOf(Addr)) = SOCKET_ERROR then EXIT;
-  if listen(FListenSock, 1) = SOCKET_ERROR then EXIT;
+  if bind(FListenSock, TSockAddr(Addr), SizeOf(Addr)) = SOCKET_ERROR then Exit;
+  if listen(FListenSock, 1) = SOCKET_ERROR then Exit;
 
   // Read back the chosen port.
   AddrLen := SizeOf(Addr);
-  if getsockname(FListenSock, TSockAddr(Addr), AddrLen) = SOCKET_ERROR then EXIT;
+  if getsockname(FListenSock, TSockAddr(Addr), AddrLen) = SOCKET_ERROR then Exit;
   FPort := ntohs(Addr.sin_port);
 
   FReady.SetEvent;   // Port valid — the test may connect now
 
-  ConnSock := accept(FListenSock, NIL, NIL);
-  if ConnSock = INVALID_SOCKET then EXIT;
-  TRY
+  ConnSock := accept(FListenSock, nil, nil);
+  if ConnSock = INVALID_SOCKET then Exit;
+  try
     Stream := TSocketStream.Create(ConnSock);
-    TRY
+    try
       // 1. Bridge speaks first: hello frame.
       Hello := BuildHelloJson('Autopilot.FakeBridge.exe', GetCurrentProcessId);
-      TRY
+      try
         TBridgeWire.WriteFrame(Stream, Hello.ToJSON);
-      FINALLY
+      finally
         Hello.Free;
-      END;
+      end;
 
       // 2. Client replies helloAck, then sends its request. We read both frames;
       //    keep the request frame for the test to assert against.
-      if not TBridgeWire.TryReadFrame(Stream, ReqFrame) then EXIT;   // helloAck
-      if not TBridgeWire.TryReadFrame(Stream, FSawRequest) then EXIT; // the command
+      if not TBridgeWire.TryReadFrame(Stream, ReqFrame) then Exit;   // helloAck
+      if not TBridgeWire.TryReadFrame(Stream, FSawRequest) then Exit; // the command
 
       // 3. Write the canned response.
       TBridgeWire.WriteFrame(Stream, FResponse);
-    FINALLY
+    finally
       Stream.Free;
-    END;
-  FINALLY
+    end;
+  finally
     closesocket(ConnSock);
-  END;
-END;
+  end;
+end;
 
 
 { # Tests }
 
-PROCEDURE TSocketClientTests.Test_RoundTrip_EchoesResponse;
-VAR
+procedure TSocketClientTests.Test_RoundTrip_EchoesResponse;
+var
   Listener : TFakeBridgeListener;
   Req      : TJSONObject;
   Resp     : TJSONObject;
-BEGIN
+begin
   Listener := TFakeBridgeListener.Create('{"id":1,"ok":true,"result":{"pong":true}}');
-  TRY
+  try
     Listener.WaitUntilReady;
 
     Req := TJSONObject.Create;
     Req.AddPair('id', TJSONNumber.Create(1));
     Req.AddPair('cmd', 'ping');
-    TRY
+    try
       Resp := CallTargetSocket(Listener.Port, Req, 3000);
-      TRY
+      try
         Assert.IsNotNull(Resp, 'No response object');
         Assert.AreEqual(Int64(1), (Resp.GetValue('id') AS TJSONNumber).AsInt64, 'id mismatch');
         Assert.IsTrue((Resp.GetValue('ok') AS TJSONBool).AsBoolean, 'ok should be true');
-      FINALLY
+      finally
         Resp.Free;
-      END;
-    FINALLY
+      end;
+    finally
       Req.Free;
-    END;
+    end;
 
     // The client must have sent our exact command through.
     Assert.IsTrue(Listener.SawRequest.Contains('"cmd":"ping"'), 'listener did not see the request: ' + Listener.SawRequest);
-  FINALLY
+  finally
     Listener.Free;
-  END;
-END;
+  end;
+end;
 
 
-PROCEDURE TSocketClientTests.Test_Response_CarriesResultFields;
-VAR
+procedure TSocketClientTests.Test_Response_CarriesResultFields;
+var
   Listener : TFakeBridgeListener;
   Req      : TJSONObject;
   Resp     : TJSONObject;
   ResObj   : TJSONObject;
-BEGIN
+begin
   Listener := TFakeBridgeListener.Create('{"id":7,"ok":true,"result":{"value":"hello","n":42}}');
-  TRY
+  try
     Listener.WaitUntilReady;
     Req := TJSONObject.Create;
     Req.AddPair('id', TJSONNumber.Create(7));
     Req.AddPair('cmd', 'read_property');
-    TRY
+    try
       Resp := CallTargetSocket(Listener.Port, Req, 3000);
-      TRY
+      try
         ResObj := Resp.GetValue('result') AS TJSONObject;
         Assert.IsNotNull(ResObj, 'no result object');
         Assert.AreEqual('hello', (ResObj.GetValue('value') AS TJSONString).Value, 'value field mismatch');
         Assert.AreEqual(Int64(42), (ResObj.GetValue('n') AS TJSONNumber).AsInt64, 'n field mismatch');
-      FINALLY
+      finally
         Resp.Free;
-      END;
-    FINALLY
+      end;
+    finally
       Req.Free;
-    END;
-  FINALLY
+    end;
+  finally
     Listener.Free;
-  END;
-END;
+  end;
+end;
 
 
-PROCEDURE TSocketClientTests.Test_ConnectRefused_RaisesWithinTimeout;
-VAR
+procedure TSocketClientTests.Test_ConnectRefused_RaisesWithinTimeout;
+var
   Req     : TJSONObject;
   Raised  : Boolean;
   T0      : UInt64;
-BEGIN
+begin
   // Port 1 on loopback has nothing listening → connect must fail, and
   // CallTargetSocket must raise within roughly the timeout, not hang forever.
   Req := TJSONObject.Create;
   Req.AddPair('id', TJSONNumber.Create(1));
   Req.AddPair('cmd', 'ping');
-  Raised := FALSE;
+  Raised := False;
   T0 := GetTickCount64;
-  TRY
-    TRY
+  try
+    try
       CallTargetSocket(1, Req, 500).Free;
-    EXCEPT
-      ON E: Exception DO
-        Raised := TRUE;
-    END;
-  FINALLY
+    except
+      on E: Exception do
+        Raised := True;
+    end;
+  finally
     Req.Free;
-  END;
+  end;
   Assert.IsTrue(Raised, 'expected a transport exception on connect-refused');
   Assert.IsTrue(GetTickCount64 - T0 < 5000, 'connect-refused took too long — timeout not honoured');
-END;
+end;
 
 
-INITIALIZATION
+initialization
   TDUnitX.RegisterTestFixture(TSocketClientTests);
 
-END.
+end.

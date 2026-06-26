@@ -1,115 +1,108 @@
-UNIT Bridge.Tests;
+﻿unit Bridge.Tests;
 
-{=====================================================
-   DUnitX tests for the Autopilot bridge.
+{=============================================================================================================
+   2026.06
+   www.GabrielMoraru.com
+--------------------------------------------------------------------------------------------------------------
+   - DUnitX tests for the Autopilot VCL bridge: handshake, list_tree, click, get_text, set_text, set_checked, set_property, and dismiss_dialog.
+   - Each test builds a synthetic TFixtureForm programmatically, starts the bridge on a per-test pipe name, connects via TBridgeTestClient, asserts the response, then tears down.
+   - The bridge's main-thread dispatcher runs via TThread.Queue; RunOnWorkerAndPump keeps the main thread pumping messages while the worker drives the pipe.
+=============================================================================================================}
 
-   The bridge does not require a visible form — it walks Screen.Forms[]
-   which contains any TCustomForm constructed during the test.
+interface
 
-   Each test:
-     1. Programmatically builds a form with controls.
-     2. Starts the bridge on a synthetic pipe name (PID-independent for repeatable tests).
-     3. Connects the test client.
-     4. Exercises one command.
-     5. Asserts the response, then tears everything down.
-
-   The bridge's main-thread dispatcher is invoked via TThread.Queue, which DUnitX
-   drains because the test runner pumps the message queue around each test.
-   However, the client runs on the test thread (which IS the main thread when
-   DUnitX runs from a VCL host). To avoid blocking the main thread on a synchronous
-   Call(), each test spins up the client on a worker thread.
-=====================================================}
-
-INTERFACE
-
-USES
+uses
   DUnitX.TestFramework;
 
-TYPE
+type
   [TestFixture]
-  TBridgeTests = CLASS
-  PRIVATE
+  TBridgeTests = class
+  private
     FPipeName: String;
-    PROCEDURE EnsureFreshPipeName;
-  PUBLIC
-    [Setup]    PROCEDURE Setup;
-    [TearDown] PROCEDURE TearDown;
+    procedure EnsureFreshPipeName;
+  public
+    [Setup]    procedure Setup;
+    [TearDown] procedure TearDown;
+    /// Runs once after the whole fixture. Frees the shared fixture form created
+    /// lazily in Setup, so it doesn't leak at process exit.
+    [TearDownFixture] procedure TearDownFixture;
 
-    [Test] PROCEDURE Test_HandshakeSucceeds;
-    [Test] PROCEDURE Test_ListTree_FindsKnownControls;
-    [Test] PROCEDURE Test_GetText_OfLabel;
-    [Test] PROCEDURE Test_Click_FiresOnClick;
-    [Test] PROCEDURE Test_Click_DisabledControlReturnsError;
-    [Test] PROCEDURE Test_Click_CountFiresNTimes;
-    [Test] PROCEDURE Test_Click_CountZeroReturnsError;
-    [Test] PROCEDURE Test_Click_CountAboveCapReturnsError;
-    [Test] PROCEDURE Test_Click_CountStopsWhenDisabledMidLoop;
-    [Test] PROCEDURE Test_Click_CountFiresOnClickPathNTimes;
-    [Test] PROCEDURE Test_Click_MainThreadBlockedReturnsTimeoutError;
-    [Test] PROCEDURE Test_GetText_NotFoundReturnsError;
-    [Test] PROCEDURE Test_UnknownCmdReturnsError;
-    [Test] PROCEDURE Test_SetText_UpdatesEditValue;
-    [Test] PROCEDURE Test_SetText_DisabledControlReturnsError;
-    [Test] PROCEDURE Test_SetChecked_UpdatesCheckbox;
-    [Test] PROCEDURE Test_SetChecked_DisabledControlReturnsError;
-    [Test] PROCEDURE Test_ListTree_SyntheticIdForUnnamedComponent;
-    [Test] PROCEDURE Test_Click_BySyntheticIdFiresOnClick;
-    [Test] PROCEDURE Test_ListTree_RecursesIntoFrames;
-    [Test] PROCEDURE Test_Click_FrameChildByFlatPathFiresOnClick;
-    [Test] PROCEDURE Test_Click_FrameChildByAnchoredPathFiresOnClick;
-    [Test] PROCEDURE Test_Click_DesignTimeStyleFrameChildFiresOnClick;
-    [Test] PROCEDURE Test_FindByPath_FormItselfByOneSegmentPath;
-    [Test] PROCEDURE Test_SetProperty_WritesString;
-    [Test] PROCEDURE Test_SetProperty_WritesInteger;
-    [Test] PROCEDURE Test_SetProperty_WritesBoolean;
-    [Test] PROCEDURE Test_SetProperty_WritesEnumByIdentifier;
-    [Test] PROCEDURE Test_SetProperty_WritesFloat;
-    [Test] PROCEDURE Test_SetProperty_UnknownPropertyReturnsListOfWritables;
-    [Test] PROCEDURE Test_SetProperty_TypeMismatchReturnsUnsupportedAction;
-    [Test] PROCEDURE Test_SetProperty_DisabledControlReturnsError;
-    [Test] PROCEDURE Test_SetProperty_WritesSetByBracketLiteral;
-    [Test] PROCEDURE Test_SetProperty_WritesSetByBareIdentifierList;
-    [Test] PROCEDURE Test_SetProperty_WritesEmptySet;
-    [Test] PROCEDURE Test_SetProperty_InvalidSetIdentifierReturnsUnsupportedAction;
-    [Test] PROCEDURE Test_SetProperty_AvailablePropertiesIncludeCurrentValue;
-    [Test] PROCEDURE Test_SetProperty_WritesNestedClassMemberLinesText;
-    [Test] PROCEDURE Test_SetProperty_WritesNestedClassMemberFontSize;
-    [Test] PROCEDURE Test_SetProperty_DottedFontWriteFlipsParentFontFalse;
-    [Test] PROCEDURE Test_SetProperty_DottedUnknownInnerListsInnerWritables;
-    [Test] PROCEDURE Test_SetProperty_DottedOnNonClassOuterReturnsUnsupportedAction;
-    [Test] PROCEDURE Test_SetProperty_DottedTwoLevelsReturnsUnsupportedAction;
-    [Test] PROCEDURE Test_SetProperty_DottedOnDisabledControlReturnsControlDisabled;
-    [Test] PROCEDURE Test_SetProperty_AlphaColorByHexWithAlpha;
-    [Test] PROCEDURE Test_SetProperty_AlphaColorByHexShortFormAssumesFullAlpha;
-    [Test] PROCEDURE Test_SetProperty_AlphaColorByClaIdentifier;
-    [Test] PROCEDURE Test_SetProperty_AlphaColorInvalidValueReturnsUnsupportedAction;
-    [Test] PROCEDURE Test_SetProperty_AlphaColorCurrentValueRendersAsHash;
-    [Test] PROCEDURE Test_SetProperty_AlphaColorAvailablePropertiesKindIsAlphacolor;
-    [Test] PROCEDURE Test_SetProperty_ColorByClIdentifier;
-    [Test] PROCEDURE Test_SetProperty_ColorByWebHex;
-    [Test] PROCEDURE Test_SetProperty_ColorInvalidValueReturnsUnsupportedAction;
-    [Test] PROCEDURE Test_SetProperty_ColorCurrentValueRendersAsName;
-    [Test] PROCEDURE Test_SetProperty_ColorAvailablePropertiesKindIsColor;
+    [Test] procedure Test_HandshakeSucceeds;
+    [Test] procedure Test_ListTree_FindsKnownControls;
+    [Test] procedure Test_GetText_OfLabel;
+    [Test] procedure Test_Click_FiresOnClick;
+    [Test] procedure Test_Click_DisabledControlReturnsError;
+    [Test] procedure Test_Click_CountFiresNTimes;
+    [Test] procedure Test_Click_CountZeroReturnsError;
+    [Test] procedure Test_Click_CountAboveCapReturnsError;
+    [Test] procedure Test_DismissDialog_FractionalHwndReturnsInvalidRequest;
+    [Test] procedure Test_Click_CountStopsWhenDisabledMidLoop;
+    [Test] procedure Test_Click_CountFiresOnClickPathNTimes;
+    [Test] procedure Test_Click_MainThreadBlockedReturnsTimeoutError;
+    [Test] procedure Test_GetText_NotFoundReturnsError;
+    [Test] procedure Test_UnknownCmdReturnsError;
+    [Test] procedure Test_SetText_UpdatesEditValue;
+    [Test] procedure Test_SetText_DisabledControlReturnsError;
+    [Test] procedure Test_SetChecked_UpdatesCheckbox;
+    [Test] procedure Test_SetChecked_DisabledControlReturnsError;
+    [Test] procedure Test_ListTree_SyntheticIdForUnnamedComponent;
+    [Test] procedure Test_Click_BySyntheticIdFiresOnClick;
+    [Test] procedure Test_ListTree_RecursesIntoFrames;
+    [Test] procedure Test_Click_FrameChildByFlatPathFiresOnClick;
+    [Test] procedure Test_Click_FrameChildByAnchoredPathFiresOnClick;
+    [Test] procedure Test_Click_DesignTimeStyleFrameChildFiresOnClick;
+    [Test] procedure Test_FindByPath_FormItselfByOneSegmentPath;
+    [Test] procedure Test_SetProperty_WritesString;
+    [Test] procedure Test_SetProperty_WritesInteger;
+    [Test] procedure Test_SetProperty_WritesBoolean;
+    [Test] procedure Test_SetProperty_WritesEnumByIdentifier;
+    [Test] procedure Test_SetProperty_WritesFloat;
+    [Test] procedure Test_SetProperty_UnknownPropertyReturnsListOfWritables;
+    [Test] procedure Test_SetProperty_TypeMismatchReturnsUnsupportedAction;
+    [Test] procedure Test_SetProperty_DisabledControlReturnsError;
+    [Test] procedure Test_SetProperty_WritesSetByBracketLiteral;
+    [Test] procedure Test_SetProperty_WritesSetByBareIdentifierList;
+    [Test] procedure Test_SetProperty_WritesEmptySet;
+    [Test] procedure Test_SetProperty_InvalidSetIdentifierReturnsUnsupportedAction;
+    [Test] procedure Test_SetProperty_AvailablePropertiesIncludeCurrentValue;
+    [Test] procedure Test_SetProperty_WritesNestedClassMemberLinesText;
+    [Test] procedure Test_SetProperty_WritesNestedClassMemberFontSize;
+    [Test] procedure Test_SetProperty_DottedFontWriteFlipsParentFontFalse;
+    [Test] procedure Test_SetProperty_DottedUnknownInnerListsInnerWritables;
+    [Test] procedure Test_SetProperty_DottedOnNonClassOuterReturnsUnsupportedAction;
+    [Test] procedure Test_SetProperty_DottedTwoLevelsReturnsUnsupportedAction;
+    [Test] procedure Test_SetProperty_DottedOnDisabledControlReturnsControlDisabled;
+    [Test] procedure Test_SetProperty_AlphaColorByHexWithAlpha;
+    [Test] procedure Test_SetProperty_AlphaColorByHexShortFormAssumesFullAlpha;
+    [Test] procedure Test_SetProperty_AlphaColorByClaIdentifier;
+    [Test] procedure Test_SetProperty_AlphaColorInvalidValueReturnsUnsupportedAction;
+    [Test] procedure Test_SetProperty_AlphaColorCurrentValueRendersAsHash;
+    [Test] procedure Test_SetProperty_AlphaColorAvailablePropertiesKindIsAlphacolor;
+    [Test] procedure Test_SetProperty_ColorByClIdentifier;
+    [Test] procedure Test_SetProperty_ColorByWebHex;
+    [Test] procedure Test_SetProperty_ColorInvalidValueReturnsUnsupportedAction;
+    [Test] procedure Test_SetProperty_ColorCurrentValueRendersAsName;
+    [Test] procedure Test_SetProperty_ColorAvailablePropertiesKindIsColor;
     // Write-side elision: skip Prop.SetValue when the new value equals the
     // live value, so OnChange doesn't fire spuriously. Response carries
     // 'elided: true|false' to let the AI know whether the setter ran.
-    [Test] PROCEDURE Test_SetProperty_ElisionStringEqualReturnsElidedAndSkipsOnChange;
-    [Test] PROCEDURE Test_SetProperty_ElisionStringDifferentFiresOnChangeAndReportsElidedFalse;
-    [Test] PROCEDURE Test_SetProperty_ElisionIntegerEqualReturnsElided;
-    [Test] PROCEDURE Test_SetProperty_ElisionBooleanEqualReturnsElided;
-    [Test] PROCEDURE Test_SetProperty_ElisionFloatEqualReturnsElided;
-    [Test] PROCEDURE Test_SetProperty_ElisionSetEqualReturnsElided;
-    [Test] PROCEDURE Test_SetProperty_ElisionEnumEqualReturnsElided;
-    [Test] PROCEDURE Test_SetProperty_ElisionAlphaColorEqualReturnsElided;
-    [Test] PROCEDURE Test_SetProperty_ElisionColorEqualReturnsElided;
-    [Test] PROCEDURE Test_SetProperty_ElisionDottedFontSizeEqualReturnsElided;
-    [Test] PROCEDURE Test_SetProperty_SuccessResponseAlwaysCarriesElidedField;
-  END;
+    [Test] procedure Test_SetProperty_ElisionStringEqualReturnsElidedAndSkipsOnChange;
+    [Test] procedure Test_SetProperty_ElisionStringDifferentFiresOnChangeAndReportsElidedFalse;
+    [Test] procedure Test_SetProperty_ElisionIntegerEqualReturnsElided;
+    [Test] procedure Test_SetProperty_ElisionBooleanEqualReturnsElided;
+    [Test] procedure Test_SetProperty_ElisionFloatEqualReturnsElided;
+    [Test] procedure Test_SetProperty_ElisionSetEqualReturnsElided;
+    [Test] procedure Test_SetProperty_ElisionEnumEqualReturnsElided;
+    [Test] procedure Test_SetProperty_ElisionAlphaColorEqualReturnsElided;
+    [Test] procedure Test_SetProperty_ElisionColorEqualReturnsElided;
+    [Test] procedure Test_SetProperty_ElisionDottedFontSizeEqualReturnsElided;
+    [Test] procedure Test_SetProperty_SuccessResponseAlwaysCarriesElidedField;
+  end;
 
 
-IMPLEMENTATION
+implementation
 
-USES
+uses
   Winapi.Windows,
   System.SysUtils, System.Classes, System.SyncObjs, System.JSON,
   System.Generics.Collections, System.UITypes, System.UIConsts,
@@ -119,16 +112,16 @@ USES
   Bridge.TestClient;
 
 
-TYPE
+type
   // Self-contained enum + set type for the set_property tkSet tests. Lives at unit
   // scope so RTTI emits the type info that StringToSet/SetToString need (sets nested
   // inside a class don't always get TypeInfo emitted).
   TFixtureColor = (fcRed, fcGreen, fcBlue, fcYellow);
-  TFixtureColors = SET OF TFixtureColor;
+  TFixtureColors = set of TFixtureColor;
 
   // A test fixture form with known controls. Built programmatically so DFM-less tests work.
-  TFixtureForm = CLASS(TForm)
-  PRIVATE
+  TFixtureForm = class(TForm)
+  private
     // Backing fields for set_property tests. Published below as writable
     // properties so RTTI can find them; TForm itself has no convenient writable
     // Float / Set / TStrings.
@@ -137,23 +130,23 @@ TYPE
     FMyLines  : TStrings;            // TStringList behind a TStrings published surface.
     FMyAlpha  : TAlphaColor;
     FMyColor  : TColor;
-    PROCEDURE SetMyLines(AValue: TStrings);
-  PUBLISHED
-    PROPERTY FloatProp:  Single         READ FFloatProp WRITE FFloatProp;
-    PROPERTY MySetProp:  TFixtureColors READ FMySetProp WRITE FMySetProp;
+    procedure SetMyLines(AValue: TStrings);
+  published
+    property FloatProp:  Single         read FFloatProp write FFloatProp;
+    property MySetProp:  TFixtureColors read FMySetProp write FMySetProp;
     // For dotted-propName tests (MyLines.Text via set_property). TStrings is a
     // tkClass property — same RTTI shape as TMemo.Lines, but backed by a plain
     // TStringList so it works without a window handle.
-    PROPERTY MyLines:    TStrings       READ FMyLines  WRITE SetMyLines;
+    property MyLines:    TStrings       read FMyLines  write SetMyLines;
     // For TAlphaColor coercion tests. TAlphaColor lives in System.UITypes (RTL,
     // not FMX), so the test target is framework-agnostic — only the RTTI type
     // handle matters. Bridge's TryParseAlphaColor accepts '#RRGGBB' (full
     // alpha), '#AARRGGBB', 'claName', bare names, decimal, or '$hex'.
-    PROPERTY MyAlpha:    TAlphaColor    READ FMyAlpha  WRITE FMyAlpha;
+    property MyAlpha:    TAlphaColor    read FMyAlpha  write FMyAlpha;
     // For TColor coercion tests (VCL only). TColor is BGR-stored, but the bridge
     // accepts 'clName', '#RRGGBB' (web RGB), '$00BBGGRR', or decimal.
-    PROPERTY MyColor:    TColor         READ FMyColor  WRITE FMyColor;
-  PUBLIC
+    property MyColor:    TColor         read FMyColor  write FMyColor;
+  public
     Btn             : TButton;
     BtnDisabled     : TButton;
     BtnSelfDisables : TButton;
@@ -184,20 +177,20 @@ TYPE
     EdtChangeCount  : Integer;       // Fires when Edt.Text is actually changed. Used by elision tests.
     SlowGate        : TEvent;        // BtnSlowClicked waits on this. Tests signal it.
     SlowSleepMs     : Cardinal;      // OnClick sleeps this long (Sleep variant).
-    PROCEDURE BtnClicked(Sender: TObject);
-    PROCEDURE BtnSelfDisableClicked(Sender: TObject);
-    PROCEDURE BtnSlowClicked(Sender: TObject);
-    PROCEDURE LblClicked(Sender: TObject);
-    PROCEDURE BtnUnnamedClicked(Sender: TObject);
-    PROCEDURE BtnInFrameClicked(Sender: TObject);
-    PROCEDURE BtnOnFrameDesignTimeClicked(Sender: TObject);
-    PROCEDURE EdtChanged(Sender: TObject);
-    CONSTRUCTOR Create(AOwner: TComponent); OVERRIDE;
-    DESTRUCTOR Destroy; OVERRIDE;
-  END;
+    procedure BtnClicked(Sender: TObject);
+    procedure BtnSelfDisableClicked(Sender: TObject);
+    procedure BtnSlowClicked(Sender: TObject);
+    procedure LblClicked(Sender: TObject);
+    procedure BtnUnnamedClicked(Sender: TObject);
+    procedure BtnInFrameClicked(Sender: TObject);
+    procedure BtnOnFrameDesignTimeClicked(Sender: TObject);
+    procedure EdtChanged(Sender: TObject);
+    constructor Create(AOwner: TComponent); override;
+    destructor Destroy; override;
+  end;
 
-CONSTRUCTOR TFixtureForm.Create(AOwner: TComponent);
-BEGIN
+constructor TFixtureForm.Create(AOwner: TComponent);
+begin
   inherited CreateNew(AOwner);
   Name             := 'FixtureForm';
   Caption          := 'Fixture';
@@ -205,14 +198,14 @@ BEGIN
   Height           := 240;
   Position         := poDesigned;
   // Pin the form's inherited font size to 8 so a child control with
-  // ParentFont=TRUE reports Font.Size=8. The host default is Segoe UI 9 on
+  // ParentFont=True reports Font.Size=8. The host default is Segoe UI 9 on
   // Windows 11 (measured), and Setup's 'Btn.Font.Size:=8' would otherwise be a
-  // real 9->8 change that flips Btn.ParentFont to FALSE via TControl.FontChanged,
-  // breaking the ParentFont=TRUE baseline of the dotted-Font.* tests.
+  // real 9->8 change that flips Btn.ParentFont to False via TControl.FontChanged,
+  // breaking the ParentFont=True baseline of the dotted-Font.* tests.
   Font.Size        := 8;
   ClickCount       := 0;
   SelfDisableCount := 0;
-  SlowGate         := TEvent.Create(NIL, TRUE, FALSE, '');
+  SlowGate         := TEvent.Create(nil, True, False, '');
   // Plain TStringList — works without a window handle, unlike TMemo.Lines.
   FMyLines         := TStringList.Create;
   FMyLines.Text    := 'initial line';
@@ -226,7 +219,7 @@ BEGIN
   BtnDisabled := TButton.Create(Self);
   BtnDisabled.Name    := 'btnDisabled';
   BtnDisabled.Caption := 'Disabled';
-  BtnDisabled.Enabled := FALSE;
+  BtnDisabled.Enabled := False;
   BtnDisabled.Parent  := Self;
   BtnDisabled.OnClick := BtnClicked;
 
@@ -235,7 +228,7 @@ BEGIN
   BtnSelfDisables := TButton.Create(Self);
   BtnSelfDisables.Name    := 'btnSelfDisables';
   BtnSelfDisables.Caption := 'SelfDisable';
-  BtnSelfDisables.Enabled := TRUE;
+  BtnSelfDisables.Enabled := True;
   BtnSelfDisables.Parent  := Self;
   BtnSelfDisables.OnClick := BtnSelfDisableClicked;
 
@@ -244,7 +237,7 @@ BEGIN
   BtnSlow := TButton.Create(Self);
   BtnSlow.Name    := 'btnSlow';
   BtnSlow.Caption := 'Slow';
-  BtnSlow.Enabled := TRUE;
+  BtnSlow.Enabled := True;
   BtnSlow.Parent  := Self;
   BtnSlow.OnClick := BtnSlowClicked;
 
@@ -272,20 +265,20 @@ BEGIN
   EdtDisabled := TEdit.Create(Self);
   EdtDisabled.Name    := 'edtDisabled';
   EdtDisabled.Text    := 'frozen';
-  EdtDisabled.Enabled := FALSE;
+  EdtDisabled.Enabled := False;
   EdtDisabled.Parent  := Self;
 
   Cbx := TCheckBox.Create(Self);
   Cbx.Name    := 'cbxFlag';
   Cbx.Caption := 'Flag';
-  Cbx.Checked := FALSE;
+  Cbx.Checked := False;
   Cbx.Parent  := Self;
 
   CbxDisabled := TCheckBox.Create(Self);
   CbxDisabled.Name    := 'cbxDisabled';
   CbxDisabled.Caption := 'Disabled';
-  CbxDisabled.Checked := FALSE;
-  CbxDisabled.Enabled := FALSE;
+  CbxDisabled.Checked := False;
+  CbxDisabled.Enabled := False;
   CbxDisabled.Parent  := Self;
 
   // Unnamed button: exercises the synthetic '@TButton#N' path. Owner is Self,
@@ -321,81 +314,81 @@ BEGIN
   BtnOnFrameDesignTime.Parent  := Frame;
   BtnOnFrameDesignTime.OnClick := BtnOnFrameDesignTimeClicked;
   BtnOnFrameDesignTimeClicks   := 0;
-END;
+end;
 
-PROCEDURE TFixtureForm.BtnClicked(Sender: TObject);
-BEGIN
+procedure TFixtureForm.BtnClicked(Sender: TObject);
+begin
   Inc(ClickCount);
-END;
+end;
 
-PROCEDURE TFixtureForm.BtnSelfDisableClicked(Sender: TObject);
-BEGIN
+procedure TFixtureForm.BtnSelfDisableClicked(Sender: TObject);
+begin
   Inc(SelfDisableCount);
   if SelfDisableCount >= 3 then
-    BtnSelfDisables.Enabled := FALSE;
-END;
+    BtnSelfDisables.Enabled := False;
+end;
 
-PROCEDURE TFixtureForm.BtnSlowClicked(Sender: TObject);
-BEGIN
+procedure TFixtureForm.BtnSlowClicked(Sender: TObject);
+begin
   Inc(SlowClickCount);
   if SlowSleepMs > 0 then
     // Wait on the gate with a Sleep-equivalent timeout. Test code can
     // unblock us early by signaling SlowGate. Avoids leaving the main
     // thread stuck in Sleep when the test has already moved on.
     SlowGate.WaitFor(SlowSleepMs);
-END;
+end;
 
 
-DESTRUCTOR TFixtureForm.Destroy;
-BEGIN
+destructor TFixtureForm.Destroy;
+begin
   FreeAndNil(SlowGate);
   FreeAndNil(FMyLines);
   inherited;
-END;
+end;
 
 
-PROCEDURE TFixtureForm.SetMyLines(AValue: TStrings);
-BEGIN
+procedure TFixtureForm.SetMyLines(AValue: TStrings);
+begin
   // Standard TStrings setter pattern — Assign so the inner content is copied
   // into the existing TStringList, never overwriting the field with the
   // caller's instance.
   FMyLines.Assign(AValue);
-END;
+end;
 
-PROCEDURE TFixtureForm.LblClicked(Sender: TObject);
-BEGIN
+procedure TFixtureForm.LblClicked(Sender: TObject);
+begin
   Inc(LabelClickCount);
-END;
+end;
 
 
-PROCEDURE TFixtureForm.BtnUnnamedClicked(Sender: TObject);
-BEGIN
+procedure TFixtureForm.BtnUnnamedClicked(Sender: TObject);
+begin
   Inc(BtnUnnamedClicks);
-END;
+end;
 
 
-PROCEDURE TFixtureForm.BtnInFrameClicked(Sender: TObject);
-BEGIN
+procedure TFixtureForm.BtnInFrameClicked(Sender: TObject);
+begin
   Inc(BtnInFrameClicks);
-END;
+end;
 
 
-PROCEDURE TFixtureForm.BtnOnFrameDesignTimeClicked(Sender: TObject);
-BEGIN
+procedure TFixtureForm.BtnOnFrameDesignTimeClicked(Sender: TObject);
+begin
   Inc(BtnOnFrameDesignTimeClicks);
-END;
+end;
 
 
-PROCEDURE TFixtureForm.EdtChanged(Sender: TObject);
-BEGIN
+procedure TFixtureForm.EdtChanged(Sender: TObject);
+begin
   // TEdit.OnChange fires on every real Text assignment. Elision tests assert
   // this counter stays 0 when set_property is called with the current value.
   Inc(EdtChangeCount);
-END;
+end;
 
 
-VAR
-  GFixtureForm: TFixtureForm = NIL;
+var
+  GFixtureForm: TFixtureForm = nil;
 
 
 { Helpers --------------------------------------------------------------- }
@@ -403,89 +396,86 @@ VAR
 // Run a closure on a worker thread, while pumping messages on the main thread until
 // it finishes. Lets the worker do a synchronous pipe Call(), and lets TThread.Queue
 // callbacks fired by the bridge actually run on this (main) thread.
-PROCEDURE RunOnWorkerAndPump(AProc: TThreadProcedure; ATimeoutMs: Cardinal);
-VAR
+procedure RunOnWorkerAndPump(AProc: TThreadProcedure; ATimeoutMs: Cardinal);
+var
   Done    : TEvent;
   WorkerErrMsg: String;
   WorkerErrIsAssertion: Boolean;
-  WorkerAssertCount: Integer;
   Deadline: UInt64;
   Msg     : TMsg;
-BEGIN
-  Done := TEvent.Create(NIL, TRUE, FALSE, '');
-  TRY
+begin
+  Done := TEvent.Create(nil, True, False, '');
+  try
     WorkerErrMsg := '';
-    WorkerErrIsAssertion := FALSE;
-    WorkerAssertCount := 0;
+    WorkerErrIsAssertion := False;
     TThread.CreateAnonymousThread(
-      PROCEDURE
-      BEGIN
-        TRY
+      procedure
+      begin
+        try
           AProc();
-          // The worker did at least one Assert.* if it got here without throwing.
-          // We count it so the parent thread can re-emit it.
-          Inc(WorkerAssertCount);
-        EXCEPT
-          ON E: ETestFailure DO
-          BEGIN
+        except
+          on E: ETestFailure do
+          begin
             WorkerErrMsg := E.Message;
-            WorkerErrIsAssertion := TRUE;
-          END;
-          ON E: Exception DO
+            WorkerErrIsAssertion := True;
+          end;
+          on E: Exception do
             WorkerErrMsg := E.ClassName + ': ' + E.Message;
-        END;
+        end;
         Done.SetEvent;
-      END).Start;
+      end).Start;
 
     Deadline := GetTickCount64 + ATimeoutMs;
-    WHILE Done.WaitFor(10) <> wrSignaled DO
-    BEGIN
+    while Done.WaitFor(10) <> wrSignaled do
+    begin
       // Drain queued messages so TThread.Queue closures fire on this thread.
-      WHILE PeekMessage(Msg, 0, 0, 0, PM_REMOVE) DO
-      BEGIN
+      while PeekMessage(Msg, 0, 0, 0, PM_REMOVE) do
+      begin
         TranslateMessage(Msg);
         DispatchMessage(Msg);
-      END;
+      end;
       // Also drain the TThread queue directly — works even without a window message.
       CheckSynchronize;
       if GetTickCount64 > Deadline then
         raise Exception.Create('RunOnWorkerAndPump: worker did not finish in time');
-    END;
+    end;
 
-    // Re-emit the result on this (parent) thread so DUnitX sees the assertion.
+    // Re-emit a worker-side failure on this (parent) thread so DUnitX records it. On success we
+    // return normally so the caller's post-pump assertions run on the main thread. Do NOT call
+    // Assert.Pass here: it raises ETestPass, which aborts the test before any post-pump assertion
+    // runs. FailsOnNoAsserts is False in Tests.dpr, so a worker-side-only test needs no main-thread
+    // assertion to count as run.
     if WorkerErrIsAssertion then
-      Assert.IsTrue(FALSE, WorkerErrMsg)
+      Assert.IsTrue(False, WorkerErrMsg)
     else if WorkerErrMsg <> '' then
-      raise Exception.Create('Worker thread failed: ' + WorkerErrMsg)
-    else if WorkerAssertCount > 0 then
-      Assert.Pass;  // record success so DUnitX's "no assertions" check is satisfied
-  FINALLY
+      raise Exception.Create('Worker thread failed: ' + WorkerErrMsg);
+  finally
     Done.Free;
-  END;
-END;
+  end;
+end;
 
 
 { TBridgeTests ---------------------------------------------------------- }
 
-VAR
+var
   GPipeNameCounter: Integer = 0;   // monotonic, avoids GetTickCount collisions between fast tests.
 
-PROCEDURE TBridgeTests.EnsureFreshPipeName;
-BEGIN
+procedure TBridgeTests.EnsureFreshPipeName;
+begin
   // Per-test pipe name. Uses a monotonic counter (not GetTickCount, which has 15-16 ms
   // resolution and can collide between Setup calls that fire within the same tick).
   // PID is constant within the run; counter ensures uniqueness across all tests.
   Inc(GPipeNameCounter);
   FPipeName := '\\.\pipe\AutopilotTest.' + IntToStr(GetCurrentProcessId) +
                '.' + IntToStr(GPipeNameCounter);
-END;
+end;
 
 
-PROCEDURE TBridgeTests.Setup;
-BEGIN
+procedure TBridgeTests.Setup;
+begin
   EnsureFreshPipeName;
-  if GFixtureForm = NIL then
-    GFixtureForm := TFixtureForm.Create(NIL);   // registers in Screen.Forms[]
+  if GFixtureForm = nil then
+    GFixtureForm := TFixtureForm.Create(nil);   // registers in Screen.Forms[]
 
   GFixtureForm.ClickCount        := 0;
   GFixtureForm.SelfDisableCount  := 0;
@@ -496,17 +486,18 @@ BEGIN
   GFixtureForm.BtnOnFrameDesignTimeClicks := 0;
   GFixtureForm.SlowSleepMs       := 0;
   GFixtureForm.SlowGate.ResetEvent;
-  GFixtureForm.BtnSelfDisables.Enabled := TRUE;
+  GFixtureForm.BtnSelfDisables.Enabled := True;
   GFixtureForm.Lbl.Caption       := 'Initial';
   GFixtureForm.Edt.Text          := 'HelloWorld';
   GFixtureForm.EdtDisabled.Text  := 'frozen';
-  GFixtureForm.Cbx.Checked       := FALSE;
-  GFixtureForm.CbxDisabled.Checked := FALSE;
+  GFixtureForm.Cbx.Checked       := False;
+  GFixtureForm.CbxDisabled.Checked := False;
   GFixtureForm.FloatProp         := 0.0;
   GFixtureForm.MySetProp         := [];
   GFixtureForm.Tag               := 0;
+  GFixtureForm.Btn.Tag           := 0;   // Btn.Tag (not just the form's Tag) — Test_SetProperty_WritesInteger sets it to 42; without this reset that 42 leaks into later tests on the shared fixture form
   GFixtureForm.MyLines.Text      := 'initial line';
-  GFixtureForm.Btn.ParentFont    := TRUE;
+  GFixtureForm.Btn.ParentFont    := True;
   GFixtureForm.Btn.Font.Size     := 8;
   GFixtureForm.MyAlpha           := TAlphaColor(0);
   GFixtureForm.MyColor           := TColor(0);
@@ -516,57 +507,63 @@ BEGIN
   GFixtureForm.EdtChangeCount    := 0;
 
   StartBridgeOnPipe(FPipeName);
-END;
+end;
 
 
-PROCEDURE TBridgeTests.TearDown;
-BEGIN
+procedure TBridgeTests.TearDown;
+begin
   StopBridge;
-END;
+end;
 
 
-PROCEDURE TBridgeTests.Test_HandshakeSucceeds;
-VAR
+procedure TBridgeTests.TearDownFixture;
+begin
+  FreeAndNil(GFixtureForm);
+end;
+
+
+procedure TBridgeTests.Test_HandshakeSucceeds;
+var
   PipeName: String;
-BEGIN
+begin
   PipeName := FPipeName;
   RunOnWorkerAndPump(
-    PROCEDURE
-    VAR Client: TBridgeTestClient;
-    BEGIN
+    procedure
+    var Client: TBridgeTestClient;
+    begin
       Client := TBridgeTestClient.Create;
-      TRY
+      try
         Assert.IsTrue(Client.ConnectAndHandshake(PipeName, 2000),
                       'expected handshake to succeed');
-      FINALLY
+      finally
         Client.Free;
-      END;
-    END, 5000);
-END;
+      end;
+    end, 5000);
+end;
 
 
-PROCEDURE TBridgeTests.Test_ListTree_FindsKnownControls;
-VAR
+procedure TBridgeTests.Test_ListTree_FindsKnownControls;
+var
   PipeName: String;
   FoundForm, FoundBtn, FoundLbl, FoundEdt: Boolean;
-BEGIN
+begin
   PipeName := FPipeName;
-  FoundForm := FALSE; FoundBtn := FALSE; FoundLbl := FALSE; FoundEdt := FALSE;
+  FoundForm := False; FoundBtn := False; FoundLbl := False; FoundEdt := False;
   RunOnWorkerAndPump(
-    PROCEDURE
-    VAR
+    procedure
+    var
       Client: TBridgeTestClient;
       Resp, R: TJSONObject;
       Arr: TJSONArray;
       i: Integer;
       Item: TJSONObject;
       Name: TJSONValue;
-    BEGIN
+    begin
       Client := TBridgeTestClient.Create;
-      TRY
+      try
         Assert.IsTrue(Client.ConnectAndHandshake(PipeName, 2000), 'connect');
-        Resp := Client.Call(1, 'list_tree', NIL);
-        TRY
+        Resp := Client.Call(1, 'list_tree', nil);
+        try
           R := GetOkResult(Resp);
           Assert.IsNotNull(R, 'list_tree should return ok');
           Arr := R.GetValue('components') AS TJSONArray;
@@ -577,274 +574,310 @@ BEGIN
             Name := Item.GetValue('name');
             if Name IS TJSONString then
             begin
-              if TJSONString(Name).Value = 'FixtureForm' then FoundForm := TRUE;
-              if TJSONString(Name).Value = 'btnTest'     then FoundBtn  := TRUE;
-              if TJSONString(Name).Value = 'lblStatus'   then FoundLbl  := TRUE;
-              if TJSONString(Name).Value = 'edtName'     then FoundEdt  := TRUE;
+              if TJSONString(Name).Value = 'FixtureForm' then FoundForm := True;
+              if TJSONString(Name).Value = 'btnTest'     then FoundBtn  := True;
+              if TJSONString(Name).Value = 'lblStatus'   then FoundLbl  := True;
+              if TJSONString(Name).Value = 'edtName'     then FoundEdt  := True;
             end;
           end;
-        FINALLY
+        finally
           Resp.Free;
-        END;
-      FINALLY
+        end;
+      finally
         Client.Free;
-      END;
-    END, 5000);
+      end;
+    end, 5000);
   Assert.IsTrue(FoundForm, 'list_tree should include the form itself as a node');
   Assert.IsTrue(FoundBtn,  'list_tree did not return btnTest');
   Assert.IsTrue(FoundLbl,  'list_tree did not return lblStatus');
   Assert.IsTrue(FoundEdt,  'list_tree did not return edtName');
-END;
+end;
 
 
-PROCEDURE TBridgeTests.Test_GetText_OfLabel;
-VAR
+procedure TBridgeTests.Test_GetText_OfLabel;
+var
   PipeName, ReadText: String;
-BEGIN
+begin
   PipeName := FPipeName;
   ReadText := '';
   RunOnWorkerAndPump(
-    PROCEDURE
-    VAR
+    procedure
+    var
       Client: TBridgeTestClient;
       Args, Resp, R: TJSONObject;
       V: TJSONValue;
-    BEGIN
+    begin
       Client := TBridgeTestClient.Create;
-      TRY
+      try
         Assert.IsTrue(Client.ConnectAndHandshake(PipeName, 2000), 'connect');
         Args := TJSONObject.Create;
         Args.AddPair('path', 'FixtureForm.lblStatus');
         Resp := Client.Call(2, 'get_text', Args);
-        TRY
+        try
           R := GetOkResult(Resp);
           Assert.IsNotNull(R, 'get_text should return ok');
           V := R.GetValue('text');
           Assert.IsTrue(V IS TJSONString, 'result.text not a string');
           ReadText := TJSONString(V).Value;
-        FINALLY
+        finally
           Resp.Free;
-        END;
-      FINALLY
+        end;
+      finally
         Client.Free;
-      END;
-    END, 5000);
+      end;
+    end, 5000);
   Assert.AreEqual('Initial', ReadText, 'unexpected label text');
-END;
+end;
 
 
-PROCEDURE TBridgeTests.Test_Click_FiresOnClick;
-VAR
+procedure TBridgeTests.Test_Click_FiresOnClick;
+var
   PipeName: String;
   CountBefore, CountAfter: Integer;
   DispatchedVia: String;
-BEGIN
+begin
   PipeName := FPipeName;
   CountBefore := GFixtureForm.ClickCount;
   DispatchedVia := '';
   RunOnWorkerAndPump(
-    PROCEDURE
-    VAR
+    procedure
+    var
       Client: TBridgeTestClient;
       Args, Resp, R: TJSONObject;
       V: TJSONValue;
-    BEGIN
+    begin
       Client := TBridgeTestClient.Create;
-      TRY
+      try
         Assert.IsTrue(Client.ConnectAndHandshake(PipeName, 2000), 'connect');
         Args := TJSONObject.Create;
         Args.AddPair('path', 'FixtureForm.btnTest');
         Resp := Client.Call(3, 'click', Args);
-        TRY
+        try
           R := GetOkResult(Resp);
           Assert.IsNotNull(R, 'click should return ok');
           V := R.GetValue('dispatchedVia');
           if V IS TJSONString then
             DispatchedVia := TJSONString(V).Value;
-        FINALLY
+        finally
           Resp.Free;
-        END;
-      FINALLY
+        end;
+      finally
         Client.Free;
-      END;
-    END, 5000);
+      end;
+    end, 5000);
   CountAfter := GFixtureForm.ClickCount;
   Assert.AreEqual(CountBefore + 1, CountAfter, 'OnClick should have fired exactly once');
   Assert.AreEqual('click', DispatchedVia, 'expected dispatchedVia=click for TButton');
-END;
+end;
 
 
-PROCEDURE TBridgeTests.Test_Click_DisabledControlReturnsError;
-VAR
+procedure TBridgeTests.Test_Click_DisabledControlReturnsError;
+var
   PipeName: String;
   Code: Integer;
-BEGIN
+begin
   PipeName := FPipeName;
   Code := 0;
   RunOnWorkerAndPump(
-    PROCEDURE
-    VAR
+    procedure
+    var
       Client: TBridgeTestClient;
       Args, Resp: TJSONObject;
-    BEGIN
+    begin
       Client := TBridgeTestClient.Create;
-      TRY
+      try
         Assert.IsTrue(Client.ConnectAndHandshake(PipeName, 2000), 'connect');
         Args := TJSONObject.Create;
         Args.AddPair('path', 'FixtureForm.btnDisabled');
         Resp := Client.Call(4, 'click', Args);
-        TRY
+        try
           Code := GetErrorCode(Resp);
-        FINALLY
+        finally
           Resp.Free;
-        END;
-      FINALLY
+        end;
+      finally
         Client.Free;
-      END;
-    END, 5000);
+      end;
+    end, 5000);
   Assert.AreEqual(ErrControlDisabled, Code, 'expected control_disabled error');
-END;
+end;
 
 
-PROCEDURE TBridgeTests.Test_Click_CountFiresNTimes;
-CONST
+procedure TBridgeTests.Test_Click_CountFiresNTimes;
+const
   N = 7;
-VAR
+var
   PipeName: String;
   CountBefore, CountAfter, ClicksDispatched: Integer;
   HasStoppedReason: Boolean;
-BEGIN
+begin
   PipeName := FPipeName;
   CountBefore := GFixtureForm.ClickCount;
   ClicksDispatched := 0;
-  HasStoppedReason := FALSE;
+  HasStoppedReason := False;
   RunOnWorkerAndPump(
-    PROCEDURE
-    VAR
+    procedure
+    var
       Client: TBridgeTestClient;
       Args, Resp, R: TJSONObject;
       V: TJSONValue;
-    BEGIN
+    begin
       Client := TBridgeTestClient.Create;
-      TRY
+      try
         Assert.IsTrue(Client.ConnectAndHandshake(PipeName, 2000), 'connect');
         Args := TJSONObject.Create;
         Args.AddPair('path', 'FixtureForm.btnTest');
         Args.AddPair('count', TJSONNumber.Create(N));
         Resp := Client.Call(10, 'click', Args);
-        TRY
+        try
           R := GetOkResult(Resp);
           Assert.IsNotNull(R, 'click should return ok');
           V := R.GetValue('clicksDispatched');
           Assert.IsTrue(V IS TJSONNumber, 'result.clicksDispatched missing/not a number');
           ClicksDispatched := TJSONNumber(V).AsInt;
-          HasStoppedReason := R.GetValue('stoppedReason') <> NIL;
-        FINALLY
+          HasStoppedReason := R.GetValue('stoppedReason') <> nil;
+        finally
           Resp.Free;
-        END;
-      FINALLY
+        end;
+      finally
         Client.Free;
-      END;
-    END, 5000);
+      end;
+    end, 5000);
   CountAfter := GFixtureForm.ClickCount;
   Assert.AreEqual(N, ClicksDispatched, 'clicksDispatched should equal requested count');
   Assert.AreEqual(CountBefore + N, CountAfter, 'OnClick should have fired N times');
   Assert.IsFalse(HasStoppedReason, 'stoppedReason should be absent on full completion');
-END;
+end;
 
 
-PROCEDURE TBridgeTests.Test_Click_CountZeroReturnsError;
-VAR
+procedure TBridgeTests.Test_Click_CountZeroReturnsError;
+var
   PipeName: String;
   Code: Integer;
-BEGIN
+begin
   PipeName := FPipeName;
   Code := 0;
   RunOnWorkerAndPump(
-    PROCEDURE
-    VAR
+    procedure
+    var
       Client: TBridgeTestClient;
       Args, Resp: TJSONObject;
-    BEGIN
+    begin
       Client := TBridgeTestClient.Create;
-      TRY
+      try
         Assert.IsTrue(Client.ConnectAndHandshake(PipeName, 2000), 'connect');
         Args := TJSONObject.Create;
         Args.AddPair('path', 'FixtureForm.btnTest');
         Args.AddPair('count', TJSONNumber.Create(0));
         Resp := Client.Call(11, 'click', Args);
-        TRY
+        try
           Code := GetErrorCode(Resp);
-        FINALLY
+        finally
           Resp.Free;
-        END;
-      FINALLY
+        end;
+      finally
         Client.Free;
-      END;
-    END, 5000);
+      end;
+    end, 5000);
   Assert.AreEqual(ErrInvalidRequest, Code, 'expected invalid-request for count=0');
-END;
+end;
 
 
-PROCEDURE TBridgeTests.Test_Click_CountAboveCapReturnsError;
-VAR
+procedure TBridgeTests.Test_Click_CountAboveCapReturnsError;
+var
   PipeName: String;
   Code: Integer;
-BEGIN
+begin
   PipeName := FPipeName;
   Code := 0;
   RunOnWorkerAndPump(
-    PROCEDURE
-    VAR
+    procedure
+    var
       Client: TBridgeTestClient;
       Args, Resp: TJSONObject;
-    BEGIN
+    begin
       Client := TBridgeTestClient.Create;
-      TRY
+      try
         Assert.IsTrue(Client.ConnectAndHandshake(PipeName, 2000), 'connect');
         Args := TJSONObject.Create;
         Args.AddPair('path', 'FixtureForm.btnTest');
         Args.AddPair('count', TJSONNumber.Create(1001));
         Resp := Client.Call(12, 'click', Args);
-        TRY
+        try
           Code := GetErrorCode(Resp);
-        FINALLY
+        finally
           Resp.Free;
-        END;
-      FINALLY
+        end;
+      finally
         Client.Free;
-      END;
-    END, 5000);
+      end;
+    end, 5000);
   Assert.AreEqual(ErrInvalidRequest, Code, 'expected invalid-request for count above cap');
-END;
+end;
 
 
-PROCEDURE TBridgeTests.Test_Click_CountStopsWhenDisabledMidLoop;
-CONST
+// dismiss_dialog with a fractional hwnd must surface as ErrInvalidRequest (-32600), not the
+// ErrInternalError (-32603) that TJSONNumber.AsInt64's EConvertError used to produce. Guards the
+// TryJsonInt64 hardening of the hwnd arg. No dialog is up; the parse fails before any dialog work.
+procedure TBridgeTests.Test_DismissDialog_FractionalHwndReturnsInvalidRequest;
+var
+  PipeName: String;
+begin
+  PipeName := FPipeName;
+  // The assertion MUST live inside the worker proc: RunOnWorkerAndPump ends its success path
+  // with Assert.Pass (raises ETestPass), so any assertion AFTER it is unreachable. A failure
+  // here raises ETestFailure on the worker, which the pump re-emits on the main thread.
+  RunOnWorkerAndPump(
+    procedure
+    var
+      Client: TBridgeTestClient;
+      Args, Resp: TJSONObject;
+    begin
+      Client := TBridgeTestClient.Create;
+      try
+        Assert.IsTrue(Client.ConnectAndHandshake(PipeName, 2000), 'connect');
+        Args := TJSONObject.Create;
+        Args.AddPair('hwnd', TJSONNumber.Create('1.5'));   // a JSON number that is not an integer
+        Resp := Client.Call(50, 'dismiss_dialog', Args);
+        try
+          Assert.AreEqual(ErrInvalidRequest, GetErrorCode(Resp),
+            'fractional hwnd must be ErrInvalidRequest (-32600), not ErrInternalError (-32603)');
+        finally
+          Resp.Free;
+        end;
+      finally
+        Client.Free;
+      end;
+    end, 5000);
+end;
+
+
+procedure TBridgeTests.Test_Click_CountStopsWhenDisabledMidLoop;
+const
   RequestedN = 10;
-VAR
+var
   PipeName: String;
   ClicksDispatched: Integer;
   StoppedReason: String;
-BEGIN
+begin
   PipeName := FPipeName;
   ClicksDispatched := 0;
   StoppedReason := '';
   RunOnWorkerAndPump(
-    PROCEDURE
-    VAR
+    procedure
+    var
       Client: TBridgeTestClient;
       Args, Resp, R: TJSONObject;
       V: TJSONValue;
-    BEGIN
+    begin
       Client := TBridgeTestClient.Create;
-      TRY
+      try
         Assert.IsTrue(Client.ConnectAndHandshake(PipeName, 2000), 'connect');
         Args := TJSONObject.Create;
         Args.AddPair('path', 'FixtureForm.btnSelfDisables');
         Args.AddPair('count', TJSONNumber.Create(RequestedN));
         Resp := Client.Call(13, 'click', Args);
-        TRY
+        try
           R := GetOkResult(Resp);
           Assert.IsNotNull(R, 'click should return ok (partial success)');
           V := R.GetValue('clicksDispatched');
@@ -853,47 +886,47 @@ BEGIN
           V := R.GetValue('stoppedReason');
           if V IS TJSONString then
             StoppedReason := TJSONString(V).Value;
-        FINALLY
+        finally
           Resp.Free;
-        END;
-      FINALLY
+        end;
+      finally
         Client.Free;
-      END;
-    END, 5000);
+      end;
+    end, 5000);
   // Button disables itself on its third click, so loop should run 3 then bail.
   Assert.AreEqual(3, ClicksDispatched, 'expected exactly 3 clicks before button disables itself');
   Assert.AreEqual(3, GFixtureForm.SelfDisableCount, 'OnClick should fire 3 times');
   Assert.AreEqual('disabled', StoppedReason, 'expected stoppedReason=disabled');
-END;
+end;
 
 
-PROCEDURE TBridgeTests.Test_Click_CountFiresOnClickPathNTimes;
-CONST
+procedure TBridgeTests.Test_Click_CountFiresOnClickPathNTimes;
+const
   N = 4;
-VAR
+var
   PipeName: String;
   CountBefore, CountAfter, ClicksDispatched: Integer;
   DispatchedVia: String;
-BEGIN
+begin
   PipeName := FPipeName;
   CountBefore := GFixtureForm.LabelClickCount;
   ClicksDispatched := 0;
   DispatchedVia := '';
   RunOnWorkerAndPump(
-    PROCEDURE
-    VAR
+    procedure
+    var
       Client: TBridgeTestClient;
       Args, Resp, R: TJSONObject;
       V: TJSONValue;
-    BEGIN
+    begin
       Client := TBridgeTestClient.Create;
-      TRY
+      try
         Assert.IsTrue(Client.ConnectAndHandshake(PipeName, 2000), 'connect');
         Args := TJSONObject.Create;
         Args.AddPair('path', 'FixtureForm.lblClickable');
         Args.AddPair('count', TJSONNumber.Create(N));
         Resp := Client.Call(14, 'click', Args);
-        TRY
+        try
           R := GetOkResult(Resp);
           Assert.IsNotNull(R, 'click should return ok');
           V := R.GetValue('clicksDispatched');
@@ -902,277 +935,277 @@ BEGIN
           V := R.GetValue('dispatchedVia');
           if V IS TJSONString then
             DispatchedVia := TJSONString(V).Value;
-        FINALLY
+        finally
           Resp.Free;
-        END;
-      FINALLY
+        end;
+      finally
         Client.Free;
-      END;
-    END, 5000);
+      end;
+    end, 5000);
   CountAfter := GFixtureForm.LabelClickCount;
   Assert.AreEqual('onclick', DispatchedVia, 'TLabel.OnClick must use the RTTI/OnClick path');
   Assert.AreEqual(N, ClicksDispatched, 'clicksDispatched should equal requested count');
   Assert.AreEqual(CountBefore + N, CountAfter, 'TLabel.OnClick should have fired N times');
-END;
+end;
 
 
-PROCEDURE TBridgeTests.Test_Click_MainThreadBlockedReturnsTimeoutError;
-CONST
+procedure TBridgeTests.Test_Click_MainThreadBlockedReturnsTimeoutError;
+const
   // Worker timeout is short (200 ms). The OnClick blocks on SlowGate for up to
   // GateMaxWaitMs; the test signals the gate once the worker has returned the
   // timeout error so the queued procedure completes promptly. This avoids the
   // long main-thread Sleep that used to race the RTL @HandleAnyException path.
   WorkerTimeoutMs = 200;
   GateMaxWaitMs   = 2000;
-VAR
+var
   PipeName: String;
   Code: Integer;
-BEGIN
+begin
   PipeName := FPipeName;
   Code := 0;
   GFixtureForm.SlowSleepMs := GateMaxWaitMs;
   GFixtureForm.SlowGate.ResetEvent;
   RunOnWorkerAndPump(
-    PROCEDURE
-    VAR
+    procedure
+    var
       Client: TBridgeTestClient;
       Args, Resp: TJSONObject;
-    BEGIN
+    begin
       Client := TBridgeTestClient.Create;
-      TRY
+      try
         Assert.IsTrue(Client.ConnectAndHandshake(PipeName, 2000), 'connect');
         Args := TJSONObject.Create;
         Args.AddPair('path', 'FixtureForm.btnSlow');
         Resp := Client.Call(20, 'click', Args, WorkerTimeoutMs);
-        TRY
+        try
           Code := GetErrorCode(Resp);
-        FINALLY
+        finally
           Resp.Free;
-        END;
+        end;
         // We got the timeout response back. The queued procedure is still
         // waiting on SlowGate. Releasing it lets it finish cleanly so the
         // dispatch slot is released on both sides before TearDown fires.
         GFixtureForm.SlowGate.SetEvent;
-      FINALLY
+      finally
         Client.Free;
-      END;
-    END, GateMaxWaitMs + 3000);
+      end;
+    end, GateMaxWaitMs + 3000);
   Assert.AreEqual(ErrMainThreadBlocked, Code, 'expected main_thread_blocked when OnClick exceeds timeoutMs');
   Assert.AreEqual(1, GFixtureForm.SlowClickCount, 'OnClick should still have run on the main thread');
-END;
+end;
 
 
-PROCEDURE TBridgeTests.Test_GetText_NotFoundReturnsError;
-VAR
+procedure TBridgeTests.Test_GetText_NotFoundReturnsError;
+var
   PipeName: String;
   Code: Integer;
-BEGIN
+begin
   PipeName := FPipeName;
   Code := 0;
   RunOnWorkerAndPump(
-    PROCEDURE
-    VAR
+    procedure
+    var
       Client: TBridgeTestClient;
       Args, Resp: TJSONObject;
-    BEGIN
+    begin
       Client := TBridgeTestClient.Create;
-      TRY
+      try
         Assert.IsTrue(Client.ConnectAndHandshake(PipeName, 2000), 'connect');
         Args := TJSONObject.Create;
         Args.AddPair('path', 'FixtureForm.bogusComponent');
         Resp := Client.Call(5, 'get_text', Args);
-        TRY
+        try
           Code := GetErrorCode(Resp);
-        FINALLY
+        finally
           Resp.Free;
-        END;
-      FINALLY
+        end;
+      finally
         Client.Free;
-      END;
-    END, 5000);
+      end;
+    end, 5000);
   Assert.AreEqual(ErrNotFound, Code, 'expected not_found error');
-END;
+end;
 
 
-PROCEDURE TBridgeTests.Test_UnknownCmdReturnsError;
-VAR
+procedure TBridgeTests.Test_UnknownCmdReturnsError;
+var
   PipeName: String;
   Code: Integer;
-BEGIN
+begin
   PipeName := FPipeName;
   Code := 0;
   RunOnWorkerAndPump(
-    PROCEDURE
-    VAR
+    procedure
+    var
       Client: TBridgeTestClient;
       Resp: TJSONObject;
-    BEGIN
+    begin
       Client := TBridgeTestClient.Create;
-      TRY
+      try
         Assert.IsTrue(Client.ConnectAndHandshake(PipeName, 2000), 'connect');
-        Resp := Client.Call(6, 'frobnicate', NIL);
-        TRY
+        Resp := Client.Call(6, 'frobnicate', nil);
+        try
           Code := GetErrorCode(Resp);
-        FINALLY
+        finally
           Resp.Free;
-        END;
-      FINALLY
+        end;
+      finally
         Client.Free;
-      END;
-    END, 5000);
+      end;
+    end, 5000);
   Assert.AreEqual(ErrUnsupportedAction, Code, 'expected unsupported_action error');
-END;
+end;
 
 
-PROCEDURE TBridgeTests.Test_SetText_UpdatesEditValue;
-CONST
+procedure TBridgeTests.Test_SetText_UpdatesEditValue;
+const
   NewText = 'rewritten by bridge';
-VAR
+var
   PipeName: String;
   Ok: Boolean;
-BEGIN
+begin
   PipeName := FPipeName;
-  Ok := FALSE;
+  Ok := False;
   RunOnWorkerAndPump(
-    PROCEDURE
-    VAR
+    procedure
+    var
       Client: TBridgeTestClient;
       Args, Resp: TJSONObject;
-    BEGIN
+    begin
       Client := TBridgeTestClient.Create;
-      TRY
+      try
         Assert.IsTrue(Client.ConnectAndHandshake(PipeName, 2000), 'connect');
         Args := TJSONObject.Create;
         Args.AddPair('path', 'FixtureForm.edtName');
         Args.AddPair('text', NewText);
         Resp := Client.Call(30, 'set_text', Args);
-        TRY
-          Ok := GetOkResult(Resp) <> NIL;
-        FINALLY
+        try
+          Ok := GetOkResult(Resp) <> nil;
+        finally
           Resp.Free;
-        END;
-      FINALLY
+        end;
+      finally
         Client.Free;
-      END;
-    END, 5000);
+      end;
+    end, 5000);
   Assert.IsTrue(Ok, 'set_text should return ok');
   Assert.AreEqual(NewText, GFixtureForm.Edt.Text, 'edit Text should be updated');
-END;
+end;
 
 
-PROCEDURE TBridgeTests.Test_SetText_DisabledControlReturnsError;
-VAR
+procedure TBridgeTests.Test_SetText_DisabledControlReturnsError;
+var
   PipeName: String;
   Code: Integer;
-BEGIN
+begin
   PipeName := FPipeName;
   Code := 0;
   RunOnWorkerAndPump(
-    PROCEDURE
-    VAR
+    procedure
+    var
       Client: TBridgeTestClient;
       Args, Resp: TJSONObject;
-    BEGIN
+    begin
       Client := TBridgeTestClient.Create;
-      TRY
+      try
         Assert.IsTrue(Client.ConnectAndHandshake(PipeName, 2000), 'connect');
         Args := TJSONObject.Create;
         Args.AddPair('path', 'FixtureForm.edtDisabled');
         Args.AddPair('text', 'should not land');
         Resp := Client.Call(31, 'set_text', Args);
-        TRY
+        try
           Code := GetErrorCode(Resp);
-        FINALLY
+        finally
           Resp.Free;
-        END;
-      FINALLY
+        end;
+      finally
         Client.Free;
-      END;
-    END, 5000);
+      end;
+    end, 5000);
   Assert.AreEqual(ErrControlDisabled, Code, 'expected control_disabled error');
   Assert.AreEqual('frozen', GFixtureForm.EdtDisabled.Text, 'disabled edit should keep original text');
-END;
+end;
 
 
-PROCEDURE TBridgeTests.Test_SetChecked_UpdatesCheckbox;
-VAR
+procedure TBridgeTests.Test_SetChecked_UpdatesCheckbox;
+var
   PipeName: String;
   Ok: Boolean;
-BEGIN
+begin
   PipeName := FPipeName;
-  Ok := FALSE;
+  Ok := False;
   RunOnWorkerAndPump(
-    PROCEDURE
-    VAR
+    procedure
+    var
       Client: TBridgeTestClient;
       Args, Resp: TJSONObject;
-    BEGIN
+    begin
       Client := TBridgeTestClient.Create;
-      TRY
+      try
         Assert.IsTrue(Client.ConnectAndHandshake(PipeName, 2000), 'connect');
         Args := TJSONObject.Create;
         Args.AddPair('path', 'FixtureForm.cbxFlag');
-        Args.AddPair('checked', TJSONBool.Create(TRUE));
+        Args.AddPair('checked', TJSONBool.Create(True));
         Resp := Client.Call(32, 'set_checked', Args);
-        TRY
-          Ok := GetOkResult(Resp) <> NIL;
-        FINALLY
+        try
+          Ok := GetOkResult(Resp) <> nil;
+        finally
           Resp.Free;
-        END;
-      FINALLY
+        end;
+      finally
         Client.Free;
-      END;
-    END, 5000);
+      end;
+    end, 5000);
   Assert.IsTrue(Ok, 'set_checked should return ok');
   Assert.IsTrue(GFixtureForm.Cbx.Checked, 'checkbox should be checked after set_checked');
-END;
+end;
 
 
-PROCEDURE TBridgeTests.Test_SetChecked_DisabledControlReturnsError;
-VAR
+procedure TBridgeTests.Test_SetChecked_DisabledControlReturnsError;
+var
   PipeName: String;
   Code: Integer;
-BEGIN
+begin
   PipeName := FPipeName;
   Code := 0;
   RunOnWorkerAndPump(
-    PROCEDURE
-    VAR
+    procedure
+    var
       Client: TBridgeTestClient;
       Args, Resp: TJSONObject;
-    BEGIN
+    begin
       Client := TBridgeTestClient.Create;
-      TRY
+      try
         Assert.IsTrue(Client.ConnectAndHandshake(PipeName, 2000), 'connect');
         Args := TJSONObject.Create;
         Args.AddPair('path', 'FixtureForm.cbxDisabled');
-        Args.AddPair('checked', TJSONBool.Create(TRUE));
+        Args.AddPair('checked', TJSONBool.Create(True));
         Resp := Client.Call(33, 'set_checked', Args);
-        TRY
+        try
           Code := GetErrorCode(Resp);
-        FINALLY
+        finally
           Resp.Free;
-        END;
-      FINALLY
+        end;
+      finally
         Client.Free;
-      END;
-    END, 5000);
+      end;
+    end, 5000);
   Assert.AreEqual(ErrControlDisabled, Code, 'expected control_disabled error');
   Assert.IsFalse(GFixtureForm.CbxDisabled.Checked, 'disabled checkbox should not change');
-END;
+end;
 
 
-PROCEDURE TBridgeTests.Test_ListTree_SyntheticIdForUnnamedComponent;
-VAR
+procedure TBridgeTests.Test_ListTree_SyntheticIdForUnnamedComponent;
+var
   PipeName, FoundSyntheticName: String;
   FoundSynthetic: Boolean;
-BEGIN
+begin
   PipeName := FPipeName;
-  FoundSynthetic := FALSE;
+  FoundSynthetic := False;
   FoundSyntheticName := '';
   RunOnWorkerAndPump(
-    PROCEDURE
-    VAR
+    procedure
+    var
       Client: TBridgeTestClient;
       Resp, R: TJSONObject;
       Arr: TJSONArray;
@@ -1180,12 +1213,12 @@ BEGIN
       Item: TJSONObject;
       NameVal, SyntheticVal: TJSONValue;
       NodeName: String;
-    BEGIN
+    begin
       Client := TBridgeTestClient.Create;
-      TRY
+      try
         Assert.IsTrue(Client.ConnectAndHandshake(PipeName, 2000), 'connect');
-        Resp := Client.Call(40, 'list_tree', NIL);
-        TRY
+        Resp := Client.Call(40, 'list_tree', nil);
+        try
           R := GetOkResult(Resp);
           Assert.IsNotNull(R, 'list_tree should return ok');
           Arr := R.GetValue('components') AS TJSONArray;
@@ -1201,30 +1234,30 @@ BEGIN
               SyntheticVal := Item.GetValue('synthetic');
               if (SyntheticVal IS TJSONBool) and TJSONBool(SyntheticVal).AsBoolean then
               begin
-                FoundSynthetic := TRUE;
+                FoundSynthetic := True;
                 FoundSyntheticName := NodeName;
                 Break;
               end;
             end;
           end;
-        FINALLY
+        finally
           Resp.Free;
-        END;
-      FINALLY
+        end;
+      finally
         Client.Free;
-      END;
-    END, 5000);
+      end;
+    end, 5000);
   Assert.IsTrue(FoundSynthetic, 'list_tree should emit a synthetic node for the unnamed button');
   Assert.StartsWith('@TButton#', FoundSyntheticName, 'synthetic name should be @TButton#<index>');
-END;
+end;
 
 
-PROCEDURE TBridgeTests.Test_Click_BySyntheticIdFiresOnClick;
-VAR
+procedure TBridgeTests.Test_Click_BySyntheticIdFiresOnClick;
+var
   PipeName, SyntheticPath: String;
   ClicksBefore, ClicksAfter: Integer;
   DispatchedVia: String;
-BEGIN
+begin
   PipeName := FPipeName;
   // Build the synthetic path the same way the bridge does — anchored on the unnamed
   // button's actual ComponentIndex so the test stays correct if the fixture grows.
@@ -1232,62 +1265,62 @@ BEGIN
   ClicksBefore := GFixtureForm.BtnUnnamedClicks;
   DispatchedVia := '';
   RunOnWorkerAndPump(
-    PROCEDURE
-    VAR
+    procedure
+    var
       Client: TBridgeTestClient;
       Args, Resp, R: TJSONObject;
       V: TJSONValue;
-    BEGIN
+    begin
       Client := TBridgeTestClient.Create;
-      TRY
+      try
         Assert.IsTrue(Client.ConnectAndHandshake(PipeName, 2000), 'connect');
         Args := TJSONObject.Create;
         Args.AddPair('path', SyntheticPath);
         Resp := Client.Call(41, 'click', Args);
-        TRY
+        try
           R := GetOkResult(Resp);
           Assert.IsNotNull(R, 'click should return ok via synthetic path');
           V := R.GetValue('dispatchedVia');
           if V IS TJSONString then
             DispatchedVia := TJSONString(V).Value;
-        FINALLY
+        finally
           Resp.Free;
-        END;
-      FINALLY
+        end;
+      finally
         Client.Free;
-      END;
-    END, 5000);
+      end;
+    end, 5000);
   ClicksAfter := GFixtureForm.BtnUnnamedClicks;
   Assert.AreEqual(ClicksBefore + 1, ClicksAfter, 'OnClick should have fired exactly once via synthetic path');
   Assert.AreEqual('click', DispatchedVia, 'expected dispatchedVia=click for TButton via synthetic path');
-END;
+end;
 
 
-PROCEDURE TBridgeTests.Test_ListTree_RecursesIntoFrames;
-VAR
+procedure TBridgeTests.Test_ListTree_RecursesIntoFrames;
+var
   PipeName: String;
   FoundFrame, FoundInner: Boolean;
   InnerPath: String;
-BEGIN
+begin
   PipeName := FPipeName;
-  FoundFrame := FALSE;
-  FoundInner := FALSE;
+  FoundFrame := False;
+  FoundInner := False;
   InnerPath := '';
   RunOnWorkerAndPump(
-    PROCEDURE
-    VAR
+    procedure
+    var
       Client: TBridgeTestClient;
       Resp, R: TJSONObject;
       Arr: TJSONArray;
       i: Integer;
       Item: TJSONObject;
       NameVal, PathVal: TJSONValue;
-    BEGIN
+    begin
       Client := TBridgeTestClient.Create;
-      TRY
+      try
         Assert.IsTrue(Client.ConnectAndHandshake(PipeName, 2000), 'connect');
-        Resp := Client.Call(50, 'list_tree', NIL);
-        TRY
+        Resp := Client.Call(50, 'list_tree', nil);
+        try
           R := GetOkResult(Resp);
           Assert.IsNotNull(R, 'list_tree should return ok');
           Arr := R.GetValue('components') AS TJSONArray;
@@ -1297,102 +1330,102 @@ BEGIN
             Item := Arr.Items[i] AS TJSONObject;
             NameVal := Item.GetValue('name');
             if not (NameVal IS TJSONString) then Continue;
-            if TJSONString(NameVal).Value = 'frmInner'   then FoundFrame := TRUE;
+            if TJSONString(NameVal).Value = 'frmInner'   then FoundFrame := True;
             if TJSONString(NameVal).Value = 'btnInFrame' then
             begin
-              FoundInner := TRUE;
+              FoundInner := True;
               PathVal := Item.GetValue('path');
               if PathVal IS TJSONString then
                 InnerPath := TJSONString(PathVal).Value;
             end;
           end;
-        FINALLY
+        finally
           Resp.Free;
-        END;
-      FINALLY
+        end;
+      finally
         Client.Free;
-      END;
-    END, 5000);
+      end;
+    end, 5000);
   Assert.IsTrue(FoundFrame, 'list_tree should include the frame');
   Assert.IsTrue(FoundInner, 'list_tree should recurse into the frame and include its child button');
   Assert.AreEqual('FixtureForm.frmInner.btnInFrame', InnerPath,
                   'frame-child path should be Form.Frame.Child (anchored)');
-END;
+end;
 
 
-PROCEDURE TBridgeTests.Test_Click_FrameChildByFlatPathFiresOnClick;
-VAR
+procedure TBridgeTests.Test_Click_FrameChildByFlatPathFiresOnClick;
+var
   PipeName: String;
   ClicksBefore, ClicksAfter: Integer;
-BEGIN
+begin
   PipeName := FPipeName;
   ClicksBefore := GFixtureForm.BtnInFrameClicks;
   RunOnWorkerAndPump(
-    PROCEDURE
-    VAR
+    procedure
+    var
       Client: TBridgeTestClient;
       Args, Resp: TJSONObject;
-    BEGIN
+    begin
       Client := TBridgeTestClient.Create;
-      TRY
+      try
         Assert.IsTrue(Client.ConnectAndHandshake(PipeName, 2000), 'connect');
         Args := TJSONObject.Create;
         // Flat 2-part path: recursive search should find the button inside the frame.
         Args.AddPair('path', 'FixtureForm.btnInFrame');
         Resp := Client.Call(51, 'click', Args);
-        TRY
+        try
           Assert.IsNotNull(GetOkResult(Resp), 'click via flat path should return ok');
-        FINALLY
+        finally
           Resp.Free;
-        END;
-      FINALLY
+        end;
+      finally
         Client.Free;
-      END;
-    END, 5000);
+      end;
+    end, 5000);
   ClicksAfter := GFixtureForm.BtnInFrameClicks;
   Assert.AreEqual(ClicksBefore + 1, ClicksAfter, 'flat-path click should reach the frame child');
-END;
+end;
 
 
-PROCEDURE TBridgeTests.Test_Click_FrameChildByAnchoredPathFiresOnClick;
-VAR
+procedure TBridgeTests.Test_Click_FrameChildByAnchoredPathFiresOnClick;
+var
   PipeName: String;
   ClicksBefore, ClicksAfter: Integer;
-BEGIN
+begin
   PipeName := FPipeName;
   ClicksBefore := GFixtureForm.BtnInFrameClicks;
   RunOnWorkerAndPump(
-    PROCEDURE
-    VAR
+    procedure
+    var
       Client: TBridgeTestClient;
       Args, Resp: TJSONObject;
-    BEGIN
+    begin
       Client := TBridgeTestClient.Create;
-      TRY
+      try
         Assert.IsTrue(Client.ConnectAndHandshake(PipeName, 2000), 'connect');
         Args := TJSONObject.Create;
         // Anchored 3-part path: each segment is a direct child of the previous.
         Args.AddPair('path', 'FixtureForm.frmInner.btnInFrame');
         Resp := Client.Call(52, 'click', Args);
-        TRY
+        try
           Assert.IsNotNull(GetOkResult(Resp), 'click via anchored path should return ok');
-        FINALLY
+        finally
           Resp.Free;
-        END;
-      FINALLY
+        end;
+      finally
         Client.Free;
-      END;
-    END, 5000);
+      end;
+    end, 5000);
   ClicksAfter := GFixtureForm.BtnInFrameClicks;
   Assert.AreEqual(ClicksBefore + 1, ClicksAfter, 'anchored-path click should reach the frame child');
-END;
+end;
 
 
-PROCEDURE TBridgeTests.Test_Click_DesignTimeStyleFrameChildFiresOnClick;
-VAR
+procedure TBridgeTests.Test_Click_DesignTimeStyleFrameChildFiresOnClick;
+var
   PipeName: String;
   ClicksBefore, ClicksAfter: Integer;
-BEGIN
+begin
   PipeName := FPipeName;
   ClicksBefore := GFixtureForm.BtnOnFrameDesignTimeClicks;
   // BtnOnFrameDesignTime is owned by the form (not by the frame). This mirrors
@@ -1400,541 +1433,541 @@ BEGIN
   // (the form), regardless of visual parenting. The flat 2-part path must still
   // find it — it lives directly in Form.Components[].
   RunOnWorkerAndPump(
-    PROCEDURE
-    VAR
+    procedure
+    var
       Client: TBridgeTestClient;
       Args, Resp: TJSONObject;
-    BEGIN
+    begin
       Client := TBridgeTestClient.Create;
-      TRY
+      try
         Assert.IsTrue(Client.ConnectAndHandshake(PipeName, 2000), 'connect');
         Args := TJSONObject.Create;
         Args.AddPair('path', 'FixtureForm.btnOnFrameDT');
         Resp := Client.Call(60, 'click', Args);
-        TRY
+        try
           Assert.IsNotNull(GetOkResult(Resp), 'click should return ok');
-        FINALLY
+        finally
           Resp.Free;
-        END;
-      FINALLY
+        end;
+      finally
         Client.Free;
-      END;
-    END, 5000);
+      end;
+    end, 5000);
   ClicksAfter := GFixtureForm.BtnOnFrameDesignTimeClicks;
   Assert.AreEqual(ClicksBefore + 1, ClicksAfter,
                   'design-time-style frame child (Owner=Form, Parent=Frame) should be clickable via flat path');
-END;
+end;
 
 
-PROCEDURE TBridgeTests.Test_FindByPath_FormItselfByOneSegmentPath;
-VAR
+procedure TBridgeTests.Test_FindByPath_FormItselfByOneSegmentPath;
+var
   PipeName, ReadText: String;
-BEGIN
+begin
   PipeName := FPipeName;
   ReadText := '';
   // Round-trip check: list_tree emits the form node with path='FixtureForm'.
   // get_text against that same path must resolve back to the form itself and
   // read its Caption.
   RunOnWorkerAndPump(
-    PROCEDURE
-    VAR
+    procedure
+    var
       Client: TBridgeTestClient;
       Args, Resp, R: TJSONObject;
       V: TJSONValue;
-    BEGIN
+    begin
       Client := TBridgeTestClient.Create;
-      TRY
+      try
         Assert.IsTrue(Client.ConnectAndHandshake(PipeName, 2000), 'connect');
         Args := TJSONObject.Create;
         Args.AddPair('path', 'FixtureForm');
         Resp := Client.Call(61, 'get_text', Args);
-        TRY
+        try
           R := GetOkResult(Resp);
           Assert.IsNotNull(R, 'get_text on form path should return ok');
           V := R.GetValue('text');
           Assert.IsTrue(V IS TJSONString, 'result.text should be a string');
           ReadText := TJSONString(V).Value;
-        FINALLY
+        finally
           Resp.Free;
-        END;
-      FINALLY
+        end;
+      finally
         Client.Free;
-      END;
-    END, 5000);
+      end;
+    end, 5000);
   Assert.AreEqual('Fixture', ReadText, 'one-segment path should resolve to the form itself');
-END;
+end;
 
 
-PROCEDURE TBridgeTests.Test_SetProperty_WritesString;
-VAR
+procedure TBridgeTests.Test_SetProperty_WritesString;
+var
   PipeName: String;
   Ok: Boolean;
-BEGIN
+begin
   PipeName := FPipeName;
-  Ok := FALSE;
+  Ok := False;
   RunOnWorkerAndPump(
-    PROCEDURE
-    VAR
+    procedure
+    var
       Client: TBridgeTestClient;
       Args, Resp: TJSONObject;
-    BEGIN
+    begin
       Client := TBridgeTestClient.Create;
-      TRY
+      try
         Assert.IsTrue(Client.ConnectAndHandshake(PipeName, 2000), 'connect');
         Args := TJSONObject.Create;
         Args.AddPair('path', 'FixtureForm.btnTest');
         Args.AddPair('propName', 'Caption');
         Args.AddPair('value', 'set by set_property');
         Resp := Client.Call(70, 'set_property', Args);
-        TRY
-          Ok := GetOkResult(Resp) <> NIL;
-        FINALLY
+        try
+          Ok := GetOkResult(Resp) <> nil;
+        finally
           Resp.Free;
-        END;
-      FINALLY
+        end;
+      finally
         Client.Free;
-      END;
-    END, 5000);
+      end;
+    end, 5000);
   Assert.IsTrue(Ok, 'set_property should return ok for a writable string property');
   Assert.AreEqual('set by set_property', GFixtureForm.Btn.Caption, 'Caption should be updated');
-END;
+end;
 
 
-PROCEDURE TBridgeTests.Test_SetProperty_WritesInteger;
-VAR
+procedure TBridgeTests.Test_SetProperty_WritesInteger;
+var
   PipeName: String;
   Ok: Boolean;
-BEGIN
+begin
   PipeName := FPipeName;
-  Ok := FALSE;
+  Ok := False;
   RunOnWorkerAndPump(
-    PROCEDURE
-    VAR
+    procedure
+    var
       Client: TBridgeTestClient;
       Args, Resp: TJSONObject;
-    BEGIN
+    begin
       Client := TBridgeTestClient.Create;
-      TRY
+      try
         Assert.IsTrue(Client.ConnectAndHandshake(PipeName, 2000), 'connect');
         Args := TJSONObject.Create;
         Args.AddPair('path', 'FixtureForm.btnTest');
         Args.AddPair('propName', 'Tag');
         Args.AddPair('value', '42');
         Resp := Client.Call(71, 'set_property', Args);
-        TRY
-          Ok := GetOkResult(Resp) <> NIL;
-        FINALLY
+        try
+          Ok := GetOkResult(Resp) <> nil;
+        finally
           Resp.Free;
-        END;
-      FINALLY
+        end;
+      finally
         Client.Free;
-      END;
-    END, 5000);
+      end;
+    end, 5000);
   Assert.IsTrue(Ok, 'set_property should return ok for a writable integer property');
   Assert.AreEqual(NativeInt(42), GFixtureForm.Btn.Tag, 'Tag should be 42');
-END;
+end;
 
 
-PROCEDURE TBridgeTests.Test_SetProperty_WritesBoolean;
-VAR
+procedure TBridgeTests.Test_SetProperty_WritesBoolean;
+var
   PipeName: String;
   Ok: Boolean;
-BEGIN
+begin
   PipeName := FPipeName;
-  Ok := FALSE;
+  Ok := False;
   RunOnWorkerAndPump(
-    PROCEDURE
-    VAR
+    procedure
+    var
       Client: TBridgeTestClient;
       Args, Resp: TJSONObject;
-    BEGIN
+    begin
       Client := TBridgeTestClient.Create;
-      TRY
+      try
         Assert.IsTrue(Client.ConnectAndHandshake(PipeName, 2000), 'connect');
         Args := TJSONObject.Create;
         Args.AddPair('path', 'FixtureForm.cbxFlag');
         Args.AddPair('propName', 'Checked');
         Args.AddPair('value', 'true');
         Resp := Client.Call(72, 'set_property', Args);
-        TRY
-          Ok := GetOkResult(Resp) <> NIL;
-        FINALLY
+        try
+          Ok := GetOkResult(Resp) <> nil;
+        finally
           Resp.Free;
-        END;
-      FINALLY
+        end;
+      finally
         Client.Free;
-      END;
-    END, 5000);
+      end;
+    end, 5000);
   Assert.IsTrue(Ok, 'set_property should return ok for a writable boolean property');
-  Assert.IsTrue(GFixtureForm.Cbx.Checked, 'cbxFlag.Checked should be TRUE');
-END;
+  Assert.IsTrue(GFixtureForm.Cbx.Checked, 'cbxFlag.Checked should be True');
+end;
 
 
-PROCEDURE TBridgeTests.Test_SetProperty_WritesEnumByIdentifier;
-VAR
+procedure TBridgeTests.Test_SetProperty_WritesEnumByIdentifier;
+var
   PipeName: String;
   Ok: Boolean;
-BEGIN
+begin
   PipeName := FPipeName;
-  Ok := FALSE;
+  Ok := False;
   // TForm.Position is TPosition (enum). poDesigned = 0, poDefault = 1, etc.
   // Default in fixture form Setup is poDesigned. Switch it to poDefaultSizeOnly.
   RunOnWorkerAndPump(
-    PROCEDURE
-    VAR
+    procedure
+    var
       Client: TBridgeTestClient;
       Args, Resp: TJSONObject;
-    BEGIN
+    begin
       Client := TBridgeTestClient.Create;
-      TRY
+      try
         Assert.IsTrue(Client.ConnectAndHandshake(PipeName, 2000), 'connect');
         Args := TJSONObject.Create;
         Args.AddPair('path', 'FixtureForm');
         Args.AddPair('propName', 'Position');
         Args.AddPair('value', 'poDefaultSizeOnly');
         Resp := Client.Call(73, 'set_property', Args);
-        TRY
-          Ok := GetOkResult(Resp) <> NIL;
-        FINALLY
+        try
+          Ok := GetOkResult(Resp) <> nil;
+        finally
           Resp.Free;
-        END;
-      FINALLY
+        end;
+      finally
         Client.Free;
-      END;
-    END, 5000);
+      end;
+    end, 5000);
   Assert.IsTrue(Ok, 'set_property should accept enum identifier');
   Assert.AreEqual(Ord(poDefaultSizeOnly), Ord(GFixtureForm.Position), 'Position should change to poDefaultSizeOnly');
-END;
+end;
 
 
-PROCEDURE TBridgeTests.Test_SetProperty_WritesFloat;
-VAR
+procedure TBridgeTests.Test_SetProperty_WritesFloat;
+var
   PipeName: String;
   Ok: Boolean;
-BEGIN
+begin
   PipeName := FPipeName;
-  Ok := FALSE;
+  Ok := False;
   RunOnWorkerAndPump(
-    PROCEDURE
-    VAR
+    procedure
+    var
       Client: TBridgeTestClient;
       Args, Resp: TJSONObject;
-    BEGIN
+    begin
       Client := TBridgeTestClient.Create;
-      TRY
+      try
         Assert.IsTrue(Client.ConnectAndHandshake(PipeName, 2000), 'connect');
         Args := TJSONObject.Create;
         Args.AddPair('path', 'FixtureForm');
         Args.AddPair('propName', 'FloatProp');
         Args.AddPair('value', '3.14');
         Resp := Client.Call(74, 'set_property', Args);
-        TRY
-          Ok := GetOkResult(Resp) <> NIL;
-        FINALLY
+        try
+          Ok := GetOkResult(Resp) <> nil;
+        finally
           Resp.Free;
-        END;
-      FINALLY
+        end;
+      finally
         Client.Free;
-      END;
-    END, 5000);
+      end;
+    end, 5000);
   Assert.IsTrue(Ok, 'set_property should return ok for a writable float property');
   Assert.AreEqual(Single(3.14), GFixtureForm.FloatProp, 0.001, 'FloatProp should be 3.14');
-END;
+end;
 
 
-PROCEDURE TBridgeTests.Test_SetProperty_UnknownPropertyReturnsListOfWritables;
-VAR
+procedure TBridgeTests.Test_SetProperty_UnknownPropertyReturnsListOfWritables;
+var
   PipeName: String;
   Code: Integer;
   HasCaption, HasTag: Boolean;
-BEGIN
+begin
   PipeName := FPipeName;
   Code := 0;
-  HasCaption := FALSE;
-  HasTag := FALSE;
+  HasCaption := False;
+  HasTag := False;
   RunOnWorkerAndPump(
-    PROCEDURE
-    VAR
+    procedure
+    var
       Client: TBridgeTestClient;
       Args, Resp: TJSONObject;
       Data, Item: TJSONObject;
       Arr: TJSONArray;
       i: Integer;
       V: TJSONValue;
-    BEGIN
+    begin
       Client := TBridgeTestClient.Create;
-      TRY
+      try
         Assert.IsTrue(Client.ConnectAndHandshake(PipeName, 2000), 'connect');
         Args := TJSONObject.Create;
         Args.AddPair('path', 'FixtureForm.btnTest');
         Args.AddPair('propName', 'NoSuchProperty');
         Args.AddPair('value', 'whatever');
         Resp := Client.Call(75, 'set_property', Args);
-        TRY
+        try
           Code := GetErrorCode(Resp);
           Data := GetErrorData(Resp);
-          if Data <> NIL then
+          if Data <> nil then
           begin
             Arr := Data.GetValue('availableProperties') AS TJSONArray;
-            if Arr <> NIL then
+            if Arr <> nil then
               for i := 0 to Arr.Count - 1 do
               begin
                 Item := Arr.Items[i] AS TJSONObject;
                 V := Item.GetValue('name');
                 if V IS TJSONString then
                 begin
-                  if TJSONString(V).Value = 'Caption' then HasCaption := TRUE;
-                  if TJSONString(V).Value = 'Tag'     then HasTag     := TRUE;
+                  if TJSONString(V).Value = 'Caption' then HasCaption := True;
+                  if TJSONString(V).Value = 'Tag'     then HasTag     := True;
                 end;
               end;
           end;
-        FINALLY
+        finally
           Resp.Free;
-        END;
-      FINALLY
+        end;
+      finally
         Client.Free;
-      END;
-    END, 5000);
+      end;
+    end, 5000);
   Assert.AreEqual(ErrRttiPropertyMissing, Code, 'expected rtti_property_missing');
   Assert.IsTrue(HasCaption, 'availableProperties should list Caption');
   Assert.IsTrue(HasTag,     'availableProperties should list Tag');
-END;
+end;
 
 
-PROCEDURE TBridgeTests.Test_SetProperty_TypeMismatchReturnsUnsupportedAction;
-VAR
+procedure TBridgeTests.Test_SetProperty_TypeMismatchReturnsUnsupportedAction;
+var
   PipeName: String;
   Code: Integer;
-BEGIN
+begin
   PipeName := FPipeName;
   Code := 0;
   RunOnWorkerAndPump(
-    PROCEDURE
-    VAR
+    procedure
+    var
       Client: TBridgeTestClient;
       Args, Resp: TJSONObject;
-    BEGIN
+    begin
       Client := TBridgeTestClient.Create;
-      TRY
+      try
         Assert.IsTrue(Client.ConnectAndHandshake(PipeName, 2000), 'connect');
         Args := TJSONObject.Create;
         Args.AddPair('path', 'FixtureForm.btnTest');
         Args.AddPair('propName', 'Tag');
         Args.AddPair('value', 'not a number');
         Resp := Client.Call(76, 'set_property', Args);
-        TRY
+        try
           Code := GetErrorCode(Resp);
-        FINALLY
+        finally
           Resp.Free;
-        END;
-      FINALLY
+        end;
+      finally
         Client.Free;
-      END;
-    END, 5000);
+      end;
+    end, 5000);
   Assert.AreEqual(ErrUnsupportedAction, Code,
                   'non-numeric value for integer property should return unsupported_action');
   Assert.AreEqual(NativeInt(0), GFixtureForm.Btn.Tag, 'Tag should remain at its default 0');
-END;
+end;
 
 
-PROCEDURE TBridgeTests.Test_SetProperty_DisabledControlReturnsError;
-VAR
+procedure TBridgeTests.Test_SetProperty_DisabledControlReturnsError;
+var
   PipeName: String;
   Code: Integer;
-BEGIN
+begin
   PipeName := FPipeName;
   Code := 0;
   RunOnWorkerAndPump(
-    PROCEDURE
-    VAR
+    procedure
+    var
       Client: TBridgeTestClient;
       Args, Resp: TJSONObject;
-    BEGIN
+    begin
       Client := TBridgeTestClient.Create;
-      TRY
+      try
         Assert.IsTrue(Client.ConnectAndHandshake(PipeName, 2000), 'connect');
         Args := TJSONObject.Create;
         Args.AddPair('path', 'FixtureForm.btnDisabled');
         Args.AddPair('propName', 'Caption');
         Args.AddPair('value', 'should not land');
         Resp := Client.Call(77, 'set_property', Args);
-        TRY
+        try
           Code := GetErrorCode(Resp);
-        FINALLY
+        finally
           Resp.Free;
-        END;
-      FINALLY
+        end;
+      finally
         Client.Free;
-      END;
-    END, 5000);
+      end;
+    end, 5000);
   Assert.AreEqual(ErrControlDisabled, Code, 'expected control_disabled error');
   Assert.AreEqual('Disabled', GFixtureForm.BtnDisabled.Caption, 'disabled button caption should be unchanged');
-END;
+end;
 
 
-PROCEDURE TBridgeTests.Test_SetProperty_WritesSetByBracketLiteral;
-VAR
+procedure TBridgeTests.Test_SetProperty_WritesSetByBracketLiteral;
+var
   PipeName: String;
   Ok: Boolean;
-BEGIN
+begin
   PipeName := FPipeName;
-  Ok := FALSE;
+  Ok := False;
   GFixtureForm.MySetProp := [];
   RunOnWorkerAndPump(
-    PROCEDURE
-    VAR
+    procedure
+    var
       Client: TBridgeTestClient;
       Args, Resp, R: TJSONObject;
-    BEGIN
+    begin
       Client := TBridgeTestClient.Create;
-      TRY
+      try
         Assert.IsTrue(Client.ConnectAndHandshake(PipeName, 2000), 'connect');
         Args := TJSONObject.Create;
         Args.AddPair('path', 'FixtureForm');
         Args.AddPair('propName', 'MySetProp');
         Args.AddPair('value', '[fcRed,fcBlue]');
         Resp := Client.Call(78, 'set_property', Args);
-        TRY
+        try
           R := GetOkResult(Resp);
-          Ok := R <> NIL;
-        FINALLY
+          Ok := R <> nil;
+        finally
           Resp.Free;
-        END;
-      FINALLY
+        end;
+      finally
         Client.Free;
-      END;
-    END, 5000);
+      end;
+    end, 5000);
   Assert.IsTrue(Ok, 'set_property should return ok for a set literal');
   Assert.IsTrue(fcRed  in GFixtureForm.MySetProp, 'fcRed should be set');
   Assert.IsTrue(fcBlue in GFixtureForm.MySetProp, 'fcBlue should be set');
   Assert.IsFalse(fcGreen in GFixtureForm.MySetProp, 'fcGreen should NOT be set');
-END;
+end;
 
 
-PROCEDURE TBridgeTests.Test_SetProperty_WritesSetByBareIdentifierList;
-VAR
+procedure TBridgeTests.Test_SetProperty_WritesSetByBareIdentifierList;
+var
   PipeName: String;
   Ok: Boolean;
-BEGIN
+begin
   PipeName := FPipeName;
-  Ok := FALSE;
+  Ok := False;
   GFixtureForm.MySetProp := [];
   RunOnWorkerAndPump(
-    PROCEDURE
-    VAR
+    procedure
+    var
       Client: TBridgeTestClient;
       Args, Resp, R: TJSONObject;
-    BEGIN
+    begin
       Client := TBridgeTestClient.Create;
-      TRY
+      try
         Assert.IsTrue(Client.ConnectAndHandshake(PipeName, 2000), 'connect');
         Args := TJSONObject.Create;
         Args.AddPair('path', 'FixtureForm');
         Args.AddPair('propName', 'MySetProp');
         Args.AddPair('value', 'fcGreen,fcYellow');
         Resp := Client.Call(79, 'set_property', Args);
-        TRY
+        try
           R := GetOkResult(Resp);
-          Ok := R <> NIL;
-        FINALLY
+          Ok := R <> nil;
+        finally
           Resp.Free;
-        END;
-      FINALLY
+        end;
+      finally
         Client.Free;
-      END;
-    END, 5000);
+      end;
+    end, 5000);
   Assert.IsTrue(Ok, 'set_property should accept a bare comma list (no brackets)');
   Assert.IsTrue(fcGreen  in GFixtureForm.MySetProp, 'fcGreen should be set');
   Assert.IsTrue(fcYellow in GFixtureForm.MySetProp, 'fcYellow should be set');
   Assert.IsFalse(fcRed   in GFixtureForm.MySetProp, 'fcRed should NOT be set');
-END;
+end;
 
 
-PROCEDURE TBridgeTests.Test_SetProperty_WritesEmptySet;
-VAR
+procedure TBridgeTests.Test_SetProperty_WritesEmptySet;
+var
   PipeName: String;
   Ok: Boolean;
-BEGIN
+begin
   PipeName := FPipeName;
-  Ok := FALSE;
+  Ok := False;
   GFixtureForm.MySetProp := [fcRed, fcGreen];
   RunOnWorkerAndPump(
-    PROCEDURE
-    VAR
+    procedure
+    var
       Client: TBridgeTestClient;
       Args, Resp, R: TJSONObject;
-    BEGIN
+    begin
       Client := TBridgeTestClient.Create;
-      TRY
+      try
         Assert.IsTrue(Client.ConnectAndHandshake(PipeName, 2000), 'connect');
         Args := TJSONObject.Create;
         Args.AddPair('path', 'FixtureForm');
         Args.AddPair('propName', 'MySetProp');
         Args.AddPair('value', '[]');
         Resp := Client.Call(80, 'set_property', Args);
-        TRY
+        try
           R := GetOkResult(Resp);
-          Ok := R <> NIL;
-        FINALLY
+          Ok := R <> nil;
+        finally
           Resp.Free;
-        END;
-      FINALLY
+        end;
+      finally
         Client.Free;
-      END;
-    END, 5000);
+      end;
+    end, 5000);
   Assert.IsTrue(Ok, 'set_property should accept the empty-set literal "[]"');
   Assert.IsTrue(GFixtureForm.MySetProp = [], 'MySetProp should now be empty');
-END;
+end;
 
 
-PROCEDURE TBridgeTests.Test_SetProperty_InvalidSetIdentifierReturnsUnsupportedAction;
-VAR
+procedure TBridgeTests.Test_SetProperty_InvalidSetIdentifierReturnsUnsupportedAction;
+var
   PipeName: String;
   Code: Integer;
-BEGIN
+begin
   PipeName := FPipeName;
   Code := 0;
   GFixtureForm.MySetProp := [fcRed];
   RunOnWorkerAndPump(
-    PROCEDURE
-    VAR
+    procedure
+    var
       Client: TBridgeTestClient;
       Args, Resp: TJSONObject;
-    BEGIN
+    begin
       Client := TBridgeTestClient.Create;
-      TRY
+      try
         Assert.IsTrue(Client.ConnectAndHandshake(PipeName, 2000), 'connect');
         Args := TJSONObject.Create;
         Args.AddPair('path', 'FixtureForm');
         Args.AddPair('propName', 'MySetProp');
         Args.AddPair('value', '[fcPuce]');     // not a member of TFixtureColor
         Resp := Client.Call(81, 'set_property', Args);
-        TRY
+        try
           Code := GetErrorCode(Resp);
-        FINALLY
+        finally
           Resp.Free;
-        END;
-      FINALLY
+        end;
+      finally
         Client.Free;
-      END;
-    END, 5000);
+      end;
+    end, 5000);
   Assert.AreEqual(ErrUnsupportedAction, Code,
                   'invalid set identifier should return unsupported_action');
   Assert.IsTrue(GFixtureForm.MySetProp = [fcRed],
                 'MySetProp should be untouched after a bad set value');
-END;
+end;
 
 
-PROCEDURE TBridgeTests.Test_SetProperty_AvailablePropertiesIncludeCurrentValue;
-VAR
+procedure TBridgeTests.Test_SetProperty_AvailablePropertiesIncludeCurrentValue;
+var
   PipeName: String;
   CaptionCurrent, TagCurrent, FloatCurrent: String;
   HasCaptionCurrent, HasTagCurrent, HasFloatCurrent: Boolean;
-BEGIN
+begin
   PipeName := FPipeName;
-  HasCaptionCurrent := FALSE;
-  HasTagCurrent := FALSE;
-  HasFloatCurrent := FALSE;
+  HasCaptionCurrent := False;
+  HasTagCurrent := False;
+  HasFloatCurrent := False;
   CaptionCurrent := '';
   TagCurrent := '';
   FloatCurrent := '';
@@ -1942,8 +1975,8 @@ BEGIN
   GFixtureForm.Btn.Caption := 'CurrentCaption42';
   GFixtureForm.Btn.Tag     := 7;
   RunOnWorkerAndPump(
-    PROCEDURE
-    VAR
+    procedure
+    var
       Client: TBridgeTestClient;
       Args, Resp: TJSONObject;
       Data, Item: TJSONObject;
@@ -1951,16 +1984,16 @@ BEGIN
       i: Integer;
       NameV, CurV: TJSONValue;
       PName: String;
-    BEGIN
+    begin
       Client := TBridgeTestClient.Create;
-      TRY
+      try
         Assert.IsTrue(Client.ConnectAndHandshake(PipeName, 2000), 'connect');
         Args := TJSONObject.Create;
         Args.AddPair('path', 'FixtureForm.btnTest');
         Args.AddPair('propName', 'NoSuchProperty');
         Args.AddPair('value', '');
         Resp := Client.Call(82, 'set_property', Args);
-        TRY
+        try
           Data := GetErrorData(Resp);
           Assert.IsNotNull(Data, 'expected error.data on unknown property');
           Arr := Data.GetValue('availableProperties') AS TJSONArray;
@@ -1973,8 +2006,8 @@ BEGIN
             PName := TJSONString(NameV).Value;
             CurV := Item.GetValue('currentValue');
             if not (CurV IS TJSONString) then Continue;
-            if PName = 'Caption' then begin HasCaptionCurrent := TRUE; CaptionCurrent := TJSONString(CurV).Value; end;
-            if PName = 'Tag'     then begin HasTagCurrent     := TRUE; TagCurrent     := TJSONString(CurV).Value; end;
+            if PName = 'Caption' then begin HasCaptionCurrent := True; CaptionCurrent := TJSONString(CurV).Value; end;
+            if PName = 'Tag'     then begin HasTagCurrent     := True; TagCurrent     := TJSONString(CurV).Value; end;
             if PName = 'Enabled' then begin {smoke-check boolean kind is read} end;
             if PName = 'Width'   then begin {smoke-check integer kind is read} end;
             // FloatProp is on TFixtureForm, not on Btn — won't show here. We check it
@@ -1982,15 +2015,15 @@ BEGIN
             // own published properties.
             // Mark FloatCurrent as observed if it does appear on Btn (it doesn't, but
             // referencing the variable keeps it from being dead-stripped to a warning).
-            if PName = 'FloatProp' then begin HasFloatCurrent := TRUE; FloatCurrent := TJSONString(CurV).Value; end;
+            if PName = 'FloatProp' then begin HasFloatCurrent := True; FloatCurrent := TJSONString(CurV).Value; end;
           end;
-        FINALLY
+        finally
           Resp.Free;
-        END;
-      FINALLY
+        end;
+      finally
         Client.Free;
-      END;
-    END, 5000);
+      end;
+    end, 5000);
   Assert.IsTrue(HasCaptionCurrent, 'expected Caption.currentValue in availableProperties');
   Assert.AreEqual('CurrentCaption42', CaptionCurrent,
                   'Caption.currentValue should reflect the live caption');
@@ -1998,161 +2031,161 @@ BEGIN
   Assert.AreEqual('7', TagCurrent, 'Tag.currentValue should be "7"');
   // Touch the float variables so the compiler doesn't flag them as unused-but-assigned.
   if HasFloatCurrent then Assert.IsNotEmpty(FloatCurrent);
-END;
+end;
 
 
 // Headline tkClass test: write TStrings.Text via dotted propName. The fixture
 // form exposes MyLines: TStrings (backed by a TStringList) — same RTTI shape
 // as TMemo.Lines without needing a window handle. The bridge resolves the
 // outer MyLines getter, then recurses onto the TStrings instance to set Text.
-PROCEDURE TBridgeTests.Test_SetProperty_WritesNestedClassMemberLinesText;
-VAR
+procedure TBridgeTests.Test_SetProperty_WritesNestedClassMemberLinesText;
+var
   PipeName: String;
   Ok: Boolean;
-BEGIN
+begin
   PipeName := FPipeName;
-  Ok := FALSE;
+  Ok := False;
   RunOnWorkerAndPump(
-    PROCEDURE
-    VAR
+    procedure
+    var
       Client: TBridgeTestClient;
       Args, Resp: TJSONObject;
-    BEGIN
+    begin
       Client := TBridgeTestClient.Create;
-      TRY
+      try
         Assert.IsTrue(Client.ConnectAndHandshake(PipeName, 2000), 'connect');
         Args := TJSONObject.Create;
         Args.AddPair('path', 'FixtureForm');
         Args.AddPair('propName', 'MyLines.Text');
         Args.AddPair('value', 'line one'#13#10'line two');
         Resp := Client.Call(83, 'set_property', Args);
-        TRY
-          Ok := GetOkResult(Resp) <> NIL;
-        FINALLY
+        try
+          Ok := GetOkResult(Resp) <> nil;
+        finally
           Resp.Free;
-        END;
-      FINALLY
+        end;
+      finally
         Client.Free;
-      END;
-    END, 5000);
+      end;
+    end, 5000);
   Assert.IsTrue(Ok, 'set_property should return ok for a dotted tkClass.tkString path');
   // TStrings.Text round-trips with a trailing CRLF on get; compare lines content
   // via Trim so we don't depend on that surface detail.
   Assert.AreEqual('line one'#13#10'line two',
                   Trim(GFixtureForm.MyLines.Text),
                   'MyLines.Text should reflect the two-line value');
-END;
+end;
 
 
 // Second tkClass test: Font.Size on a TButton. Font is published on every
 // TControl as a tkClass property; TFont.Size is a writable Integer. Verifies
 // the dotted path works for tkClass.tkInteger too.
-PROCEDURE TBridgeTests.Test_SetProperty_WritesNestedClassMemberFontSize;
-VAR
+procedure TBridgeTests.Test_SetProperty_WritesNestedClassMemberFontSize;
+var
   PipeName: String;
   Ok: Boolean;
-BEGIN
+begin
   PipeName := FPipeName;
-  Ok := FALSE;
+  Ok := False;
   RunOnWorkerAndPump(
-    PROCEDURE
-    VAR
+    procedure
+    var
       Client: TBridgeTestClient;
       Args, Resp: TJSONObject;
-    BEGIN
+    begin
       Client := TBridgeTestClient.Create;
-      TRY
+      try
         Assert.IsTrue(Client.ConnectAndHandshake(PipeName, 2000), 'connect');
         Args := TJSONObject.Create;
         Args.AddPair('path', 'FixtureForm.btnTest');
         Args.AddPair('propName', 'Font.Size');
         Args.AddPair('value', '18');
         Resp := Client.Call(84, 'set_property', Args);
-        TRY
-          Ok := GetOkResult(Resp) <> NIL;
-        FINALLY
+        try
+          Ok := GetOkResult(Resp) <> nil;
+        finally
           Resp.Free;
-        END;
-      FINALLY
+        end;
+      finally
         Client.Free;
-      END;
-    END, 5000);
+      end;
+    end, 5000);
   Assert.IsTrue(Ok, 'set_property should return ok for a dotted tkClass.tkInteger path');
   Assert.AreEqual(18, GFixtureForm.Btn.Font.Size, 'btnTest.Font.Size should be 18');
-END;
+end;
 
 
 // 2026-05-20: bridge now turns ParentFont off before a dotted Font.* write.
 // The VCL does the same flip itself as a side effect of TControl.FontChanged,
-// so the post-write end state was always Font.Size=N and ParentFont=FALSE
+// so the post-write end state was always Font.Size=N and ParentFont=False
 // even without the bridge's help. The bridge pre-flip matters in the elision
 // path (no actual SetValue → no FontChanged → no VCL auto-flip), and pins
-// the contract: after any set_property Font.* call, ParentFont is FALSE.
-// Verify both legs: the size landed AND ParentFont is now FALSE.
-PROCEDURE TBridgeTests.Test_SetProperty_DottedFontWriteFlipsParentFontFalse;
-VAR
+// the contract: after any set_property Font.* call, ParentFont is False.
+// Verify both legs: the size landed AND ParentFont is now False.
+procedure TBridgeTests.Test_SetProperty_DottedFontWriteFlipsParentFontFalse;
+var
   PipeName: String;
   Ok: Boolean;
-BEGIN
-  // Per-test SetUp resets ParentFont:=TRUE and Font.Size:=8. Confirm baseline
+begin
+  // Per-test SetUp resets ParentFont:=True and Font.Size:=8. Confirm baseline
   // before the bridge call so a failure here points at the test setup, not at
   // the bridge.
   Assert.IsTrue(GFixtureForm.Btn.ParentFont,
-                'precondition: Btn.ParentFont must be TRUE for this test');
+                'precondition: Btn.ParentFont must be True for this test');
   Assert.AreEqual(8, GFixtureForm.Btn.Font.Size,
                   'precondition: Btn.Font.Size must be 8 for this test');
 
   PipeName := FPipeName;
-  Ok := FALSE;
+  Ok := False;
   RunOnWorkerAndPump(
-    PROCEDURE
-    VAR
+    procedure
+    var
       Client: TBridgeTestClient;
       Args, Resp: TJSONObject;
-    BEGIN
+    begin
       Client := TBridgeTestClient.Create;
-      TRY
+      try
         Assert.IsTrue(Client.ConnectAndHandshake(PipeName, 2000), 'connect');
         Args := TJSONObject.Create;
         Args.AddPair('path', 'FixtureForm.btnTest');
         Args.AddPair('propName', 'Font.Size');
         Args.AddPair('value', '20');
         Resp := Client.Call(184, 'set_property', Args);
-        TRY
-          Ok := GetOkResult(Resp) <> NIL;
-        FINALLY
+        try
+          Ok := GetOkResult(Resp) <> nil;
+        finally
           Resp.Free;
-        END;
-      FINALLY
+        end;
+      finally
         Client.Free;
-      END;
-    END, 5000);
+      end;
+    end, 5000);
   Assert.IsTrue(Ok, 'set_property Font.Size=20 should succeed');
   Assert.AreEqual(20, GFixtureForm.Btn.Font.Size,
                   'Btn.Font.Size should be 20 after the bridge write');
   Assert.IsFalse(GFixtureForm.Btn.ParentFont,
-                 'bridge should have auto-flipped Btn.ParentFont to FALSE so the size sticks');
-END;
+                 'bridge should have auto-flipped Btn.ParentFont to False so the size sticks');
+end;
 
 
 // When the outer is tkClass but the inner name is wrong, availableProperties
 // should enumerate the INNER class's writable surface (TFont in this case),
 // not the outer component's. Verifies HandleSetProperty uses AFailedInstance.
-PROCEDURE TBridgeTests.Test_SetProperty_DottedUnknownInnerListsInnerWritables;
-VAR
+procedure TBridgeTests.Test_SetProperty_DottedUnknownInnerListsInnerWritables;
+var
   PipeName: String;
   Code: Integer;
   HasFontSize, HasFontColor, HasFontName, HasButtonCaption: Boolean;
-BEGIN
+begin
   PipeName := FPipeName;
   Code := 0;
-  HasFontSize := FALSE;
-  HasFontColor := FALSE;
-  HasFontName := FALSE;
-  HasButtonCaption := FALSE;
+  HasFontSize := False;
+  HasFontColor := False;
+  HasFontName := False;
+  HasButtonCaption := False;
   RunOnWorkerAndPump(
-    PROCEDURE
-    VAR
+    procedure
+    var
       Client: TBridgeTestClient;
       Args, Resp: TJSONObject;
       Data, Item: TJSONObject;
@@ -2160,22 +2193,22 @@ BEGIN
       i: Integer;
       V: TJSONValue;
       PName: String;
-    BEGIN
+    begin
       Client := TBridgeTestClient.Create;
-      TRY
+      try
         Assert.IsTrue(Client.ConnectAndHandshake(PipeName, 2000), 'connect');
         Args := TJSONObject.Create;
         Args.AddPair('path', 'FixtureForm.btnTest');
         Args.AddPair('propName', 'Font.NoSuchInner');
         Args.AddPair('value', 'whatever');
         Resp := Client.Call(85, 'set_property', Args);
-        TRY
+        try
           Code := GetErrorCode(Resp);
           Data := GetErrorData(Resp);
-          if Data <> NIL then
+          if Data <> nil then
           begin
             Arr := Data.GetValue('availableProperties') AS TJSONArray;
-            if Arr <> NIL then
+            if Arr <> nil then
               for i := 0 to Arr.Count - 1 do
               begin
                 Item := Arr.Items[i] AS TJSONObject;
@@ -2183,64 +2216,64 @@ BEGIN
                 if V IS TJSONString then
                 begin
                   PName := TJSONString(V).Value;
-                  if PName = 'Size'    then HasFontSize  := TRUE;
-                  if PName = 'Color'   then HasFontColor := TRUE;
-                  if PName = 'Name'    then HasFontName  := TRUE;
-                  if PName = 'Caption' then HasButtonCaption := TRUE;
+                  if PName = 'Size'    then HasFontSize  := True;
+                  if PName = 'Color'   then HasFontColor := True;
+                  if PName = 'Name'    then HasFontName  := True;
+                  if PName = 'Caption' then HasButtonCaption := True;
                 end;
               end;
           end;
-        FINALLY
+        finally
           Resp.Free;
-        END;
-      FINALLY
+        end;
+      finally
         Client.Free;
-      END;
-    END, 5000);
+      end;
+    end, 5000);
   Assert.AreEqual(ErrRttiPropertyMissing, Code, 'expected rtti_property_missing');
   Assert.IsTrue(HasFontSize,  'availableProperties should list TFont.Size when inner name was bogus');
   Assert.IsTrue(HasFontColor, 'availableProperties should list TFont.Color');
   Assert.IsTrue(HasFontName,  'availableProperties should list TFont.Name');
   Assert.IsFalse(HasButtonCaption,
                  'availableProperties should NOT include TButton.Caption — we asked about Font, not the button');
-END;
+end;
 
 
 // Dotted propName where the outer is not tkClass (e.g. 'Caption.Length' on a
 // button) should return unsupported_action — TCaption is a String, not a class.
-PROCEDURE TBridgeTests.Test_SetProperty_DottedOnNonClassOuterReturnsUnsupportedAction;
-VAR
+procedure TBridgeTests.Test_SetProperty_DottedOnNonClassOuterReturnsUnsupportedAction;
+var
   PipeName: String;
   Code: Integer;
-BEGIN
+begin
   PipeName := FPipeName;
   Code := 0;
   RunOnWorkerAndPump(
-    PROCEDURE
-    VAR
+    procedure
+    var
       Client: TBridgeTestClient;
       Args, Resp: TJSONObject;
-    BEGIN
+    begin
       Client := TBridgeTestClient.Create;
-      TRY
+      try
         Assert.IsTrue(Client.ConnectAndHandshake(PipeName, 2000), 'connect');
         Args := TJSONObject.Create;
         Args.AddPair('path', 'FixtureForm.btnTest');
         Args.AddPair('propName', 'Caption.Length');
         Args.AddPair('value', '5');
         Resp := Client.Call(86, 'set_property', Args);
-        TRY
+        try
           Code := GetErrorCode(Resp);
-        FINALLY
+        finally
           Resp.Free;
-        END;
-      FINALLY
+        end;
+      finally
         Client.Free;
-      END;
-    END, 5000);
+      end;
+    end, 5000);
   Assert.AreEqual(ErrUnsupportedAction, Code,
                   'dotted propName on non-class outer should return unsupported_action');
-END;
+end;
 
 
 // Pin the disabled-control gate's interaction with dotted propName. The check
@@ -2249,273 +2282,273 @@ END;
 // stays at its pre-call setting — even though TFont itself has no Enabled.
 // This locks the contract; a future change that decides nested writes should
 // bypass the gate must update this test deliberately.
-PROCEDURE TBridgeTests.Test_SetProperty_DottedOnDisabledControlReturnsControlDisabled;
-VAR
+procedure TBridgeTests.Test_SetProperty_DottedOnDisabledControlReturnsControlDisabled;
+var
   PipeName: String;
   Code: Integer;
   SizeBefore, SizeAfter: Integer;
-BEGIN
+begin
   PipeName := FPipeName;
   Code := 0;
   GFixtureForm.BtnDisabled.Font.Size := 9;
   SizeBefore := GFixtureForm.BtnDisabled.Font.Size;
   RunOnWorkerAndPump(
-    PROCEDURE
-    VAR
+    procedure
+    var
       Client: TBridgeTestClient;
       Args, Resp: TJSONObject;
-    BEGIN
+    begin
       Client := TBridgeTestClient.Create;
-      TRY
+      try
         Assert.IsTrue(Client.ConnectAndHandshake(PipeName, 2000), 'connect');
         Args := TJSONObject.Create;
         Args.AddPair('path', 'FixtureForm.btnDisabled');
         Args.AddPair('propName', 'Font.Size');
         Args.AddPair('value', '14');
         Resp := Client.Call(88, 'set_property', Args);
-        TRY
+        try
           Code := GetErrorCode(Resp);
-        FINALLY
+        finally
           Resp.Free;
-        END;
-      FINALLY
+        end;
+      finally
         Client.Free;
-      END;
-    END, 5000);
+      end;
+    end, 5000);
   SizeAfter := GFixtureForm.BtnDisabled.Font.Size;
   Assert.AreEqual(ErrControlDisabled, Code,
                   'dotted write on disabled control should return control_disabled');
   Assert.AreEqual(SizeBefore, SizeAfter,
                   'Font.Size on disabled control should NOT change');
-END;
+end;
 
 
 // Two levels of nesting ('Font.Color.Red') is intentionally not supported.
 // The error should be unsupported_action, not a silent walk into arbitrarily
 // deep structure.
-PROCEDURE TBridgeTests.Test_SetProperty_DottedTwoLevelsReturnsUnsupportedAction;
-VAR
+procedure TBridgeTests.Test_SetProperty_DottedTwoLevelsReturnsUnsupportedAction;
+var
   PipeName: String;
   Code: Integer;
-BEGIN
+begin
   PipeName := FPipeName;
   Code := 0;
   RunOnWorkerAndPump(
-    PROCEDURE
-    VAR
+    procedure
+    var
       Client: TBridgeTestClient;
       Args, Resp: TJSONObject;
-    BEGIN
+    begin
       Client := TBridgeTestClient.Create;
-      TRY
+      try
         Assert.IsTrue(Client.ConnectAndHandshake(PipeName, 2000), 'connect');
         Args := TJSONObject.Create;
         Args.AddPair('path', 'FixtureForm.btnTest');
         Args.AddPair('propName', 'Font.A.B');
         Args.AddPair('value', '1');
         Resp := Client.Call(87, 'set_property', Args);
-        TRY
+        try
           Code := GetErrorCode(Resp);
-        FINALLY
+        finally
           Resp.Free;
-        END;
-      FINALLY
+        end;
+      finally
         Client.Free;
-      END;
-    END, 5000);
+      end;
+    end, 5000);
   Assert.AreEqual(ErrUnsupportedAction, Code,
                   'two-level dotted propName should be rejected with unsupported_action');
-END;
+end;
 
 
 // 8-digit ARGB hex: alpha + RGB explicit. Verifies the bridge writes the
 // exact 32-bit value, not a coerced/truncated variant.
-PROCEDURE TBridgeTests.Test_SetProperty_AlphaColorByHexWithAlpha;
-VAR
+procedure TBridgeTests.Test_SetProperty_AlphaColorByHexWithAlpha;
+var
   PipeName: String;
   Ok: Boolean;
-BEGIN
+begin
   PipeName := FPipeName;
-  Ok := FALSE;
+  Ok := False;
   RunOnWorkerAndPump(
-    PROCEDURE
-    VAR
+    procedure
+    var
       Client: TBridgeTestClient;
       Args, Resp: TJSONObject;
-    BEGIN
+    begin
       Client := TBridgeTestClient.Create;
-      TRY
+      try
         Assert.IsTrue(Client.ConnectAndHandshake(PipeName, 2000), 'connect');
         Args := TJSONObject.Create;
         Args.AddPair('path', 'FixtureForm');
         Args.AddPair('propName', 'MyAlpha');
         Args.AddPair('value', '#80FF8000');     // 50% alpha, full red, half green, no blue
         Resp := Client.Call(89, 'set_property', Args);
-        TRY
-          Ok := GetOkResult(Resp) <> NIL;
-        FINALLY
+        try
+          Ok := GetOkResult(Resp) <> nil;
+        finally
           Resp.Free;
-        END;
-      FINALLY
+        end;
+      finally
         Client.Free;
-      END;
-    END, 5000);
+      end;
+    end, 5000);
   Assert.IsTrue(Ok, 'set_property should return ok for an 8-digit ARGB hex');
   Assert.AreEqual(Cardinal($80FF8000), Cardinal(GFixtureForm.MyAlpha),
                   'MyAlpha should be exactly $80FF8000');
-END;
+end;
 
 
 // 6-digit RGB short form: alpha is implicit FF. Without this convenience the
 // AI would have to remember to prepend FF to every web-style color literal.
-PROCEDURE TBridgeTests.Test_SetProperty_AlphaColorByHexShortFormAssumesFullAlpha;
-VAR
+procedure TBridgeTests.Test_SetProperty_AlphaColorByHexShortFormAssumesFullAlpha;
+var
   PipeName: String;
   Ok: Boolean;
-BEGIN
+begin
   PipeName := FPipeName;
-  Ok := FALSE;
+  Ok := False;
   RunOnWorkerAndPump(
-    PROCEDURE
-    VAR
+    procedure
+    var
       Client: TBridgeTestClient;
       Args, Resp: TJSONObject;
-    BEGIN
+    begin
       Client := TBridgeTestClient.Create;
-      TRY
+      try
         Assert.IsTrue(Client.ConnectAndHandshake(PipeName, 2000), 'connect');
         Args := TJSONObject.Create;
         Args.AddPair('path', 'FixtureForm');
         Args.AddPair('propName', 'MyAlpha');
         Args.AddPair('value', '#FF8000');       // 6 digits — alpha assumed FF
         Resp := Client.Call(90, 'set_property', Args);
-        TRY
-          Ok := GetOkResult(Resp) <> NIL;
-        FINALLY
+        try
+          Ok := GetOkResult(Resp) <> nil;
+        finally
           Resp.Free;
-        END;
-      FINALLY
+        end;
+      finally
         Client.Free;
-      END;
-    END, 5000);
+      end;
+    end, 5000);
   Assert.IsTrue(Ok, 'set_property should return ok for a 6-digit RGB hex');
   Assert.AreEqual(Cardinal($FFFF8000), Cardinal(GFixtureForm.MyAlpha),
                   'MyAlpha should be $FFFF8000 (alpha defaulted to FF)');
-END;
+end;
 
 
 // 'claSkyBlue' identifier — resolved via System.UIConsts. Confirms the named
 // path through StringToAlphaColor works end-to-end.
-PROCEDURE TBridgeTests.Test_SetProperty_AlphaColorByClaIdentifier;
-VAR
+procedure TBridgeTests.Test_SetProperty_AlphaColorByClaIdentifier;
+var
   PipeName: String;
   Ok: Boolean;
-BEGIN
+begin
   PipeName := FPipeName;
-  Ok := FALSE;
+  Ok := False;
   RunOnWorkerAndPump(
-    PROCEDURE
-    VAR
+    procedure
+    var
       Client: TBridgeTestClient;
       Args, Resp: TJSONObject;
-    BEGIN
+    begin
       Client := TBridgeTestClient.Create;
-      TRY
+      try
         Assert.IsTrue(Client.ConnectAndHandshake(PipeName, 2000), 'connect');
         Args := TJSONObject.Create;
         Args.AddPair('path', 'FixtureForm');
         Args.AddPair('propName', 'MyAlpha');
         Args.AddPair('value', 'claSkyBlue');
         Resp := Client.Call(91, 'set_property', Args);
-        TRY
-          Ok := GetOkResult(Resp) <> NIL;
-        FINALLY
+        try
+          Ok := GetOkResult(Resp) <> nil;
+        finally
           Resp.Free;
-        END;
-      FINALLY
+        end;
+      finally
         Client.Free;
-      END;
-    END, 5000);
+      end;
+    end, 5000);
   Assert.IsTrue(Ok, 'set_property should return ok for "claSkyBlue"');
   Assert.AreEqual(Cardinal(claSkyBlue), Cardinal(GFixtureForm.MyAlpha),
                   'MyAlpha should match claSkyBlue');
-END;
+end;
 
 
 // Garbage input — not a hex literal, not a cla* identifier, not a number.
 // Must return unsupported_action with the property unchanged.
-PROCEDURE TBridgeTests.Test_SetProperty_AlphaColorInvalidValueReturnsUnsupportedAction;
-VAR
+procedure TBridgeTests.Test_SetProperty_AlphaColorInvalidValueReturnsUnsupportedAction;
+var
   PipeName: String;
   Code: Integer;
   AlphaBefore: TAlphaColor;
-BEGIN
+begin
   PipeName := FPipeName;
   Code := 0;
   GFixtureForm.MyAlpha := TAlphaColor($DEADBEEF);
   AlphaBefore := GFixtureForm.MyAlpha;
   RunOnWorkerAndPump(
-    PROCEDURE
-    VAR
+    procedure
+    var
       Client: TBridgeTestClient;
       Args, Resp: TJSONObject;
-    BEGIN
+    begin
       Client := TBridgeTestClient.Create;
-      TRY
+      try
         Assert.IsTrue(Client.ConnectAndHandshake(PipeName, 2000), 'connect');
         Args := TJSONObject.Create;
         Args.AddPair('path', 'FixtureForm');
         Args.AddPair('propName', 'MyAlpha');
         Args.AddPair('value', 'notacolor');
         Resp := Client.Call(92, 'set_property', Args);
-        TRY
+        try
           Code := GetErrorCode(Resp);
-        FINALLY
+        finally
           Resp.Free;
-        END;
-      FINALLY
+        end;
+      finally
         Client.Free;
-      END;
-    END, 5000);
+      end;
+    end, 5000);
   Assert.AreEqual(ErrUnsupportedAction, Code,
                   'garbage TAlphaColor input should return unsupported_action');
   Assert.AreEqual(Cardinal(AlphaBefore), Cardinal(GFixtureForm.MyAlpha),
                   'MyAlpha should be unchanged on failed parse');
-END;
+end;
 
 
 // Readback formatting: availableProperties.currentValue for a TAlphaColor
 // property must render as 'claName' (when named) or '#AARRGGBB' (otherwise),
 // not as a decimal — so the AI can paste it straight back into set_property.
-PROCEDURE TBridgeTests.Test_SetProperty_AlphaColorCurrentValueRendersAsHash;
-VAR
+procedure TBridgeTests.Test_SetProperty_AlphaColorCurrentValueRendersAsHash;
+var
   PipeName: String;
   CurStr: String;
   HasMyAlpha: Boolean;
-BEGIN
+begin
   PipeName := FPipeName;
-  HasMyAlpha := FALSE;
+  HasMyAlpha := False;
   CurStr := '';
   GFixtureForm.MyAlpha := TAlphaColor($80FF8000);
   RunOnWorkerAndPump(
-    PROCEDURE
-    VAR
+    procedure
+    var
       Client: TBridgeTestClient;
       Args, Resp: TJSONObject;
       Data, Item: TJSONObject;
       Arr: TJSONArray;
       i: Integer;
       NameV, CurV: TJSONValue;
-    BEGIN
+    begin
       Client := TBridgeTestClient.Create;
-      TRY
+      try
         Assert.IsTrue(Client.ConnectAndHandshake(PipeName, 2000), 'connect');
         Args := TJSONObject.Create;
         Args.AddPair('path', 'FixtureForm');
         Args.AddPair('propName', 'NoSuchProperty');
         Args.AddPair('value', '');
         Resp := Client.Call(93, 'set_property', Args);
-        TRY
+        try
           Data := GetErrorData(Resp);
           Assert.IsNotNull(Data, 'expected error.data on unknown property');
           Arr := Data.GetValue('availableProperties') AS TJSONArray;
@@ -2529,57 +2562,57 @@ BEGIN
             CurV := Item.GetValue('currentValue');
             if CurV IS TJSONString then
             begin
-              HasMyAlpha := TRUE;
+              HasMyAlpha := True;
               CurStr := TJSONString(CurV).Value;
             end;
             Break;
           end;
-        FINALLY
+        finally
           Resp.Free;
-        END;
-      FINALLY
+        end;
+      finally
         Client.Free;
-      END;
-    END, 5000);
+      end;
+    end, 5000);
   Assert.IsTrue(HasMyAlpha, 'expected MyAlpha.currentValue in availableProperties');
   // $80FF8000 isn't a known cla* constant; expect '#80FF8000' (or 'x80FF8000'
   // depending on Delphi version — accept either lowercase first char).
   Assert.IsTrue((CurStr = '#80FF8000') or (CurStr = 'x80FF8000'),
                 'MyAlpha currentValue should be hex-shaped, got "' + CurStr + '"');
-END;
+end;
 
 
 // availableProperties kind annotation: TAlphaColor entries should report
 // kind:'alphacolor' rather than 'integer', so the AI knows to send hex/named
 // values without first failing on a raw integer attempt.
-PROCEDURE TBridgeTests.Test_SetProperty_AlphaColorAvailablePropertiesKindIsAlphacolor;
-VAR
+procedure TBridgeTests.Test_SetProperty_AlphaColorAvailablePropertiesKindIsAlphacolor;
+var
   PipeName: String;
   Kind: String;
   Found: Boolean;
-BEGIN
+begin
   PipeName := FPipeName;
-  Found := FALSE;
+  Found := False;
   Kind := '';
   RunOnWorkerAndPump(
-    PROCEDURE
-    VAR
+    procedure
+    var
       Client: TBridgeTestClient;
       Args, Resp: TJSONObject;
       Data, Item: TJSONObject;
       Arr: TJSONArray;
       i: Integer;
       NameV, KindV: TJSONValue;
-    BEGIN
+    begin
       Client := TBridgeTestClient.Create;
-      TRY
+      try
         Assert.IsTrue(Client.ConnectAndHandshake(PipeName, 2000), 'connect');
         Args := TJSONObject.Create;
         Args.AddPair('path', 'FixtureForm');
         Args.AddPair('propName', 'NoSuchProperty');
         Args.AddPair('value', '');
         Resp := Client.Call(94, 'set_property', Args);
-        TRY
+        try
           Data := GetErrorData(Resp);
           Arr := Data.GetValue('availableProperties') AS TJSONArray;
           for i := 0 to Arr.Count - 1 do
@@ -2591,174 +2624,174 @@ BEGIN
             KindV := Item.GetValue('kind');
             if KindV IS TJSONString then
             begin
-              Found := TRUE;
+              Found := True;
               Kind := TJSONString(KindV).Value;
             end;
             Break;
           end;
-        FINALLY
+        finally
           Resp.Free;
-        END;
-      FINALLY
+        end;
+      finally
         Client.Free;
-      END;
-    END, 5000);
+      end;
+    end, 5000);
   Assert.IsTrue(Found, 'expected MyAlpha entry in availableProperties');
   Assert.AreEqual('alphacolor', Kind, 'TAlphaColor entries should be labelled kind:"alphacolor"');
-END;
+end;
 
 
 // 'clRed' identifier — resolved via System.UIConsts IdentToColor. Confirms
 // the named-color path works end-to-end via the bridge's TryStringToColorCompat.
-PROCEDURE TBridgeTests.Test_SetProperty_ColorByClIdentifier;
-VAR
+procedure TBridgeTests.Test_SetProperty_ColorByClIdentifier;
+var
   PipeName: String;
   Ok: Boolean;
-BEGIN
+begin
   PipeName := FPipeName;
-  Ok := FALSE;
+  Ok := False;
   RunOnWorkerAndPump(
-    PROCEDURE
-    VAR
+    procedure
+    var
       Client: TBridgeTestClient;
       Args, Resp: TJSONObject;
-    BEGIN
+    begin
       Client := TBridgeTestClient.Create;
-      TRY
+      try
         Assert.IsTrue(Client.ConnectAndHandshake(PipeName, 2000), 'connect');
         Args := TJSONObject.Create;
         Args.AddPair('path', 'FixtureForm');
         Args.AddPair('propName', 'MyColor');
         Args.AddPair('value', 'clRed');
         Resp := Client.Call(95, 'set_property', Args);
-        TRY
-          Ok := GetOkResult(Resp) <> NIL;
-        FINALLY
+        try
+          Ok := GetOkResult(Resp) <> nil;
+        finally
           Resp.Free;
-        END;
-      FINALLY
+        end;
+      finally
         Client.Free;
-      END;
-    END, 5000);
+      end;
+    end, 5000);
   Assert.IsTrue(Ok, 'set_property should return ok for "clRed"');
   Assert.AreEqual(Integer(clRed), Integer(GFixtureForm.MyColor),
                   'MyColor should match clRed');
-END;
+end;
 
 
 // '#FF0080' — web-style RGB hex. The byte order TryStringToColorCompat uses
 // produces the BGR-stored TColor the AI would expect from a web color literal.
-PROCEDURE TBridgeTests.Test_SetProperty_ColorByWebHex;
-VAR
+procedure TBridgeTests.Test_SetProperty_ColorByWebHex;
+var
   PipeName: String;
   Ok: Boolean;
-BEGIN
+begin
   PipeName := FPipeName;
-  Ok := FALSE;
+  Ok := False;
   RunOnWorkerAndPump(
-    PROCEDURE
-    VAR
+    procedure
+    var
       Client: TBridgeTestClient;
       Args, Resp: TJSONObject;
-    BEGIN
+    begin
       Client := TBridgeTestClient.Create;
-      TRY
+      try
         Assert.IsTrue(Client.ConnectAndHandshake(PipeName, 2000), 'connect');
         Args := TJSONObject.Create;
         Args.AddPair('path', 'FixtureForm');
         Args.AddPair('propName', 'MyColor');
         Args.AddPair('value', '#FF0080');     // R=FF, G=00, B=80
         Resp := Client.Call(96, 'set_property', Args);
-        TRY
-          Ok := GetOkResult(Resp) <> NIL;
-        FINALLY
+        try
+          Ok := GetOkResult(Resp) <> nil;
+        finally
           Resp.Free;
-        END;
-      FINALLY
+        end;
+      finally
         Client.Free;
-      END;
-    END, 5000);
+      end;
+    end, 5000);
   Assert.IsTrue(Ok, 'set_property should return ok for "#FF0080"');
   // TColor stores BGR in the low 3 bytes: B=80, G=00, R=FF → $008000FF.
   Assert.AreEqual(Integer($008000FF), Integer(GFixtureForm.MyColor),
                   'MyColor should be $008000FF (web RGB #FF0080 in BGR storage)');
-END;
+end;
 
 
 // Garbage input — not a cl* identifier, not a hex literal, not a number.
 // Must return unsupported_action with the property unchanged.
-PROCEDURE TBridgeTests.Test_SetProperty_ColorInvalidValueReturnsUnsupportedAction;
-VAR
+procedure TBridgeTests.Test_SetProperty_ColorInvalidValueReturnsUnsupportedAction;
+var
   PipeName: String;
   Code: Integer;
   ColorBefore: TColor;
-BEGIN
+begin
   PipeName := FPipeName;
   Code := 0;
   GFixtureForm.MyColor := TColor($00BEEF42);
   ColorBefore := GFixtureForm.MyColor;
   RunOnWorkerAndPump(
-    PROCEDURE
-    VAR
+    procedure
+    var
       Client: TBridgeTestClient;
       Args, Resp: TJSONObject;
-    BEGIN
+    begin
       Client := TBridgeTestClient.Create;
-      TRY
+      try
         Assert.IsTrue(Client.ConnectAndHandshake(PipeName, 2000), 'connect');
         Args := TJSONObject.Create;
         Args.AddPair('path', 'FixtureForm');
         Args.AddPair('propName', 'MyColor');
         Args.AddPair('value', 'notacolor');
         Resp := Client.Call(97, 'set_property', Args);
-        TRY
+        try
           Code := GetErrorCode(Resp);
-        FINALLY
+        finally
           Resp.Free;
-        END;
-      FINALLY
+        end;
+      finally
         Client.Free;
-      END;
-    END, 5000);
+      end;
+    end, 5000);
   Assert.AreEqual(ErrUnsupportedAction, Code,
                   'garbage TColor input should return unsupported_action');
   Assert.AreEqual(Integer(ColorBefore), Integer(GFixtureForm.MyColor),
                   'MyColor should be unchanged on failed parse');
-END;
+end;
 
 
 // Readback formatting: availableProperties.currentValue for a TColor property
 // must render as 'clName' (when the integer maps to a known identifier) so the
 // AI can paste it straight back into set_property without a hex round-trip.
-PROCEDURE TBridgeTests.Test_SetProperty_ColorCurrentValueRendersAsName;
-VAR
+procedure TBridgeTests.Test_SetProperty_ColorCurrentValueRendersAsName;
+var
   PipeName: String;
   CurStr: String;
   HasMyColor: Boolean;
-BEGIN
+begin
   PipeName := FPipeName;
-  HasMyColor := FALSE;
+  HasMyColor := False;
   CurStr := '';
   GFixtureForm.MyColor := clRed;
   RunOnWorkerAndPump(
-    PROCEDURE
-    VAR
+    procedure
+    var
       Client: TBridgeTestClient;
       Args, Resp: TJSONObject;
       Data, Item: TJSONObject;
       Arr: TJSONArray;
       i: Integer;
       NameV, CurV: TJSONValue;
-    BEGIN
+    begin
       Client := TBridgeTestClient.Create;
-      TRY
+      try
         Assert.IsTrue(Client.ConnectAndHandshake(PipeName, 2000), 'connect');
         Args := TJSONObject.Create;
         Args.AddPair('path', 'FixtureForm');
         Args.AddPair('propName', 'NoSuchProperty');
         Args.AddPair('value', '');
         Resp := Client.Call(98, 'set_property', Args);
-        TRY
+        try
           Data := GetErrorData(Resp);
           Assert.IsNotNull(Data, 'expected error.data on unknown property');
           Arr := Data.GetValue('availableProperties') AS TJSONArray;
@@ -2772,55 +2805,55 @@ BEGIN
             CurV := Item.GetValue('currentValue');
             if CurV IS TJSONString then
             begin
-              HasMyColor := TRUE;
+              HasMyColor := True;
               CurStr := TJSONString(CurV).Value;
             end;
             Break;
           end;
-        FINALLY
+        finally
           Resp.Free;
-        END;
-      FINALLY
+        end;
+      finally
         Client.Free;
-      END;
-    END, 5000);
+      end;
+    end, 5000);
   Assert.IsTrue(HasMyColor, 'expected MyColor.currentValue in availableProperties');
   Assert.AreEqual('clRed', CurStr,
                   'MyColor=clRed should render as "clRed", got "' + CurStr + '"');
-END;
+end;
 
 
 // availableProperties kind annotation: TColor entries should report
 // kind:'color' rather than 'integer', so the AI knows to send named/hex
 // values without first failing on a raw integer attempt.
-PROCEDURE TBridgeTests.Test_SetProperty_ColorAvailablePropertiesKindIsColor;
-VAR
+procedure TBridgeTests.Test_SetProperty_ColorAvailablePropertiesKindIsColor;
+var
   PipeName: String;
   Kind: String;
   Found: Boolean;
-BEGIN
+begin
   PipeName := FPipeName;
-  Found := FALSE;
+  Found := False;
   Kind := '';
   RunOnWorkerAndPump(
-    PROCEDURE
-    VAR
+    procedure
+    var
       Client: TBridgeTestClient;
       Args, Resp: TJSONObject;
       Data, Item: TJSONObject;
       Arr: TJSONArray;
       i: Integer;
       NameV, KindV: TJSONValue;
-    BEGIN
+    begin
       Client := TBridgeTestClient.Create;
-      TRY
+      try
         Assert.IsTrue(Client.ConnectAndHandshake(PipeName, 2000), 'connect');
         Args := TJSONObject.Create;
         Args.AddPair('path', 'FixtureForm');
         Args.AddPair('propName', 'NoSuchProperty');
         Args.AddPair('value', '');
         Resp := Client.Call(99, 'set_property', Args);
-        TRY
+        try
           Data := GetErrorData(Resp);
           Arr := Data.GetValue('availableProperties') AS TJSONArray;
           for i := 0 to Arr.Count - 1 do
@@ -2832,494 +2865,494 @@ BEGIN
             KindV := Item.GetValue('kind');
             if KindV IS TJSONString then
             begin
-              Found := TRUE;
+              Found := True;
               Kind := TJSONString(KindV).Value;
             end;
             Break;
           end;
-        FINALLY
+        finally
           Resp.Free;
-        END;
-      FINALLY
+        end;
+      finally
         Client.Free;
-      END;
-    END, 5000);
+      end;
+    end, 5000);
   Assert.IsTrue(Found, 'expected MyColor entry in availableProperties');
   Assert.AreEqual('color', Kind, 'TColor entries should be labelled kind:"color"');
-END;
+end;
 
 
-// Helper: read the success-response 'elided' boolean. Returns FALSE if missing
+// Helper: read the success-response 'elided' boolean. Returns False if missing
 // or wrong type — caller's assertion will reveal that case.
-FUNCTION GetElidedFlag(AResult: TJSONObject; OUT APresent: Boolean): Boolean;
-VAR V: TJSONValue;
-BEGIN
-  Result   := FALSE;
-  APresent := FALSE;
-  if AResult = NIL then EXIT;
+function GetElidedFlag(AResult: TJSONObject; out APresent: Boolean): Boolean;
+var V: TJSONValue;
+begin
+  Result   := False;
+  APresent := False;
+  if AResult = nil then Exit;
   V := AResult.GetValue('elided');
-  if not (V IS TJSONBool) then EXIT;
-  APresent := TRUE;
+  if not (V IS TJSONBool) then Exit;
+  APresent := True;
   Result   := TJSONBool(V).AsBoolean;
-END;
+end;
 
 
 // Elision — string equality. Edt.Text already 'HelloWorld'; writing it again
 // should be elided. Verified two ways: response carries elided=true, AND
 // Edt.OnChange did not fire (EdtChangeCount stayed at 0).
-PROCEDURE TBridgeTests.Test_SetProperty_ElisionStringEqualReturnsElidedAndSkipsOnChange;
-VAR
+procedure TBridgeTests.Test_SetProperty_ElisionStringEqualReturnsElidedAndSkipsOnChange;
+var
   PipeName: String;
   Elided, Present, Ok: Boolean;
   ChangesAfter: Integer;
-BEGIN
+begin
   PipeName     := FPipeName;
-  Elided       := FALSE;
-  Present      := FALSE;
-  Ok           := FALSE;
+  Elided       := False;
+  Present      := False;
+  Ok           := False;
   Assert.AreEqual('HelloWorld', GFixtureForm.Edt.Text, 'fixture precondition');
   Assert.AreEqual(0, GFixtureForm.EdtChangeCount, 'fixture precondition: no priming OnChange');
   RunOnWorkerAndPump(
-    PROCEDURE
-    VAR
+    procedure
+    var
       Client: TBridgeTestClient;
       Args, Resp, OkRes: TJSONObject;
-    BEGIN
+    begin
       Client := TBridgeTestClient.Create;
-      TRY
+      try
         Assert.IsTrue(Client.ConnectAndHandshake(PipeName, 2000), 'connect');
         Args := TJSONObject.Create;
         Args.AddPair('path', 'FixtureForm.edtName');
         Args.AddPair('propName', 'Text');
         Args.AddPair('value', 'HelloWorld');           // same as live value
         Resp := Client.Call(200, 'set_property', Args);
-        TRY
+        try
           OkRes := GetOkResult(Resp);
-          Ok := OkRes <> NIL;
+          Ok := OkRes <> nil;
           if Ok then Elided := GetElidedFlag(OkRes, Present);
-        FINALLY
+        finally
           Resp.Free;
-        END;
-      FINALLY
+        end;
+      finally
         Client.Free;
-      END;
-    END, 5000);
+      end;
+    end, 5000);
   ChangesAfter := GFixtureForm.EdtChangeCount;
   Assert.IsTrue(Ok, 'set_property should return ok even when eliding');
   Assert.IsTrue(Present, 'success response must carry elided field');
   Assert.IsTrue(Elided, 'string-equal write should be elided');
   Assert.AreEqual(0, ChangesAfter, 'OnChange must NOT fire on an elided write');
-END;
+end;
 
 
 // Elision — string different. Writing a new value to Edt.Text reports
 // elided=false AND fires OnChange once. Pins the negative side of the contract.
-PROCEDURE TBridgeTests.Test_SetProperty_ElisionStringDifferentFiresOnChangeAndReportsElidedFalse;
-VAR
+procedure TBridgeTests.Test_SetProperty_ElisionStringDifferentFiresOnChangeAndReportsElidedFalse;
+var
   PipeName: String;
   Elided, Present, Ok: Boolean;
   ChangesAfter: Integer;
-BEGIN
+begin
   PipeName     := FPipeName;
-  Elided       := TRUE;             // start TRUE; will assert it became FALSE
-  Present      := FALSE;
-  Ok           := FALSE;
+  Elided       := True;             // start True; will assert it became False
+  Present      := False;
+  Ok           := False;
   RunOnWorkerAndPump(
-    PROCEDURE
-    VAR
+    procedure
+    var
       Client: TBridgeTestClient;
       Args, Resp, OkRes: TJSONObject;
-    BEGIN
+    begin
       Client := TBridgeTestClient.Create;
-      TRY
+      try
         Assert.IsTrue(Client.ConnectAndHandshake(PipeName, 2000), 'connect');
         Args := TJSONObject.Create;
         Args.AddPair('path', 'FixtureForm.edtName');
         Args.AddPair('propName', 'Text');
         Args.AddPair('value', 'NewValue');             // different from 'HelloWorld'
         Resp := Client.Call(201, 'set_property', Args);
-        TRY
+        try
           OkRes := GetOkResult(Resp);
-          Ok := OkRes <> NIL;
+          Ok := OkRes <> nil;
           if Ok then Elided := GetElidedFlag(OkRes, Present);
-        FINALLY
+        finally
           Resp.Free;
-        END;
-      FINALLY
+        end;
+      finally
         Client.Free;
-      END;
-    END, 5000);
+      end;
+    end, 5000);
   ChangesAfter := GFixtureForm.EdtChangeCount;
   Assert.IsTrue(Ok, 'set_property should succeed on a real write');
   Assert.IsTrue(Present, 'success response must carry elided field');
   Assert.IsFalse(Elided, 'string-different write must NOT be elided');
   Assert.AreEqual('NewValue', GFixtureForm.Edt.Text, 'live Text should reflect the write');
   Assert.AreEqual(1, ChangesAfter, 'OnChange should fire exactly once on a real write');
-END;
+end;
 
 
 // Elision — integer. Tag starts at 0 (Setup); writing '0' should elide.
-PROCEDURE TBridgeTests.Test_SetProperty_ElisionIntegerEqualReturnsElided;
-VAR
+procedure TBridgeTests.Test_SetProperty_ElisionIntegerEqualReturnsElided;
+var
   PipeName: String;
   Elided, Present, Ok: Boolean;
-BEGIN
+begin
   PipeName := FPipeName;
-  Elided   := FALSE;
-  Present  := FALSE;
-  Ok       := FALSE;
+  Elided   := False;
+  Present  := False;
+  Ok       := False;
   Assert.AreEqual(NativeInt(0), GFixtureForm.Tag, 'fixture precondition');
   RunOnWorkerAndPump(
-    PROCEDURE
-    VAR
+    procedure
+    var
       Client: TBridgeTestClient;
       Args, Resp, OkRes: TJSONObject;
-    BEGIN
+    begin
       Client := TBridgeTestClient.Create;
-      TRY
+      try
         Assert.IsTrue(Client.ConnectAndHandshake(PipeName, 2000), 'connect');
         Args := TJSONObject.Create;
         Args.AddPair('path', 'FixtureForm');
         Args.AddPair('propName', 'Tag');
         Args.AddPair('value', '0');                    // same as live
         Resp := Client.Call(202, 'set_property', Args);
-        TRY
+        try
           OkRes := GetOkResult(Resp);
-          Ok := OkRes <> NIL;
+          Ok := OkRes <> nil;
           if Ok then Elided := GetElidedFlag(OkRes, Present);
-        FINALLY
+        finally
           Resp.Free;
-        END;
-      FINALLY
+        end;
+      finally
         Client.Free;
-      END;
-    END, 5000);
+      end;
+    end, 5000);
   Assert.IsTrue(Ok, 'set_property should return ok');
   Assert.IsTrue(Present, 'elided field must be present');
   Assert.IsTrue(Elided, 'integer-equal write should be elided');
-END;
+end;
 
 
-// Elision — boolean. Cbx.Checked starts at FALSE; writing 'false' elides.
-PROCEDURE TBridgeTests.Test_SetProperty_ElisionBooleanEqualReturnsElided;
-VAR
+// Elision — boolean. Cbx.Checked starts at False; writing 'false' elides.
+procedure TBridgeTests.Test_SetProperty_ElisionBooleanEqualReturnsElided;
+var
   PipeName: String;
   Elided, Present, Ok: Boolean;
-BEGIN
+begin
   PipeName := FPipeName;
-  Elided   := FALSE;
-  Present  := FALSE;
-  Ok       := FALSE;
+  Elided   := False;
+  Present  := False;
+  Ok       := False;
   Assert.IsFalse(GFixtureForm.Cbx.Checked, 'fixture precondition');
   RunOnWorkerAndPump(
-    PROCEDURE
-    VAR
+    procedure
+    var
       Client: TBridgeTestClient;
       Args, Resp, OkRes: TJSONObject;
-    BEGIN
+    begin
       Client := TBridgeTestClient.Create;
-      TRY
+      try
         Assert.IsTrue(Client.ConnectAndHandshake(PipeName, 2000), 'connect');
         Args := TJSONObject.Create;
         Args.AddPair('path', 'FixtureForm.cbxFlag');
         Args.AddPair('propName', 'Checked');
         Args.AddPair('value', 'false');                // same as live
         Resp := Client.Call(203, 'set_property', Args);
-        TRY
+        try
           OkRes := GetOkResult(Resp);
-          Ok := OkRes <> NIL;
+          Ok := OkRes <> nil;
           if Ok then Elided := GetElidedFlag(OkRes, Present);
-        FINALLY
+        finally
           Resp.Free;
-        END;
-      FINALLY
+        end;
+      finally
         Client.Free;
-      END;
-    END, 5000);
+      end;
+    end, 5000);
   Assert.IsTrue(Ok, 'set_property should return ok');
   Assert.IsTrue(Present, 'elided field must be present');
   Assert.IsTrue(Elided, 'boolean-equal write should be elided');
-END;
+end;
 
 
 // Elision — float. FloatProp starts at 0.0; writing '0' elides (parser-equal).
-PROCEDURE TBridgeTests.Test_SetProperty_ElisionFloatEqualReturnsElided;
-VAR
+procedure TBridgeTests.Test_SetProperty_ElisionFloatEqualReturnsElided;
+var
   PipeName: String;
   Elided, Present, Ok: Boolean;
-BEGIN
+begin
   PipeName := FPipeName;
-  Elided   := FALSE;
-  Present  := FALSE;
-  Ok       := FALSE;
+  Elided   := False;
+  Present  := False;
+  Ok       := False;
   GFixtureForm.FloatProp := 1.25;                      // pick something exact in binary
   RunOnWorkerAndPump(
-    PROCEDURE
-    VAR
+    procedure
+    var
       Client: TBridgeTestClient;
       Args, Resp, OkRes: TJSONObject;
-    BEGIN
+    begin
       Client := TBridgeTestClient.Create;
-      TRY
+      try
         Assert.IsTrue(Client.ConnectAndHandshake(PipeName, 2000), 'connect');
         Args := TJSONObject.Create;
         Args.AddPair('path', 'FixtureForm');
         Args.AddPair('propName', 'FloatProp');
         Args.AddPair('value', '1.25');                 // exact-bits match
         Resp := Client.Call(204, 'set_property', Args);
-        TRY
+        try
           OkRes := GetOkResult(Resp);
-          Ok := OkRes <> NIL;
+          Ok := OkRes <> nil;
           if Ok then Elided := GetElidedFlag(OkRes, Present);
-        FINALLY
+        finally
           Resp.Free;
-        END;
-      FINALLY
+        end;
+      finally
         Client.Free;
-      END;
-    END, 5000);
+      end;
+    end, 5000);
   Assert.IsTrue(Ok, 'set_property should return ok');
   Assert.IsTrue(Present, 'elided field must be present');
   Assert.IsTrue(Elided, 'float-equal write (exact bits) should be elided');
-END;
+end;
 
 
 // Elision — set. MySetProp starts at []; writing '[]' elides. Tests the
 // ordinal-equality path for sets.
-PROCEDURE TBridgeTests.Test_SetProperty_ElisionSetEqualReturnsElided;
-VAR
+procedure TBridgeTests.Test_SetProperty_ElisionSetEqualReturnsElided;
+var
   PipeName: String;
   Elided, Present, Ok: Boolean;
-BEGIN
+begin
   PipeName := FPipeName;
-  Elided   := FALSE;
-  Present  := FALSE;
-  Ok       := FALSE;
+  Elided   := False;
+  Present  := False;
+  Ok       := False;
   GFixtureForm.MySetProp := [fcRed, fcBlue];           // distinctive starting state
   RunOnWorkerAndPump(
-    PROCEDURE
-    VAR
+    procedure
+    var
       Client: TBridgeTestClient;
       Args, Resp, OkRes: TJSONObject;
-    BEGIN
+    begin
       Client := TBridgeTestClient.Create;
-      TRY
+      try
         Assert.IsTrue(Client.ConnectAndHandshake(PipeName, 2000), 'connect');
         Args := TJSONObject.Create;
         Args.AddPair('path', 'FixtureForm');
         Args.AddPair('propName', 'MySetProp');
         Args.AddPair('value', '[fcRed,fcBlue]');       // same elements, same ordinal
         Resp := Client.Call(205, 'set_property', Args);
-        TRY
+        try
           OkRes := GetOkResult(Resp);
-          Ok := OkRes <> NIL;
+          Ok := OkRes <> nil;
           if Ok then Elided := GetElidedFlag(OkRes, Present);
-        FINALLY
+        finally
           Resp.Free;
-        END;
-      FINALLY
+        end;
+      finally
         Client.Free;
-      END;
-    END, 5000);
+      end;
+    end, 5000);
   Assert.IsTrue(Ok, 'set_property should return ok');
   Assert.IsTrue(Present, 'elided field must be present');
   Assert.IsTrue(Elided, 'set-equal write should be elided');
-END;
+end;
 
 
 // Elision — enum. Force Position to poDesigned (independent of test ordering —
 // Test_SetProperty_WritesEnumByIdentifier earlier in the suite leaves it on
 // poDefaultSizeOnly), then write it back and confirm the bridge elides.
-PROCEDURE TBridgeTests.Test_SetProperty_ElisionEnumEqualReturnsElided;
-VAR
+procedure TBridgeTests.Test_SetProperty_ElisionEnumEqualReturnsElided;
+var
   PipeName: String;
   Elided, Present, Ok: Boolean;
-BEGIN
+begin
   PipeName := FPipeName;
-  Elided   := FALSE;
-  Present  := FALSE;
-  Ok       := FALSE;
+  Elided   := False;
+  Present  := False;
+  Ok       := False;
   GFixtureForm.Position := poDesigned;
   Assert.AreEqual(Ord(poDesigned), Ord(GFixtureForm.Position), 'fixture precondition');
   RunOnWorkerAndPump(
-    PROCEDURE
-    VAR
+    procedure
+    var
       Client: TBridgeTestClient;
       Args, Resp, OkRes: TJSONObject;
-    BEGIN
+    begin
       Client := TBridgeTestClient.Create;
-      TRY
+      try
         Assert.IsTrue(Client.ConnectAndHandshake(PipeName, 2000), 'connect');
         Args := TJSONObject.Create;
         Args.AddPair('path', 'FixtureForm');
         Args.AddPair('propName', 'Position');
         Args.AddPair('value', 'poDesigned');           // same as live
         Resp := Client.Call(206, 'set_property', Args);
-        TRY
+        try
           OkRes := GetOkResult(Resp);
-          Ok := OkRes <> NIL;
+          Ok := OkRes <> nil;
           if Ok then Elided := GetElidedFlag(OkRes, Present);
-        FINALLY
+        finally
           Resp.Free;
-        END;
-      FINALLY
+        end;
+      finally
         Client.Free;
-      END;
-    END, 5000);
+      end;
+    end, 5000);
   Assert.IsTrue(Ok, 'set_property should return ok');
   Assert.IsTrue(Present, 'elided field must be present');
   Assert.IsTrue(Elided, 'enum-equal write should be elided');
-END;
+end;
 
 
 // Elision — TAlphaColor. Set to a known color, then write the same hex back.
-PROCEDURE TBridgeTests.Test_SetProperty_ElisionAlphaColorEqualReturnsElided;
-VAR
+procedure TBridgeTests.Test_SetProperty_ElisionAlphaColorEqualReturnsElided;
+var
   PipeName: String;
   Elided, Present, Ok: Boolean;
-BEGIN
+begin
   PipeName := FPipeName;
-  Elided   := FALSE;
-  Present  := FALSE;
-  Ok       := FALSE;
+  Elided   := False;
+  Present  := False;
+  Ok       := False;
   GFixtureForm.MyAlpha := TAlphaColor($FFFF8000);      // opaque orange
   RunOnWorkerAndPump(
-    PROCEDURE
-    VAR
+    procedure
+    var
       Client: TBridgeTestClient;
       Args, Resp, OkRes: TJSONObject;
-    BEGIN
+    begin
       Client := TBridgeTestClient.Create;
-      TRY
+      try
         Assert.IsTrue(Client.ConnectAndHandshake(PipeName, 2000), 'connect');
         Args := TJSONObject.Create;
         Args.AddPair('path', 'FixtureForm');
         Args.AddPair('propName', 'MyAlpha');
         Args.AddPair('value', '#FF8000');              // 6-digit form, alpha=FF assumed
         Resp := Client.Call(207, 'set_property', Args);
-        TRY
+        try
           OkRes := GetOkResult(Resp);
-          Ok := OkRes <> NIL;
+          Ok := OkRes <> nil;
           if Ok then Elided := GetElidedFlag(OkRes, Present);
-        FINALLY
+        finally
           Resp.Free;
-        END;
-      FINALLY
+        end;
+      finally
         Client.Free;
-      END;
-    END, 5000);
+      end;
+    end, 5000);
   Assert.IsTrue(Ok, 'set_property should return ok');
   Assert.IsTrue(Present, 'elided field must be present');
   Assert.IsTrue(Elided, 'TAlphaColor-equal write should be elided');
-END;
+end;
 
 
 // Elision — TColor (VCL only). Set to clRed, then write 'clRed' back.
-PROCEDURE TBridgeTests.Test_SetProperty_ElisionColorEqualReturnsElided;
-VAR
+procedure TBridgeTests.Test_SetProperty_ElisionColorEqualReturnsElided;
+var
   PipeName: String;
   Elided, Present, Ok: Boolean;
-BEGIN
+begin
   PipeName := FPipeName;
-  Elided   := FALSE;
-  Present  := FALSE;
-  Ok       := FALSE;
+  Elided   := False;
+  Present  := False;
+  Ok       := False;
   GFixtureForm.MyColor := clRed;
   RunOnWorkerAndPump(
-    PROCEDURE
-    VAR
+    procedure
+    var
       Client: TBridgeTestClient;
       Args, Resp, OkRes: TJSONObject;
-    BEGIN
+    begin
       Client := TBridgeTestClient.Create;
-      TRY
+      try
         Assert.IsTrue(Client.ConnectAndHandshake(PipeName, 2000), 'connect');
         Args := TJSONObject.Create;
         Args.AddPair('path', 'FixtureForm');
         Args.AddPair('propName', 'MyColor');
         Args.AddPair('value', 'clRed');                // same as live
         Resp := Client.Call(208, 'set_property', Args);
-        TRY
+        try
           OkRes := GetOkResult(Resp);
-          Ok := OkRes <> NIL;
+          Ok := OkRes <> nil;
           if Ok then Elided := GetElidedFlag(OkRes, Present);
-        FINALLY
+        finally
           Resp.Free;
-        END;
-      FINALLY
+        end;
+      finally
         Client.Free;
-      END;
-    END, 5000);
+      end;
+    end, 5000);
   Assert.IsTrue(Ok, 'set_property should return ok');
   Assert.IsTrue(Present, 'elided field must be present');
   Assert.IsTrue(Elided, 'TColor-equal write should be elided');
-END;
+end;
 
 
 // Elision — dotted propName. Btn.Font.Size starts at 8 in Setup; writing '8' elides.
 // Pins that the recursive call into the inner tkClass also honors elision.
-PROCEDURE TBridgeTests.Test_SetProperty_ElisionDottedFontSizeEqualReturnsElided;
-VAR
+procedure TBridgeTests.Test_SetProperty_ElisionDottedFontSizeEqualReturnsElided;
+var
   PipeName: String;
   Elided, Present, Ok: Boolean;
-BEGIN
+begin
   PipeName := FPipeName;
-  Elided   := FALSE;
-  Present  := FALSE;
-  Ok       := FALSE;
+  Elided   := False;
+  Present  := False;
+  Ok       := False;
   Assert.AreEqual(Single(8), Single(GFixtureForm.Btn.Font.Size), 0.001, 'fixture precondition');
   RunOnWorkerAndPump(
-    PROCEDURE
-    VAR
+    procedure
+    var
       Client: TBridgeTestClient;
       Args, Resp, OkRes: TJSONObject;
-    BEGIN
+    begin
       Client := TBridgeTestClient.Create;
-      TRY
+      try
         Assert.IsTrue(Client.ConnectAndHandshake(PipeName, 2000), 'connect');
         Args := TJSONObject.Create;
         Args.AddPair('path', 'FixtureForm.btnTest');
         Args.AddPair('propName', 'Font.Size');
         Args.AddPair('value', '8');                    // same as live
         Resp := Client.Call(209, 'set_property', Args);
-        TRY
+        try
           OkRes := GetOkResult(Resp);
-          Ok := OkRes <> NIL;
+          Ok := OkRes <> nil;
           if Ok then Elided := GetElidedFlag(OkRes, Present);
-        FINALLY
+        finally
           Resp.Free;
-        END;
-      FINALLY
+        end;
+      finally
         Client.Free;
-      END;
-    END, 5000);
+      end;
+    end, 5000);
   Assert.IsTrue(Ok, 'set_property should return ok');
   Assert.IsTrue(Present, 'elided field must be present');
   Assert.IsTrue(Elided, 'dotted Font.Size-equal write should be elided');
-END;
+end;
 
 
 // Contract pin: success responses ALWAYS carry the 'elided' field (true or false).
 // Earlier set_property tests don't check this — adding one explicit guard so a
 // future refactor that drops the field on some path is caught.
-PROCEDURE TBridgeTests.Test_SetProperty_SuccessResponseAlwaysCarriesElidedField;
-VAR
+procedure TBridgeTests.Test_SetProperty_SuccessResponseAlwaysCarriesElidedField;
+var
   PipeName: String;
   Present, Ok: Boolean;
-BEGIN
+begin
   PipeName := FPipeName;
-  Present  := FALSE;
-  Ok       := FALSE;
+  Present  := False;
+  Ok       := False;
   RunOnWorkerAndPump(
-    PROCEDURE
-    VAR
+    procedure
+    var
       Client: TBridgeTestClient;
       Args, Resp, OkRes: TJSONObject;
       Dummy: Boolean;
-    BEGIN
-      Dummy  := FALSE;
+    begin
+      Dummy  := False;
       Client := TBridgeTestClient.Create;
-      TRY
+      try
         Assert.IsTrue(Client.ConnectAndHandshake(PipeName, 2000), 'connect');
         // Use a write that changes the value, so this also covers the non-elided
         // success path. The elision tests cover the elided=true side.
@@ -3328,29 +3361,29 @@ BEGIN
         Args.AddPair('propName', 'Caption');
         Args.AddPair('value', 'OtherCaption');
         Resp := Client.Call(210, 'set_property', Args);
-        TRY
+        try
           OkRes := GetOkResult(Resp);
-          Ok := OkRes <> NIL;
+          Ok := OkRes <> nil;
           if Ok then Dummy := GetElidedFlag(OkRes, Present);
           // Touch Dummy so it doesn't get H2077'd as unused.
           if Dummy then ;
-        FINALLY
+        finally
           Resp.Free;
-        END;
-      FINALLY
+        end;
+      finally
         Client.Free;
-      END;
-    END, 5000);
+      end;
+    end, 5000);
   Assert.IsTrue(Ok, 'set_property should return ok');
   Assert.IsTrue(Present, 'every success response must carry elided field');
-END;
+end;
 
 
-INITIALIZATION
+initialization
   TDUnitX.RegisterTestFixture(TBridgeTests);
 
-FINALIZATION
+finalization
   FreeAndNil(GFixtureForm);
 
 
-END.
+end.
