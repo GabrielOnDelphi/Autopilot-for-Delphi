@@ -1,61 +1,56 @@
-UNIT MCPServer.Schema.Generator;
+unit MCPServer.Schema.Generator;
 
-//Derivated from GDK
+// Derived from GDK
 
-(*=====================================================
-   2026.05.19
-   GabrielMoraru.com / SciVance Tech
+(*=============================================================================================================
+   2026.06
+   www.GabrielMoraru.com
+--------------------------------------------------------------------------------------------------------------
+   JSON Schema generator from a Delphi class via RTTI. One public class method builds a
+   {type:'object', properties:{...}, required:[...]} object that the MCP server hands back inside
+   tools/list under each tool's inputSchema.
 
-   ┌──────────────────────────────────────┐
-   │  WINDOWS  (PC-side MCP server)       │   runs in Autopilot.Mcp.exe; target may be any platform
-   └──────────────────────────────────────┘
-
-   JSON Schema generator from a Delphi class via RTTI. One public class method
-   builds a {type:'object', properties:{...}, required:[...]} object that the
-   MCP server hands back inside tools/list under each tool's inputSchema.
-
-   Behavior matches what GDK produced so the nine tool units render identical
-   schemas without code changes:
-     - Walk every PUBLIC writable property (writable means it has a setter).
+   Behavior matches what GDK produced so the nine tool units render identical schemas without code
+   changes:
+     - Walk every public writable property (writable means it has a setter).
      - Lower-case the property name in the JSON.
-     - tkInteger / tkInt64 / tkFloat   -> 'number'  (matches GDK; tkInt64 would be
-                                                     'integer' in strict JSON Schema,
-                                                     but Claude accepts 'number').
+     - tkInteger / tkInt64 / tkFloat   -> 'number'  (matches GDK; tkInt64 would be 'integer' in
+                                                     strict JSON Schema, but Claude accepts 'number').
      - tkUString / tkString / tkLString / tkWString -> 'string'
      - Boolean (tkEnumeration with TypeInfo(Boolean)) -> 'boolean'
-     - Other enums -> 'string'
+     - Other enumerations -> 'string'
      - Skip the property entry in the required[] array iff it carries [Optional].
      - If it carries [SchemaDescription], write its text into description.
 
-   Stdlib only. Generics: the only thing borderline here is TArray<String>
-   inside System.Rtti.GetProperties (returned by the RTL — not ours), so we
-   don't introduce any new generics.
-=====================================================*)
+   Stdlib only. Generics: the only thing borderline here is TArray<String> inside
+   System.Rtti.GetProperties (returned by the RTL — not ours), so we don't introduce any new
+   generics.
+*=================================================================================================================*)
 
-INTERFACE
+interface
 
-USES
+uses
   System.JSON;
 
-TYPE
-  TMCPSchemaGenerator = CLASS
-  PUBLIC
+type
+  TMCPSchemaGenerator = class
+  public
     /// Build the JSON Schema object for ACls. Caller owns the result.
-    CLASS FUNCTION GenerateSchema(ACls: TClass): TJSONObject;
-  END;
+    class function GenerateSchema(ACls: TClass): TJSONObject;
+  end;
 
 
-IMPLEMENTATION
+implementation
 
-USES
+uses
   System.SysUtils, System.Rtti, System.TypInfo,
   MCPServer.Types;
 
 
 /// Returns the JSON Schema "type" string for a Delphi RTTI type. See header
 /// comment for the mapping table.
-FUNCTION RttiTypeToJsonType(AType: TRttiType): String;
-BEGIN
+function RttiTypeToJsonType(AType: TRttiType): String;
+begin
   case AType.TypeKind of
     tkInteger, tkInt64, tkFloat: Result := 'number';
     tkString, tkLString, tkWString, tkUString: Result := 'string';
@@ -66,34 +61,34 @@ BEGIN
   else
     Result := 'string';
   end;
-END;
+end;
 
 
-/// TRUE iff the property carries an [Optional] attribute.
-FUNCTION IsOptional(AProp: TRttiProperty): Boolean;
-VAR
+/// True iff the property carries an [Optional] attribute.
+function IsOptional(AProp: TRttiProperty): Boolean;
+var
   Attr: TCustomAttribute;
-BEGIN
+begin
   for Attr in AProp.GetAttributes do
-    if Attr IS OptionalAttribute then
-      EXIT(TRUE);
-  Result := FALSE;
-END;
+    if Attr is OptionalAttribute then
+      Exit(true);
+  Result := false;
+end;
 
 
 /// Returns the [SchemaDescription] text, or '' if absent.
-FUNCTION DescriptionOf(AProp: TRttiProperty): String;
-VAR
+function DescriptionOf(AProp: TRttiProperty): String;
+var
   Attr: TCustomAttribute;
-BEGIN
+begin
   for Attr in AProp.GetAttributes do
-    if Attr IS SchemaDescriptionAttribute then EXIT(SchemaDescriptionAttribute(Attr).Description);
+    if Attr is SchemaDescriptionAttribute then Exit(SchemaDescriptionAttribute(Attr).Description);
   Result := '';
-END;
+end;
 
 
-CLASS FUNCTION TMCPSchemaGenerator.GenerateSchema(ACls: TClass): TJSONObject;
-VAR
+class function TMCPSchemaGenerator.GenerateSchema(ACls: TClass): TJSONObject;
+var
   Ctx        : TRttiContext;
   RttiType   : TRttiType;
   Prop       : TRttiProperty;
@@ -101,16 +96,16 @@ VAR
   Required   : TJSONArray;
   PropSchema : TJSONObject;
   Desc, Name : String;
-BEGIN
+begin
   Result := TJSONObject.Create;
-  TRY
+  try
     Props    := TJSONObject.Create;
     Required := TJSONArray.Create;
     Result.AddPair('type', 'object');
     Result.AddPair('properties', Props);
 
     Ctx := TRttiContext.Create;
-    TRY
+    try
       RttiType := Ctx.GetType(ACls);
       for Prop in RttiType.GetProperties do
       begin
@@ -129,18 +124,18 @@ BEGIN
         if not IsOptional(Prop) then
           Required.Add(Name);
       end;
-    FINALLY
+    finally
       Ctx.Free;
-    END;
+    end;
 
     if Required.Count > 0
       then Result.AddPair('required', Required)
       else Required.Free;
-  EXCEPT
+  except
     FreeAndNil(Result);
     raise;
-  END;
-END;
+  end;
+end;
 
 
-END.
+end.
