@@ -1,68 +1,45 @@
-UNIT Autopilot.Mcp.SocketClient;
+﻿unit Autopilot.Mcp.SocketClient;
 
-(*=====================================================
-   2026.06.04
-   GabrielMoraru.com / SciVance Tech
+{=============================================================================================================
+   2026.06
+   www.GabrielMoraru.com
+--------------------------------------------------------------------------------------------------------------
+   - TCP loopback socket client for the MCP-server side of the bridge — reaches an Android target via `adb forward`.
+   - TSocketStream wraps a Winsock socket as a TStream so TBridgeWire can frame over it without modification.
+   - Same hello/helloAck handshake and length-prefixed frame wire format as the named-pipe client.
+   - No VCL, no FMX, no LightSaber, no Indy. Stdlib + Winsock only.
+=============================================================================================================}
 
-   ┌──────────────────────────────────────┐
-   │  WINDOWS  (PC-side, adb socket client) │   reaches an Android target over `adb forward`
-   └──────────────────────────────────────┘
+interface
 
-   The MCP-server-side socket twin of Autopilot.Mcp.PipeClient.
-
-   Where PipeClient opens a Win32 named pipe with CreateFileW, this opens a
-   loopback TCP socket with connect(127.0.0.1:<port>). Everything past the
-   connect is IDENTICAL to the pipe client — the bridge speaks the same
-   hello / helloAck handshake and the same length-prefixed TBridgeWire frames
-   regardless of transport, because TBridgeWire takes a TStream and ReadFully
-   loops on short reads (TCP produces short reads exactly as a byte-mode pipe
-   does). So we wrap the socket in a tiny TStream adapter and reuse TBridgeWire
-   verbatim.
-
-   The <port> is a HOST loopback port that `adb forward` tunnels over USB to the
-   device-side listener (an AF_UNIX abstract socket 'Autopilot.<pid>', or a
-   device TCP port). Setting up that forward is Autopilot.Mcp.AdbForward's job;
-   this unit only connects to the already-forwarded host port.
-
-   PHASE A SCOPE: this is the PC side and is testable TODAY against any loopback
-   listener that speaks the protocol (see Tests.Mcp.SocketClient — a synthetic
-   echo listener). The DEVICE side (the bridge's Autopilot.Bridge.Socket body)
-   is Phase B and needs the shared worker + a physical device. See
-   " Plans\05_AndroidTransport.md".
-
-   No VCL, no FMX, no LightSaber, no Indy. Stdlib + Winsock only.
-=====================================================*)
-
-INTERFACE
-
-USES
+uses
   Winapi.Windows, Winapi.WinSock2,
   System.SysUtils, System.Classes, System.SyncObjs, System.JSON,
   Autopilot.Bridge.Core;
 
-TYPE
+type
   /// Blocking-socket view as a TStream, so TBridgeWire can frame over it.
   /// Does NOT own the socket — the caller closes it (mirrors THandleStream's
   /// "we still own the handle" contract used by the pipe client).
-  TSocketStream = CLASS(TStream)
-  STRICT PRIVATE
+  TSocketStream = class(TStream)
+  strict private
     FSocket: TSocket;
-  PUBLIC
-    CONSTRUCTOR Create(ASocket: TSocket);
-    FUNCTION Read (VAR Buffer; Count: Longint): Longint; OVERRIDE;
-    FUNCTION Write(CONST Buffer; Count: Longint): Longint; OVERRIDE;
-    FUNCTION Seek(CONST Offset: Int64; Origin: TSeekOrigin): Int64; OVERRIDE;
-  END;
+  public
+    constructor Create(ASocket: TSocket);
+    function Read (var Buffer; Count: Longint): Longint; override;
+    function Write(const Buffer; Count: Longint): Longint; override;
+    function Seek(const Offset: Int64; Origin: TSeekOrigin): Int64; override;
+  end;
 
 
 /// Run one round-trip over a loopback TCP socket: connect, read bridge hello,
 /// write helloAck, send one command frame, read one response, close.
 /// Returns the parsed response object (caller frees) or raises on transport failure.
 /// Mirrors Autopilot.Mcp.PipeClient.CallTarget exactly, port for socket.
-FUNCTION CallTargetSocket(APort: Word; ARequestJson: TJSONObject; ATimeoutMs: Cardinal = 5000): TJSONObject;
+function CallTargetSocket(APort: Word; ARequestJson: TJSONObject; ATimeoutMs: Cardinal = 5000): TJSONObject;
 
 
-IMPLEMENTATION
+implementation
 
 
 { # Winsock lifecycle }
@@ -71,7 +48,7 @@ IMPLEMENTATION
 // EXACTLY ONCE, lock-free, and never call WSACleanup — the OS reclaims Winsock
 // at process exit, and a never-cleaned single startup removes every teardown
 // race (startup/cleanup churn, decrement-on-failure imbalance) that a ref-count
-// would introduce. This also drops the INITIALIZATION/FINALISATION block the
+// would introduce. This also drops the initialization/FINALISATION block the
 // critical-section version needed.
 //
 // Race-free one-shot via TInterlocked.CompareExchange on a 3-state cell:
@@ -87,21 +64,21 @@ IMPLEMENTATION
 // Phase-B worker) ever calls in concurrently. Defensive by construction, not by
 // assumption about the caller.
 
-CONST
+const
   WSA_UNTOUCHED = 0;
   WSA_STARTING  = 1;
   WSA_READY     = 2;
 
-VAR
+var
   GWsaState: Integer = WSA_UNTOUCHED;
 
-PROCEDURE EnsureWinsock;
-VAR
+procedure EnsureWinsock;
+var
   Data : TWSAData;
   Rc   : Integer;
-BEGIN
+begin
   // Fast path: already ready (a plain read is fine — once 2, it never changes).
-  if GWsaState = WSA_READY then EXIT;
+  if GWsaState = WSA_READY then Exit;
 
   if TInterlocked.CompareExchange(GWsaState, WSA_STARTING, WSA_UNTOUCHED) = WSA_UNTOUCHED then
   begin
@@ -114,7 +91,7 @@ BEGIN
       raise Exception.CreateFmt('WSAStartup failed (code %d)', [Rc]);
     end;
     TInterlocked.Exchange(GWsaState, WSA_READY);
-    EXIT;
+    Exit;
   end;
 
   // We lost the race (or another thread is mid-startup). Wait for READY. This
@@ -125,38 +102,38 @@ BEGIN
     if GWsaState = WSA_UNTOUCHED then
     begin
       EnsureWinsock;   // winner failed and reset — retry from the top
-      EXIT;
+      Exit;
     end;
     TThread.Yield;
   end;
-END;
+end;
 
 
 { # TSocketStream }
 
-CONSTRUCTOR TSocketStream.Create(ASocket: TSocket);
-BEGIN
+constructor TSocketStream.Create(ASocket: TSocket);
+begin
   inherited Create;
   FSocket := ASocket;
-END;
+end;
 
-FUNCTION TSocketStream.Read(VAR Buffer; Count: Longint): Longint;
-VAR
+function TSocketStream.Read(var Buffer; Count: Longint): Longint;
+var
   N: Integer;
-BEGIN
-  if Count <= 0 then EXIT(0);
+begin
+  if Count <= 0 then Exit(0);
   N := recv(FSocket, Buffer, Count, 0);
   if N = SOCKET_ERROR then
     raise Exception.CreateFmt('socket recv failed (code %d)', [WSAGetLastError]);
   // N = 0 means the peer closed — surface as 0 so TBridgeWire.ReadFully sees EOF.
   Result := N;
-END;
+end;
 
-FUNCTION TSocketStream.Write(CONST Buffer; Count: Longint): Longint;
-VAR
+function TSocketStream.Write(const Buffer; Count: Longint): Longint;
+var
   Sent, N: Integer;
   P: PByte;
-BEGIN
+begin
   // send() may write fewer bytes than asked — loop until the whole buffer goes
   // out, the same way TBridgeWire expects a full-frame write.
   Sent := 0;
@@ -172,13 +149,13 @@ BEGIN
     Inc(P, N);
   end;
   Result := Sent;
-END;
+end;
 
-FUNCTION TSocketStream.Seek(CONST Offset: Int64; Origin: TSeekOrigin): Int64;
-BEGIN
+function TSocketStream.Seek(const Offset: Int64; Origin: TSeekOrigin): Int64;
+begin
   // A socket is not seekable. TBridgeWire never seeks; satisfy the abstract method.
   raise Exception.Create('TSocketStream is not seekable');
-END;
+end;
 
 
 { # Connect with timeout }
@@ -189,8 +166,8 @@ END;
 // OpenPipeWithTimeout retry intent: a target whose listener isn't up yet should
 // not fail instantly — the forward survives app restarts and the socket comes
 // back, so we retry connection-refused until the deadline.
-FUNCTION ConnectLoopbackWithTimeout(APort: Word; ATimeoutMs: Cardinal): TSocket;
-VAR
+function ConnectLoopbackWithTimeout(APort: Word; ATimeoutMs: Cardinal): TSocket;
+var
   Addr     : TSockAddrIn;
   NonBlock : u_long;
   Deadline : UInt64;
@@ -201,7 +178,7 @@ VAR
   SockErr  : Integer;
   ErrLen   : Integer;
   RemainMs : Int64;
-BEGIN
+begin
   Deadline := GetTickCount64 + ATimeoutMs;
 
   FillChar(Addr, SizeOf(Addr), 0);
@@ -209,7 +186,7 @@ BEGIN
   Addr.sin_port        := htons(APort);
   Addr.sin_addr.S_addr := htonl(INADDR_LOOPBACK);   // 127.0.0.1
 
-  REPEAT
+  repeat
     Result := socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     if Result = INVALID_SOCKET then
       raise Exception.CreateFmt('socket() failed (code %d)', [WSAGetLastError]);
@@ -223,7 +200,7 @@ BEGIN
       // Immediate connect (loopback can do this). Back to blocking and done.
       NonBlock := 0;
       ioctlsocket(Result, Integer(FIONBIO), NonBlock);
-      EXIT;
+      Exit;
     end;
 
     if WSAGetLastError = WSAEWOULDBLOCK then
@@ -234,7 +211,7 @@ BEGIN
       FD_ZERO(ErrSet);   _FD_SET(Result, ErrSet);
       TV.tv_sec  := RemainMs DIV 1000;
       TV.tv_usec := (RemainMs MOD 1000) * 1000;
-      Rc := select(0, NIL, @WriteSet, @ErrSet, @TV);
+      Rc := select(0, nil, @WriteSet, @ErrSet, @TV);
       if (Rc > 0) and FD_ISSET(Result, WriteSet) then
       begin
         // Writable: check SO_ERROR to confirm the connect actually succeeded.
@@ -245,7 +222,7 @@ BEGIN
         begin
           NonBlock := 0;
           ioctlsocket(Result, Integer(FIONBIO), NonBlock);
-          EXIT;
+          Exit;
         end;
       end;
     end;
@@ -254,53 +231,53 @@ BEGIN
     // until the overall deadline — the listener may still be coming up.
     closesocket(Result);
     Result := INVALID_SOCKET;
-    if GetTickCount64 >= Deadline then BREAK;
+    if GetTickCount64 >= Deadline then Break;
     Sleep(25);
-  UNTIL GetTickCount64 >= Deadline;
+  until GetTickCount64 >= Deadline;
 
   if Result = INVALID_SOCKET then
     raise Exception.CreateFmt('CallTargetSocket: could not connect to 127.0.0.1:%d within %d ms', [APort, ATimeoutMs]);
-END;
+end;
 
 
 { # Handshake reply }
 
 // Identical wire shape to PipeClient.WriteHelloAck — the bridge expects the
 // same {"helloAck":{"protocolVersion":N}} regardless of transport.
-PROCEDURE WriteHelloAck(AStream: TStream);
-VAR
+procedure WriteHelloAck(AStream: TStream);
+var
   Ack   : TJSONObject;
   Inner : TJSONObject;
-BEGIN
+begin
   Inner := TJSONObject.Create;
   Ack   := TJSONObject.Create;
-  TRY
+  try
     Inner.AddPair('protocolVersion', TJSONNumber.Create(ProtocolVersion));
     Ack.AddPair('helloAck', Inner);
-    Inner := NIL;
+    Inner := nil;
     TBridgeWire.WriteFrame(AStream, Ack.ToJSON);
-  FINALLY
+  finally
     Inner.Free;
     Ack.Free;
-  END;
-END;
+  end;
+end;
 
 
 { # Round-trip }
 
-FUNCTION CallTargetSocket(APort: Word; ARequestJson: TJSONObject; ATimeoutMs: Cardinal): TJSONObject;
-VAR
+function CallTargetSocket(APort: Word; ARequestJson: TJSONObject; ATimeoutMs: Cardinal): TJSONObject;
+var
   Sock    : TSocket;
   Stream  : TSocketStream;
   HelloRaw: String;
   Frame   : String;
   Parsed  : TJSONValue;
-BEGIN
+begin
   EnsureWinsock;   // one-time, lock-free; raises if Winsock can't start
   Sock := ConnectLoopbackWithTimeout(APort, ATimeoutMs);
-  TRY
+  try
     Stream := TSocketStream.Create(Sock);
-    TRY
+    try
       // Bridge writes hello first. We don't verify contents — the bridge owns the wire format.
       if not TBridgeWire.TryReadFrame(Stream, HelloRaw) then
         raise Exception.Create('CallTargetSocket: bridge did not send hello');
@@ -319,13 +296,13 @@ BEGIN
         Parsed.Free;
         raise Exception.Create('CallTargetSocket: response is not a JSON object');
       end;
-    FINALLY
+    finally
       Stream.Free;
-    END;
-  FINALLY
+    end;
+  finally
     closesocket(Sock);
-  END;
-END;
+  end;
+end;
 
 
-END.
+end.

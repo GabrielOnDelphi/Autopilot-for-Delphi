@@ -1,88 +1,78 @@
-UNIT Autopilot.Mcp.PipeClient;
+﻿unit Autopilot.Mcp.PipeClient;
 
-(*=====================================================
-   2026.05.12
-   GabrielMoraru.com / SciVance Tech
+{=============================================================================================================
+   2026.06
+   www.GabrielMoraru.com
+--------------------------------------------------------------------------------------------------------------
+   - Named-pipe client for the MCP-server side of the bridge (Windows, PC side).
+   - Each MCP tool call: scan %TEMP%\Autopilot\active\*.pipe, open pipe, hello/helloAck handshake, one request/response round-trip, close.
+   - No VCL, no FMX, no LightSaber. Stdlib + Win32 only (plus Autopilot.Bridge.Log, itself stdlib+Win32, for best-effort discovery-scan warnings).
+=============================================================================================================}
 
-   ┌──────────────────────────────────────┐
-   │  WINDOWS  (PC-side, named-pipe client) │   reaches a Windows target over the local pipe
-   └──────────────────────────────────────┘
+interface
 
-   Pipe client for the MCP-server side of the bridge.
-
-   Each MCP tool call runs through here:
-     - Scan %TEMP%\Autopilot\active\*.pipe → resolve target pipe name
-     - CreateFileW → open pipe
-     - Bridge writes hello frame → we write helloAck
-     - Send request frame, read response frame
-     - Close pipe (single round-trip per call; bridge handles reconnect)
-
-   No VCL, no FMX, no LightSaber. Stdlib + Win32 only.
-=====================================================*)
-
-INTERFACE
-
-USES
+uses
   Winapi.Windows,
   System.SysUtils, System.Classes, System.JSON,
   Autopilot.Bridge.Core;
 
-TYPE
+type
   /// Result of a target lookup.
-  TTargetEntry = RECORD
+  TTargetEntry = record
     Pid       : Cardinal;
     PipeName  : String;
     Exe       : String;       // filled by GetExeFromPid; empty if not yet looked up
-  END;
+  end;
 
   TTargetList = TArray<TTargetEntry>;
 
 
 /// Enumerate the discovery folder. Stale entries (target process is gone) are filtered out.
-FUNCTION ListTargets: TTargetList;
+function ListTargets: TTargetList;
 
 /// Convenience: read the discovery folder path.
-FUNCTION DiscoveryFolderPath: String;
+function DiscoveryFolderPath: String;
 
 /// Run one round-trip: open pipe, handshake, send one command frame, read one response, close.
 /// Returns the parsed response object (caller frees) or raises on transport failure.
-FUNCTION CallTarget(CONST APipeName: String; ARequestJson: TJSONObject; ATimeoutMs: Cardinal = 5000): TJSONObject;
+function CallTarget(const APipeName: String; ARequestJson: TJSONObject; ATimeoutMs: Cardinal = 5000): TJSONObject;
 
 
-IMPLEMENTATION
+implementation
 
-USES
-  System.IOUtils, System.Generics.Collections;
+uses
+  System.IOUtils, System.Generics.Collections,
+  Autopilot.Bridge.Log;
 
 
-FUNCTION DiscoveryFolderPath: String;
-BEGIN
+function DiscoveryFolderPath: String;
+begin
   Result := TPath.Combine(TPath.GetTempPath, 'Autopilot\active');
-END;
+end;
 
 
-CONST
+const
   PROCESS_QUERY_LIMITED_INFORMATION_ = $1000;   // not in Winapi.Windows on D13
 
 
-FUNCTION IsPidAlive(APid: Cardinal): Boolean;
-VAR
+function IsPidAlive(APid: Cardinal): Boolean;
+var
   H: THandle;
   ExitCode: DWORD;
-BEGIN
-  if APid = 0 then EXIT(FALSE);
-  H := OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION_, FALSE, APid);
-  if H = 0 then EXIT(FALSE);
-  TRY
+begin
+  if APid = 0 then Exit(False);
+  H := OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION_, False, APid);
+  if H = 0 then Exit(False);
+  try
     Result := GetExitCodeProcess(H, ExitCode) and (ExitCode = STILL_ACTIVE);
-  FINALLY
+  finally
     CloseHandle(H);
-  END;
-END;
+  end;
+end;
 
 
-FUNCTION ListTargets: TTargetList;
-VAR
+function ListTargets: TTargetList;
+var
   Folder: String;
   Files: TArray<String>;
   i: Integer;
@@ -90,14 +80,14 @@ VAR
   PidStr, Line: String;
   PidVal: Cardinal;
   Acc: TList<TTargetEntry>;
-BEGIN
+begin
   Acc := TList<TTargetEntry>.Create;
-  TRY
+  try
     Folder := DiscoveryFolderPath;
     if not TDirectory.Exists(Folder) then
     begin
-      Result := NIL;
-      EXIT;
+      Result := nil;
+      Exit;
     end;
     Files := TDirectory.GetFiles(Folder, '*.pipe');
     for i := 0 to High(Files) do
@@ -107,20 +97,26 @@ BEGIN
       if not IsPidAlive(PidVal) then
       begin
         // Stale entry — process is gone. Sweep the file so the next caller doesn't see it.
-        TRY
+        try
           TFile.Delete(Files[i]);
-        EXCEPT
-          // Best effort. Another process may be racing us.
-        END;
+        except
+          // Best effort. Another process may be racing us. Log, don't crash the scan.
+          on E: Exception do
+            BridgeLogWarn('discovery', 'stale-file delete race on ' + Files[i] + ': ' + E.Message);
+        end;
         Continue;
       end;
       Line := '';
-      TRY
+      try
         Line := TFile.ReadAllText(Files[i], TEncoding.UTF8).Trim;
-      EXCEPT
+      except
         // Same file write/read race — skip this entry, next scan will pick it up.
-        Continue;
-      END;
+        on E: Exception do
+        begin
+          BridgeLogWarn('discovery', 'file read race on ' + Files[i] + ': ' + E.Message);
+          Continue;
+        end;
+      end;
       if Line = '' then Continue;
       Entry := Default(TTargetEntry);
       Entry.Pid      := PidVal;
@@ -128,60 +124,66 @@ BEGIN
       Acc.Add(Entry);
     end;
     Result := Acc.ToArray;
-  FINALLY
+  finally
     Acc.Free;
-  END;
-END;
+  end;
+end;
 
 
-PROCEDURE WriteHelloAck(AStream: TStream);
-VAR
+procedure WriteHelloAck(AStream: TStream);
+var
   Ack: TJSONObject;
   Inner: TJSONObject;
-BEGIN
+begin
   Inner := TJSONObject.Create;
   Ack := TJSONObject.Create;
-  TRY
+  try
     Inner.AddPair('protocolVersion', TJSONNumber.Create(ProtocolVersion));
     Ack.AddPair('helloAck', Inner);
-    Inner := NIL;
+    Inner := nil;
     TBridgeWire.WriteFrame(AStream, Ack.ToJSON);
-  FINALLY
+  finally
     Inner.Free;
     Ack.Free;
-  END;
-END;
+  end;
+end;
 
 
-FUNCTION OpenPipeWithTimeout(CONST APipeName: String; ATimeoutMs: Cardinal): THandle;
-VAR
+function OpenPipeWithTimeout(const APipeName: String; ATimeoutMs: Cardinal): THandle;
+var
   Deadline: UInt64;
-BEGIN
+  LErr: DWORD;
+begin
   Deadline := GetTickCount64 + ATimeoutMs;
-  REPEAT
+  repeat
     Result := CreateFileW(PWideChar(APipeName), GENERIC_READ or GENERIC_WRITE,
-                          0, NIL, OPEN_EXISTING, 0, 0);
-    if Result <> INVALID_HANDLE_VALUE then EXIT;
-    if GetLastError <> ERROR_FILE_NOT_FOUND then EXIT;   // permanent failure
+                          0, nil, OPEN_EXISTING, 0, 0);
+    if Result <> INVALID_HANDLE_VALUE then Exit;
+    // ERROR_FILE_NOT_FOUND: listener not up yet (cold start) -> wait + retry.
+    // ERROR_PIPE_BUSY: pipe exists but its only instance is momentarily taken
+    // (bridge between DisconnectNamedPipe and the next ConnectNamedPipe) -> retry.
+    // Anything else (e.g. ACCESS_DENIED from an ACL mismatch) is permanent.
+    LErr := GetLastError;
+    if (LErr <> ERROR_FILE_NOT_FOUND) and (LErr <> ERROR_PIPE_BUSY) then Exit;
     Sleep(25);
-  UNTIL GetTickCount64 >= Deadline;
-END;
+  until GetTickCount64 >= Deadline;
+end;
 
 
-FUNCTION CallTarget(CONST APipeName: String; ARequestJson: TJSONObject; ATimeoutMs: Cardinal): TJSONObject;
-VAR
+function CallTarget(const APipeName: String; ARequestJson: TJSONObject; ATimeoutMs: Cardinal): TJSONObject;
+var
   Pipe: THandle;
   Stream: THandleStream;
   HelloRaw, Frame: String;
   Parsed: TJSONValue;
-BEGIN
+begin
   Pipe := OpenPipeWithTimeout(APipeName, ATimeoutMs);
   if Pipe = INVALID_HANDLE_VALUE then
     raise Exception.CreateFmt('CallTarget: could not open pipe "%s" (code %d)',
                               [APipeName, GetLastError]);
-  TRY
+  try
     Stream := THandleStream.Create(Pipe);
-    TRY
+    try
       // Bridge writes hello first. We don't verify contents here — the bridge owns the wire format.
       if not TBridgeWire.TryReadFrame(Stream, HelloRaw) then
         raise Exception.Create('CallTarget: bridge did not send hello');
@@ -201,13 +203,13 @@ BEGIN
         Parsed.Free;
         raise Exception.Create('CallTarget: response is not a JSON object');
       end;
-    FINALLY
+    finally
       Stream.Free;
-    END;
-  FINALLY
+    end;
+  finally
     CloseHandle(Pipe);
-  END;
-END;
+  end;
+end;
 
 
-END.
+end.

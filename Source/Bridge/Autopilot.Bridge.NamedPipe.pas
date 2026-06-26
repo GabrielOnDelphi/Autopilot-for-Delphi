@@ -1,165 +1,147 @@
-UNIT Autopilot.Bridge.NamedPipe;
+﻿unit Autopilot.Bridge.NamedPipe;
 
-{=====================================================
-   2026.06.10
-   GabrielMoraru.com / SciVance Tech
+{=============================================================================================================
+   2026.06
+   www.GabrielMoraru.com
+--------------------------------------------------------------------------------------------------------------
+   - Windows-only IBridgeTransport implementation using Win32 named pipes with owner-only ACL
+   - Manages the discovery file at %TEMP%\Autopilot\active\<PID>.pipe
+   - Shutdown wake via CancelSynchronousIo + self-connect; absorbs all three named-pipe quirks
+=============================================================================================================}
 
-   ┌──────────────────────────────┐
-   │  WINDOWS ONLY                │   (stable / shipped branch)
-   └──────────────────────────────┘
-   The Win32 named-pipe transport — the first IBridgeTransport.
-   The shared session loop lives in Autopilot.Bridge.Worker (extracted
-   2026-06-10, Phase B of " Plans\05_AndroidTransport.md"); this unit now
-   owns ONLY the Windows-specific pieces:
+interface
 
-     - The Win32 named pipe (created with owner-only ACL)
-     - The discovery file at %TEMP%\Autopilot\active\<PID>.pipe
-     - The shutdown wake (CancelSynchronousIo + self-connect)
-
-   Three pipe quirks are absorbed HERE so the shared worker never sees them
-   (contracts documented in Autopilot.Bridge.Transport):
-     1. ConnectNamedPipe returning FALSE + ERROR_PIPE_CONNECTED = success.
-     2. FILE_FLAG_FIRST_PIPE_INSTANCE: StartListening raises if another
-        instance of the same exe already owns the pipe name.
-     3. The wake self-connect produces a phantom client: AcceptConnection
-        swallows it (FStopping set by WakeAndStop) and returns FALSE.
-
-   Stdlib + Win32 only. No VCL. No FMX. No LightSaber.
-=====================================================}
-
-INTERFACE
-
-USES
+uses
   Winapi.Windows,
   System.SysUtils, System.Classes,
   Autopilot.Bridge.Transport;
 
-TYPE
+type
   /// Windows named-pipe transport. Owns the pipe handle and the discovery file.
   /// All methods except WakeAndStop run on the bridge worker thread; WakeAndStop
   /// runs on the owner thread (TBridgeWorker.Destroy). The destructor runs after
   /// the worker has been joined, so its backstop cleanup cannot race the worker.
-  TPipeTransport = CLASS(TInterfacedObject, IBridgeTransport)
-  STRICT PRIVATE
+  TPipeTransport = class(TInterfacedObject, IBridgeTransport)
+  strict private
     FPipeName       : String;
     FPipeHandle     : THandle;       // current pipe instance; INVALID_HANDLE_VALUE between client sessions
     FDiscoveryPath  : String;        // %TEMP%\Autopilot\active\<PID>.pipe — empty when not written
     FDiscoveryTried : Boolean;       // the discovery write is attempted ONCE, like the old worker prologue
     FStopping       : Boolean;       // set by WakeAndStop; AcceptConnection swallows the wake phantom off it
 
-    PROCEDURE WriteDiscoveryFile;
-    PROCEDURE DeleteDiscoveryFile;
-    FUNCTION  CreatePipeInstance: THandle;
-  PUBLIC
+    procedure WriteDiscoveryFile;
+    procedure DeleteDiscoveryFile;
+    function  CreatePipeInstance: THandle;
+  public
     /// APipeName: full `\\.\pipe\...` form.
-    CONSTRUCTOR Create(CONST APipeName: String);
-    DESTRUCTOR Destroy; OVERRIDE;
+    constructor Create(const APipeName: String);
+    destructor Destroy; override;
 
     { IBridgeTransport }
-    PROCEDURE StartListening;
-    FUNCTION  AcceptConnection: Boolean;
-    FUNCTION  ConnectionStream: TStream;
-    PROCEDURE RecycleConnection;
-    PROCEDURE WakeAndStop(AWorkerThread: TThread);
-    FUNCTION  EndpointLabel: String;
-  END;
+    procedure StartListening;
+    function  AcceptConnection: Boolean;
+    function  ConnectionStream: TStream;
+    procedure RecycleConnection;
+    procedure WakeAndStop(AWorkerThread: TThread);
+    function  EndpointLabel: String;
+  end;
 
 
 /// Returns the canonical pipe name for the current process.
 /// Form: `\\.\pipe\Autopilot.<ExeBaseName>.<PID>`. Dots not backslashes — Plans/04 D3.
-FUNCTION ComputePipeName: String;
+function ComputePipeName: String;
 
 /// Returns the discovery folder path. Created on demand.
-FUNCTION DiscoveryFolder: String;
+function DiscoveryFolder: String;
 
 
-IMPLEMENTATION
+implementation
 
-USES
+uses
   System.IOUtils, Winapi.AccCtrl,
   Autopilot.Bridge.Log;
 
 
 { Win32 imports not in Winapi.Windows ---------------------------------- }
 
-CONST
+const
   AdvApi32 = 'advapi32.dll';
   SDDL_REVISION_1 = 1;
 
-FUNCTION ConvertStringSecurityDescriptorToSecurityDescriptorW(
+function ConvertStringSecurityDescriptorToSecurityDescriptorW(
   StringSecurityDescriptor: PWideChar;
   StringSDRevision: DWORD;
   OUT SecurityDescriptor: PSecurityDescriptor;
-  SecurityDescriptorSize: PCardinal): BOOL; STDCALL;
-  EXTERNAL AdvApi32 NAME 'ConvertStringSecurityDescriptorToSecurityDescriptorW';
+  SecurityDescriptorSize: PCardinal): BOOL; stdcall;
+  external AdvApi32 NAME 'ConvertStringSecurityDescriptorToSecurityDescriptorW';
 
-FUNCTION ConvertSidToStringSidW(Sid: PSID; OUT StringSid: PWideChar): BOOL; STDCALL;
-  EXTERNAL AdvApi32 NAME 'ConvertSidToStringSidW';
+function ConvertSidToStringSidW(Sid: PSID; OUT StringSid: PWideChar): BOOL; stdcall;
+  external AdvApi32 NAME 'ConvertSidToStringSidW';
 
 
 // Look up the current process token's User SID and return it as an SDDL-friendly string.
 // Result is empty on failure; the caller must fall back to a default ACL.
 // The Windows StringSid returned by ConvertSidToStringSid is freed via LocalFree.
-FUNCTION GetCurrentUserSidString: String;
-VAR
+function GetCurrentUserSidString: String;
+var
   Token: THandle;
   Needed: DWORD;
   Buffer: TBytes;
   TokenUserInfo: PTokenUser;
   StringSid: PWideChar;
-BEGIN
+begin
   Result := '';
-  if not OpenProcessToken(GetCurrentProcess, TOKEN_QUERY, Token) then EXIT;
-  TRY
+  if not OpenProcessToken(GetCurrentProcess, TOKEN_QUERY, Token) then exit;
+  try
     // First call to size the buffer.
     Needed := 0;
     GetTokenInformation(Token, TokenUser, NIL, 0, Needed);
-    if Needed = 0 then EXIT;
+    if Needed = 0 then exit;
     SetLength(Buffer, Needed);
-    if not GetTokenInformation(Token, TokenUser, @Buffer[0], Needed, Needed) then EXIT;
+    if not GetTokenInformation(Token, TokenUser, @Buffer[0], Needed, Needed) then exit;
     TokenUserInfo := PTokenUser(@Buffer[0]);
-    if not ConvertSidToStringSidW(TokenUserInfo^.User.Sid, StringSid) then EXIT;
-    TRY
+    if not ConvertSidToStringSidW(TokenUserInfo^.User.Sid, StringSid) then exit;
+    try
       Result := String(StringSid);
-    FINALLY
+    finally
       LocalFree(HLOCAL(StringSid));
-    END;
-  FINALLY
+    end;
+  finally
     CloseHandle(Token);
-  END;
-END;
+  end;
+end;
 
 
-FUNCTION DiscoveryFolder: String;
-BEGIN
+function DiscoveryFolder: String;
+begin
   Result := TPath.Combine(TPath.GetTempPath, 'Autopilot\active');
   if not TDirectory.Exists(Result) then
     TDirectory.CreateDirectory(Result);
-END;
+end;
 
 
-FUNCTION ComputePipeName: String;
-VAR
+function ComputePipeName: String;
+var
   ExePath, Base: String;
-BEGIN
+begin
   ExePath := ParamStr(0);
   Base    := TPath.GetFileNameWithoutExtension(ExePath);
   Result  := '\\.\pipe\Autopilot.' + Base + '.' + IntToStr(GetCurrentProcessId);
-END;
+end;
 
 
 { TPipeTransport --------------------------------------------------------- }
 
-CONSTRUCTOR TPipeTransport.Create(CONST APipeName: String);
-BEGIN
+constructor TPipeTransport.Create(const APipeName: String);
+begin
   inherited Create;
   FPipeName   := APipeName;
   FPipeHandle := INVALID_HANDLE_VALUE;
-END;
+end;
 
 
-DESTRUCTOR TPipeTransport.Destroy;
-BEGIN
+destructor TPipeTransport.Destroy;
+begin
   // Backstop only: the worker's exit paths close the handle themselves (via
   // AcceptConnection's failure branch or RecycleConnection). This fires when the
   // worker died from an unhandled exception that bypassed its own close path.
@@ -173,14 +155,14 @@ BEGIN
   end;
   DeleteDiscoveryFile;
   inherited;
-END;
+end;
 
 
-PROCEDURE TPipeTransport.WriteDiscoveryFile;
-VAR
+procedure TPipeTransport.WriteDiscoveryFile;
+var
   Folder, Pid, TempPath: String;
   MoveErr: DWORD;
-BEGIN
+begin
   Folder := DiscoveryFolder;
   Pid := IntToStr(GetCurrentProcessId);
   FDiscoveryPath := TPath.Combine(Folder, Pid + '.pipe');
@@ -202,30 +184,30 @@ BEGIN
     BridgeLogWarn('bridge', 'discovery file atomic rename failed (' + IntToStr(MoveErr) +
                             '); fell back to direct write');
   end;
-END;
+end;
 
 
-PROCEDURE TPipeTransport.DeleteDiscoveryFile;
-BEGIN
+procedure TPipeTransport.DeleteDiscoveryFile;
+begin
   if (FDiscoveryPath <> '') and TFile.Exists(FDiscoveryPath) then
-    TRY
+    try
       TFile.Delete(FDiscoveryPath);
-    EXCEPT
+    except
       // Don't propagate — called from WakeAndStop/destructor paths that must not raise.
       // The MCP server will treat the stale file as a dead target on its next connect attempt.
-    END;
+    end;
   FDiscoveryPath := '';
-END;
+end;
 
 
-FUNCTION TPipeTransport.CreatePipeInstance: THandle;
-VAR
+function TPipeTransport.CreatePipeInstance: THandle;
+var
   UserSid, Sddl: String;
   SD: PSecurityDescriptor;
   SA: TSecurityAttributes;
   SAPtr: PSecurityAttributes;
   LastErr: DWORD;
-BEGIN
+begin
   // Owner-only ACL: only the current user can connect. The MCP server must run as the
   // same OS user as the target (documented constraint, Plans/04 R7).
   //
@@ -254,7 +236,7 @@ BEGIN
   else
     BridgeLogWarn('bridge', 'could not resolve current user SID; falling back to default ACL');
 
-  TRY
+  try
     Result := CreateNamedPipeW(
                 PWideChar(FPipeName),
                 PIPE_ACCESS_DUPLEX or FILE_FLAG_FIRST_PIPE_INSTANCE,
@@ -273,15 +255,15 @@ BEGIN
       BridgeLogInfo('bridge', 'pipe ready, ACL restricted to user SID ' + UserSid)
     else
       BridgeLogInfo('bridge', 'pipe ready (default ACL)');
-  FINALLY
+  finally
     if SD <> NIL then
       LocalFree(HLOCAL(SD));
-  END;
-END;
+  end;
+end;
 
 
-PROCEDURE TPipeTransport.StartListening;
-BEGIN
+procedure TPipeTransport.StartListening;
+begin
   // Discovery file is best-effort, attempted ONCE (same as the pre-split worker
   // prologue — written even if pipe creation later fails). If TFile.WriteAllText
   // raises (disk full, permission denied, virus scanner locking the dir), the
@@ -289,27 +271,27 @@ BEGIN
   if not FDiscoveryTried then
   begin
     FDiscoveryTried := TRUE;
-    TRY
+    try
       WriteDiscoveryFile;
-    EXCEPT
-      ON E: Exception DO
+    except
+      on E: Exception do
         BridgeLogError('bridge',
           'WriteDiscoveryFile failed: ' + E.ClassName + ': ' + E.Message +
           ' — bridge will not auto-discover; attach(pid) still works');
-    END;
+    end;
   end;
 
   // (Re-)create a pipe instance for each client session.
   // FILE_FLAG_FIRST_PIPE_INSTANCE on the first call rejects an existing same-named pipe,
   // which is what we want — if another instance of this exe is up, we want to know.
   FPipeHandle := CreatePipeInstance;
-END;
+end;
 
 
-FUNCTION TPipeTransport.AcceptConnection: Boolean;
-VAR
+function TPipeTransport.AcceptConnection: Boolean;
+var
   Connected: BOOL;
-BEGIN
+begin
   Connected := ConnectNamedPipe(FPipeHandle, NIL);
   // ConnectNamedPipe returns FALSE with ERROR_PIPE_CONNECTED if a client connected
   // between CreateNamedPipe and ConnectNamedPipe. That's actually success (quirk #1).
@@ -318,11 +300,11 @@ BEGIN
   begin
     CloseHandle(FPipeHandle);
     FPipeHandle := INVALID_HANDLE_VALUE;
-    EXIT(FALSE);
+    exit(FALSE);
   end;
 
   // Quirk #3: WakeAndStop self-connects via CreateFileW to unblock us — that produces
-  // a successful "connection" that must NOT be handshaken with (raising EReadError on
+  // a successful "connection" that must not be handshaken with (raising EReadError on
   // this thread while the main thread concurrently frees handles races the RTL's
   // exception machinery — was AVing in @HandleAnyException, Plans/04). Swallow it.
   if FStopping then
@@ -330,37 +312,37 @@ BEGIN
     DisconnectNamedPipe(FPipeHandle);
     CloseHandle(FPipeHandle);
     FPipeHandle := INVALID_HANDLE_VALUE;
-    EXIT(FALSE);
+    exit(FALSE);
   end;
 
   Result := TRUE;
-END;
+end;
 
 
-FUNCTION TPipeTransport.ConnectionStream: TStream;
-BEGIN
-  // THandleStream does NOT close the handle; the transport still owns it.
+function TPipeTransport.ConnectionStream: TStream;
+begin
+  // THandleStream does not close the handle; the transport still owns it.
   Result := THandleStream.Create(FPipeHandle);
-END;
+end;
 
 
-PROCEDURE TPipeTransport.RecycleConnection;
-BEGIN
+procedure TPipeTransport.RecycleConnection;
+begin
   if FPipeHandle <> INVALID_HANDLE_VALUE then
   begin
     DisconnectNamedPipe(FPipeHandle);
     CloseHandle(FPipeHandle);
     FPipeHandle := INVALID_HANDLE_VALUE;
   end;
-END;
+end;
 
 
-PROCEDURE TPipeTransport.WakeAndStop(AWorkerThread: TThread);
-VAR
+procedure TPipeTransport.WakeAndStop(AWorkerThread: TThread);
+var
   WakeClient: THandle;
   Attempts: Integer;
   Err: DWORD;
-BEGIN
+begin
   // Order matters: FStopping FIRST, so the self-connect below is recognized as a
   // phantom inside AcceptConnection regardless of which wake mechanism lands.
   FStopping := TRUE;
@@ -398,13 +380,13 @@ BEGIN
   end;
 
   DeleteDiscoveryFile;
-END;
+end;
 
 
-FUNCTION TPipeTransport.EndpointLabel: String;
-BEGIN
+function TPipeTransport.EndpointLabel: String;
+begin
   Result := FPipeName;
-END;
+end;
 
 
-END.
+end.

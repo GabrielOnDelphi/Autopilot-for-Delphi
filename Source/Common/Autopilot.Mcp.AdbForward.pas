@@ -1,116 +1,80 @@
-UNIT Autopilot.Mcp.AdbForward;
+﻿unit Autopilot.Mcp.AdbForward;
 
-(*=====================================================
-   2026.06.04
-   GabrielMoraru.com / SciVance Tech
+{=============================================================================================================
+   2026.06
+   www.GabrielMoraru.com
+--------------------------------------------------------------------------------------------------------------
+   - Thin wrapper around the `adb forward` command: tunnels a host loopback TCP port over USB to a listener on the Android device.
+   - TAdbResult record carries success, exit code, and combined stdout+stderr output.
+   - Windows-only (PC side). No VCL, no FMX, no LightSaber. Stdlib + Win32 only.
+=============================================================================================================}
 
-   ┌──────────────────────────────────────┐
-   │  WINDOWS  (PC-side, adb wrapper)     │   sets up the USB tunnel to an Android target
-   └──────────────────────────────────────┘
+interface
 
-   Thin wrapper over the Android platform-tools `adb forward` command.
-
-   `adb forward tcp:<hostPort> <deviceEndpoint>` tunnels a HOST loopback port
-   over USB to a listener inside the app on the device. The MCP server then
-   connects to 127.0.0.1:<hostPort> (via Autopilot.Mcp.SocketClient) and adb
-   relays the bytes to the device-side bridge.
-
-   Argument order is LOCAL REMOTE (host first) — verified against
-   developer.android.com/tools/adb ("forwards requests on a specific host port
-   to a different port on a device", example `adb forward tcp:6100 tcp:7100`).
-
-   DEVICE ENDPOINT FORMS:
-     - tcp:<devicePort>         -- the SAFE, fully-documented form. Default here.
-     - localabstract:<name>     -- AF_UNIX abstract socket. The plan PREFERS this
-                                   (no INTERNET permission, self-cleaning), and the
-                                   Chrome DevTools tunnel uses exactly this form
-                                   (`adb forward tcp:9222 localabstract:chrome_devtools_remote`).
-                                   VERIFIED valid for `forward` (2026-06-04): the
-                                   `forward [--no-rebind] LOCAL REMOTE` block of the
-                                   platform-tools-37 `adb --help` bundled with D13 lists
-                                   both `tcp:<port>` and `localabstract:<name>`. (An earlier
-                                   AOSP man-page read wrongly placed it under `reverse` only.)
-                                   Still defaults to TCP here because the abstract name needs
-                                   the Phase-B device bridge to actually bind it.
-
-   The forward DIES on device disconnect / `adb kill-server`, but SURVIVES the
-   app restarting (it binds to the device transport, not the app process). So
-   Ensure* is safe + cheap to re-run on every attach.
-
-   PHASE A: this compiles and the adb invocation is real, but it only matters
-   once the device-side bridge listens (Phase B) and a phone is attached. No
-   automated test here — shelling out to a real adb needs a device. See
-   " Plans\05_AndroidTransport.md".
-
-   No VCL, no FMX, no LightSaber. Stdlib + Win32 only.
-=====================================================*)
-
-INTERFACE
-
-USES
+uses
   Winapi.Windows,
   System.SysUtils, System.Classes;
 
-TYPE
+type
   /// Which device-side endpoint form to forward to.
   TAdbRemoteKind = (rkTcp, rkLocalAbstract);
 
   /// Outcome of an adb invocation.
-  TAdbResult = RECORD
+  TAdbResult = record
     Success  : Boolean;
     ExitCode : Cardinal;
     Output   : String;    // combined stdout+stderr (for diagnostics / logging)
-  END;
+  end;
 
 
 /// Locate the adb executable: PATH first, then %ANDROID_HOME%\platform-tools,
 /// then %ANDROID_SDK_ROOT%\platform-tools. Returns '' if not found.
-FUNCTION FindAdb: String;
+function FindAdb: String;
 
 /// Build the REMOTE (device-side) endpoint spec string for `adb forward`.
 ///   rkTcp           -> 'tcp:<DeviceSpec>'            (DeviceSpec is the port number)
 ///   rkLocalAbstract -> 'localabstract:<DeviceSpec>'  (DeviceSpec is the abstract name)
-FUNCTION BuildRemoteSpec(AKind: TAdbRemoteKind; CONST ADeviceSpec: String): String;
+function BuildRemoteSpec(AKind: TAdbRemoteKind; const ADeviceSpec: String): String;
 
 /// Run `adb forward tcp:<AHostPort> <ARemoteSpec>`. Re-runnable (idempotent at the
 /// adb level — re-forwarding the same host port just rebinds it). Returns the result;
 /// does NOT raise on a non-zero adb exit (caller inspects .Success), but DOES raise if
 /// adb can't be found or the process can't be launched.
-FUNCTION EnsureForward(AHostPort: Word; CONST ARemoteSpec: String): TAdbResult;
+function EnsureForward(AHostPort: Word; const ARemoteSpec: String): TAdbResult;
 
 /// Convenience for the common case: forward a host port to a device TCP port.
-FUNCTION EnsureForwardTcp(AHostPort, ADevicePort: Word): TAdbResult;
+function EnsureForwardTcp(AHostPort, ADevicePort: Word): TAdbResult;
 
 /// Tear down a single forward: `adb forward --remove tcp:<AHostPort>`.
-FUNCTION RemoveForward(AHostPort: Word): TAdbResult;
+function RemoveForward(AHostPort: Word): TAdbResult;
 
 
-IMPLEMENTATION
+implementation
 
-USES
+uses
   System.IOUtils;
 
 
-FUNCTION FindAdb: String;
+function FindAdb: String;
 
-  FUNCTION TryDir(CONST ADir: String): Boolean;
-  VAR
+  function TryDir(const ADir: String): Boolean;
+  var
     Candidate: String;
-  BEGIN
-    Result := FALSE;
-    if ADir = '' then EXIT;
+  begin
+    Result := False;
+    if ADir = '' then Exit;
     Candidate := TPath.Combine(TPath.Combine(ADir, 'platform-tools'), 'adb.exe');
     if TFile.Exists(Candidate) then
     begin
       FindAdb := Candidate;
-      Result  := TRUE;
+      Result  := True;
     end;
-  END;
+  end;
 
-VAR
+var
   PathDirs: TArray<String>;
   Dir, Candidate: String;
-BEGIN
+begin
   Result := '';
 
   { # On PATH }
@@ -119,31 +83,31 @@ BEGIN
   begin
     if Dir.Trim = '' then Continue;
     Candidate := TPath.Combine(Dir.Trim, 'adb.exe');
-    if TFile.Exists(Candidate) then EXIT(Candidate);
+    if TFile.Exists(Candidate) then Exit(Candidate);
   end;
 
   { # SDK env vars }
-  if TryDir(GetEnvironmentVariable('ANDROID_HOME')) then EXIT;
-  if TryDir(GetEnvironmentVariable('ANDROID_SDK_ROOT')) then EXIT;
-END;
+  if TryDir(GetEnvironmentVariable('ANDROID_HOME')) then Exit;
+  if TryDir(GetEnvironmentVariable('ANDROID_SDK_ROOT')) then Exit;
+end;
 
 
-FUNCTION BuildRemoteSpec(AKind: TAdbRemoteKind; CONST ADeviceSpec: String): String;
-BEGIN
+function BuildRemoteSpec(AKind: TAdbRemoteKind; const ADeviceSpec: String): String;
+begin
   case AKind of
     rkTcp           : Result := 'tcp:' + ADeviceSpec;
     rkLocalAbstract : Result := 'localabstract:' + ADeviceSpec;
   else
     raise Exception.Create('BuildRemoteSpec: unknown remote kind');
   end;
-END;
+end;
 
 
 // Launch a child process with stdout+stderr captured into a single string.
 // Blocking — adb forward returns immediately, so no long wait. Raises if the
 // process can't be created (adb missing / not executable).
-FUNCTION RunCaptured(CONST AExe, ACmdLine: String; OUT AExitCode: Cardinal): String;
-VAR
+function RunCaptured(const AExe, ACmdLine: String; out AExitCode: Cardinal): String;
+var
   Sa        : TSecurityAttributes;
   ReadPipe  : THandle;
   WritePipe : THandle;
@@ -153,17 +117,19 @@ VAR
   Buf       : array[0..4095] of Byte;
   Chunk     : TBytes;
   BytesRead : DWORD;
+  Avail     : DWORD;
+  DrainDeadline : UInt64;
   Acc       : TStringBuilder;
-BEGIN
+begin
   AExitCode := High(Cardinal);
 
   Sa := Default(TSecurityAttributes);
   Sa.nLength        := SizeOf(Sa);
-  Sa.bInheritHandle := TRUE;
+  Sa.bInheritHandle := True;
 
   if not CreatePipe(ReadPipe, WritePipe, @Sa, 0) then
     raise Exception.CreateFmt('CreatePipe failed (code %d)', [GetLastError]);
-  TRY
+  try
     // The read end must NOT be inherited by the child.
     SetHandleInformation(ReadPipe, HANDLE_FLAG_INHERIT, 0);
 
@@ -180,70 +146,86 @@ BEGIN
     UniqueString(FullCmd);
 
     Pi := Default(TProcessInformation);
-    if not CreateProcessW(NIL, PWideChar(FullCmd), NIL, NIL, TRUE,
-                          CREATE_NO_WINDOW, NIL, NIL, Si, Pi) then
+    if not CreateProcessW(nil, PWideChar(FullCmd), nil, nil, True,
+                          CREATE_NO_WINDOW, nil, nil, Si, Pi) then
       raise Exception.CreateFmt('CreateProcess failed for adb (code %d)', [GetLastError]);
+    try
+      // Close our copy of the write end. We must NOT then read to EOF: a cold `adb`
+      // invocation forks a long-lived adb SERVER that inherits this (inheritable)
+      // write end, so EOF never arrives and a blocking read-to-EOF would hang the
+      // single-threaded MCP server forever (documented adb-on-Windows behaviour —
+      // robotframework/robotframework#2085). Instead wait for the adb CLIENT to exit
+      // (capped, so a wedged adb can't hang us either), then drain the buffered
+      // output without blocking via PeekNamedPipe. `adb forward`/`--remove` print at
+      // most a short line, far under the pipe buffer, so the client never blocks on a
+      // full pipe before exiting.
+      CloseHandle(WritePipe);
+      WritePipe := 0;
 
-    // Close our copy of the write end so ReadFile sees EOF when the child exits.
-    CloseHandle(WritePipe);
-    WritePipe := 0;
+      Acc := TStringBuilder.Create;
+      try
+        WaitForSingleObject(Pi.hProcess, 30000);   // ms: a cold adb-server start can take seconds; this only bounds a wedged adb
+        GetExitCodeProcess(Pi.hProcess, AExitCode);
 
-    Acc := TStringBuilder.Create;
-    TRY
-      // Decode each chunk into a real TBytes. We must NOT cast @Buf[0] to TBytes:
-      // TEncoding.GetString(const Bytes: TBytes; ...) calls Length(Bytes), which on
-      // a pointer-cast-to-dynarray reads the 8 bytes BEFORE Buf on the stack as the
-      // array length — garbage / EEncodingError. SetLength gives a genuine header.
-      while ReadFile(ReadPipe, Buf, SizeOf(Buf), BytesRead, NIL) and (BytesRead > 0) do
-      begin
-        SetLength(Chunk, BytesRead);
-        Move(Buf[0], Chunk[0], BytesRead);
-        Acc.Append(TEncoding.ANSI.GetString(Chunk));
+        // Non-blocking drain of buffered output. We must NOT cast @Buf[0] to TBytes:
+        // TEncoding.GetString(const Bytes: TBytes; ...) calls Length(Bytes), which on
+        // a pointer-cast-to-dynarray reads the 8 bytes BEFORE Buf on the stack as the
+        // array length — garbage / EEncodingError. SetLength gives a genuine header.
+        // The deadline caps the loop in case the inherited server fd ever gets chatty.
+        DrainDeadline := GetTickCount64 + 2000;
+        while (GetTickCount64 < DrainDeadline)
+              and PeekNamedPipe(ReadPipe, nil, 0, nil, @Avail, nil) and (Avail > 0) do
+        begin
+          if Avail > DWORD(SizeOf(Buf)) then Avail := SizeOf(Buf);
+          if not (ReadFile(ReadPipe, Buf, Avail, BytesRead, nil) and (BytesRead > 0)) then Break;
+          SetLength(Chunk, BytesRead);
+          Move(Buf[0], Chunk[0], BytesRead);
+          Acc.Append(TEncoding.ANSI.GetString(Chunk));
+        end;
+        Result := Acc.ToString;
+      finally
+        Acc.Free;
       end;
-      WaitForSingleObject(Pi.hProcess, INFINITE);
-      GetExitCodeProcess(Pi.hProcess, AExitCode);
-      Result := Acc.ToString;
-    FINALLY
-      Acc.Free;
+    finally
       CloseHandle(Pi.hThread);
       CloseHandle(Pi.hProcess);
-    END;
-  FINALLY
+    end;
+  finally
     if WritePipe <> 0 then CloseHandle(WritePipe);
     CloseHandle(ReadPipe);
-  END;
-END;
+  end;
+end;
 
 
-FUNCTION RunAdb(CONST AArgs: String): TAdbResult;
-VAR
+function RunAdb(const AArgs: String): TAdbResult;
+var
   Adb: String;
-BEGIN
+begin
   Adb := FindAdb;
   if Adb = '' then
     raise Exception.Create('adb.exe not found. Put it on PATH or set ANDROID_HOME / ANDROID_SDK_ROOT.');
   Result := Default(TAdbResult);
   Result.Output   := RunCaptured(Adb, AArgs, Result.ExitCode);
   Result.Success  := Result.ExitCode = 0;
-END;
+end;
 
 
-FUNCTION EnsureForward(AHostPort: Word; CONST ARemoteSpec: String): TAdbResult;
-BEGIN
+function EnsureForward(AHostPort: Word; const ARemoteSpec: String): TAdbResult;
+begin
   Result := RunAdb('forward tcp:' + UIntToStr(AHostPort) + ' ' + ARemoteSpec);
-END;
+end;
 
 
-FUNCTION EnsureForwardTcp(AHostPort, ADevicePort: Word): TAdbResult;
-BEGIN
+function EnsureForwardTcp(AHostPort, ADevicePort: Word): TAdbResult;
+begin
   Result := EnsureForward(AHostPort, BuildRemoteSpec(rkTcp, UIntToStr(ADevicePort)));
-END;
+end;
 
 
-FUNCTION RemoveForward(AHostPort: Word): TAdbResult;
-BEGIN
+function RemoveForward(AHostPort: Word): TAdbResult;
+begin
   Result := RunAdb('forward --remove tcp:' + UIntToStr(AHostPort));
-END;
+end;
 
 
-END.
+end.

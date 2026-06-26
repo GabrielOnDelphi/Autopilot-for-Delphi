@@ -1,78 +1,67 @@
-UNIT Autopilot.Mcp.TargetMode;
+﻿unit Autopilot.Mcp.TargetMode;
 
-(*=====================================================
-   2026.06.04
-   GabrielMoraru.com / SciVance Tech
+{=============================================================================================================
+   2026.06
+   www.GabrielMoraru.com
+--------------------------------------------------------------------------------------------------------------
+   - Holds the MCP server's target transport mode, parsed once from the command line at startup.
+   - Default (no flag) = tmPipe — the existing Windows named-pipe path, unchanged.
+   - '--target adb:<hostPort>' = tmAdbSocket — connect to 127.0.0.1:<hostPort>, which 'adb forward' has
+     tunnelled to the device-side bridge.
+   - Read by Autopilot.Mcp.ToolBase when routing each command.
+   - Stdlib only.
+=============================================================================================================}
 
-   ┌──────────────────────────────────────┐
-   │  WINDOWS  (PC-side MCP server)       │   selects pipe (Windows target) vs adb socket (Android target)
-   └──────────────────────────────────────┘
+interface
 
-   Holds the MCP server's target transport mode, parsed ONCE from the command
-   line at startup (Autopilot.Mcp.dpr) and read by Autopilot.Mcp.ToolBase when
-   it routes each command.
-
-   Default (no flag) = tmPipe — the existing Windows named-pipe path, unchanged.
-   `--target adb:<hostPort>`  = tmAdbSocket — connect to 127.0.0.1:<hostPort>,
-   which `adb forward` has tunnelled to the device-side bridge.
-
-   Why a flag and not auto-discovery: there is no on-device discovery file (the
-   Android sandbox has no shared %TEMP%), so the AI host must tell us the host
-   port explicitly. See " Plans\05_AndroidTransport.md" → "MCP-server side".
-
-   Stdlib only.
-=====================================================*)
-
-INTERFACE
-
-TYPE
+type
   TTargetMode = (tmPipe, tmAdbSocket);
 
 /// Parse the process command line for `--target adb:<port>`. Call once at startup.
 /// Absent or unrecognised → leaves the default (tmPipe). Returns TRUE if a valid
 /// `--target adb:<port>` was found and applied.
-FUNCTION ParseTargetModeFromCmdLine: Boolean;
+function ParseTargetModeFromCmdLine: Boolean;
 
 /// The resolved mode. tmPipe until ParseTargetModeFromCmdLine sets otherwise.
-FUNCTION CurrentTargetMode: TTargetMode;
+function CurrentTargetMode: TTargetMode;
 
 /// The host loopback port for tmAdbSocket (meaningful only when mode = tmAdbSocket).
-FUNCTION AdbHostPort: Word;
+function AdbHostPort: Word;
 
 
-IMPLEMENTATION
+implementation
 
-USES
+uses
   System.SysUtils;
 
-VAR
+var
   GMode     : TTargetMode = tmPipe;
   GHostPort : Word        = 0;
 
 
-FUNCTION CurrentTargetMode: TTargetMode;
-BEGIN
+function CurrentTargetMode: TTargetMode;
+begin
   Result := GMode;
-END;
+end;
 
 
-FUNCTION AdbHostPort: Word;
-BEGIN
+function AdbHostPort: Word;
+begin
   Result := GHostPort;
-END;
+end;
 
 
 // Accepts the spelling `--target adb:<port>` either as two arguments
 // (`--target` `adb:5037`) or one (`--target=adb:5037`). Only the adb form is
 // recognised today; an unrecognised --target value leaves the pipe default.
-FUNCTION ParseTargetModeFromCmdLine: Boolean;
+function ParseTargetModeFromCmdLine: Boolean;
 
   // Apply an "adb:<port>" value. Returns TRUE if the port parsed in range.
-  FUNCTION ApplyAdbValue(CONST AValue: String): Boolean;
-  VAR
+  function ApplyAdbValue(const AValue: String): Boolean;
+  var
     PortStr : String;
     PortVal : Integer;
-  BEGIN
+  begin
     Result := FALSE;
     if not AValue.StartsWith('adb:', TRUE) then EXIT;
     PortStr := AValue.Substring(4).Trim;
@@ -81,30 +70,26 @@ FUNCTION ParseTargetModeFromCmdLine: Boolean;
     GMode     := tmAdbSocket;
     GHostPort := Word(PortVal);
     Result    := TRUE;
-  END;
+  end;
 
-VAR
+var
   i   : Integer;
   Arg : String;
-BEGIN
+begin
   Result := FALSE;
   i := 1;
   while i <= ParamCount do
-  begin
-    Arg := ParamStr(i);
-    if SameText(Arg, '--target') and (i < ParamCount) then
     begin
-      Result := ApplyAdbValue(ParamStr(i + 1));
-      EXIT;
-    end
-    else if Arg.StartsWith('--target=', TRUE) then
-    begin
-      Result := ApplyAdbValue(Arg.Substring(Length('--target=')));
-      EXIT;
+      Arg := ParamStr(i);
+      if SameText(Arg, '--target') and (i < ParamCount)
+      then EXIT(ApplyAdbValue(ParamStr(i + 1)))
+      else
+        if Arg.StartsWith('--target=', TRUE)
+        then EXIT(ApplyAdbValue(Arg.Substring(Length('--target='))));
+      Inc(i);
     end;
-    Inc(i);
-  end;
-END;
+end;
+
+end.
 
 
-END.

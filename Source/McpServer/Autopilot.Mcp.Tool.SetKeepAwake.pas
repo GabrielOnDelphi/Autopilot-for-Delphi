@@ -1,85 +1,78 @@
-UNIT Autopilot.Mcp.Tool.SetKeepAwake;
+unit Autopilot.Mcp.Tool.SetKeepAwake;
 
-(*=====================================================
-   2026.06.14
-   GabrielMoraru.com / SciVance Tech
+{=============================================================================================================
+   2026.06
+   www.GabrielMoraru.com
+--------------------------------------------------------------------------------------------------------------
+   - MCP tool: set_keep_awake
+   - Keeps the target device screen on while it is being driven. On Android the bridge sets the
+     FLAG_KEEP_SCREEN_ON window flag, preventing the OS screen-off app freeze that stalls socket accept.
+   - No-op on Windows targets (a Windows app is never OS-frozen while an automation client drives it).
+   - The FMX bridge enables this by default on Android at StartBridge; this tool allows runtime toggling.
+   - Runs in Autopilot.Mcp.exe (Windows PC-side MCP server); target may be any platform.
+=============================================================================================================}
 
-   ┌──────────────────────────────────────┐
-   │  WINDOWS  (PC-side MCP server)       │   runs in Autopilot.Mcp.exe; target may be any platform
-   └──────────────────────────────────────┘
+interface
 
-   MCP tool: set_keep_awake
-   Keeps the target device screen on while it is being driven. On Android the
-   bridge sets the FLAG_KEEP_SCREEN_ON window flag, so the screen never turns off
-   and the OS does not freeze the (foreground) app — the screen-off freeze is what
-   stalls the socket accept otherwise. No-op on Windows targets (a Windows app is
-   never frozen by the OS while an automation client drives it).
-
-   The FMX bridge enables this by DEFAULT on Android at StartBridge; this tool lets
-   the AI release it (enabled=false) or re-assert it (enabled=true) at runtime.
-=====================================================*)
-
-INTERFACE
-
-USES
+uses
   System.SysUtils, System.JSON,
   MCPServer.Tool.Base, MCPServer.Types,
   Autopilot.Mcp.ToolBase;
 
-TYPE
-  TSetKeepAwakeParams = CLASS
-  PRIVATE
+type
+  TSetKeepAwakeParams = class
+  private
     FEnabled: Boolean;
     FPid    : Integer;
-  PUBLIC
+  public
     [SchemaDescription('TRUE to keep the device screen on (Android: sets FLAG_KEEP_SCREEN_ON); ' +
                        'FALSE to release it. No-op on Windows targets. The Android bridge enables this by default.')]
-    PROPERTY Enabled: Boolean READ FEnabled WRITE FEnabled;
+    property Enabled: Boolean read FEnabled write FEnabled;
 
     [Optional]
     [SchemaDescription('Optional PID to disambiguate when multiple targets are active.')]
-    PROPERTY Pid: Integer READ FPid WRITE FPid;
-  END;
+    property Pid: Integer read FPid write FPid;
+  end;
 
-  TSetKeepAwakeTool = CLASS(TMCPToolBase<TSetKeepAwakeParams>)
-  PROTECTED
-    FUNCTION ExecuteWithParams(CONST Params: TSetKeepAwakeParams): String; OVERRIDE;
-  PUBLIC
-    CONSTRUCTOR Create; OVERRIDE;
-  END;
+  TSetKeepAwakeTool = class(TMCPToolBase<TSetKeepAwakeParams>)
+  protected
+    function ExecuteWithParams(const Params: TSetKeepAwakeParams): String; override;
+  public
+    constructor Create; override;
+  end;
 
 
-IMPLEMENTATION
+implementation
 
-USES
+uses
   MCPServer.Registration;
 
 
-CONSTRUCTOR TSetKeepAwakeTool.Create;
-BEGIN
+constructor TSetKeepAwakeTool.Create;
+begin
   inherited;
   FName := 'set_keep_awake';
   FDescription := 'Keep the target device screen on while driving it (Android only; prevents the OS screen-off app freeze). No-op on Windows.';
-END;
+end;
 
 
-FUNCTION TSetKeepAwakeTool.ExecuteWithParams(CONST Params: TSetKeepAwakeParams): String;
-VAR
+function TSetKeepAwakeTool.ExecuteWithParams(const Params: TSetKeepAwakeParams): String;
+var
   Args: TJSONObject;
-BEGIN
+begin
   Args := TJSONObject.Create;
   Args.AddPair('enabled', TJSONBool.Create(Params.Enabled));
   Result := RunCommandOnTarget(Cardinal(Params.Pid), BuildRequest(1, 'set_keep_awake', Args));
-END;
+end;
 
 
-INITIALIZATION
+initialization
   TMCPRegistry.RegisterTool('set_keep_awake',
-    FUNCTION: IMCPTool
-    BEGIN
+    function: IMCPTool
+    begin
       Result := TSetKeepAwakeTool.Create;
-    END
+    end
   );
 
 
-END.
+end.

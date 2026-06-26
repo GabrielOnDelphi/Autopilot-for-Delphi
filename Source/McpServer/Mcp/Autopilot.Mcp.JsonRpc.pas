@@ -1,45 +1,38 @@
-UNIT Autopilot.Mcp.JsonRpc;
+unit Autopilot.Mcp.JsonRpc;
 
-(*=====================================================
-   2026.06.03
-   GabrielMoraru.com / SciVance Tech
+{=============================================================================================================
+   2026.06
+   www.GabrielMoraru.com
+--------------------------------------------------------------------------------------------------------------
+   Single-line JSON-RPC 2.0 dispatcher for the Autopilot MCP server. Implements the minimum MCP
+   surface Claude Code needs: initialize, notifications/initialized (notification), ping, tools/list,
+   tools/call. Everything else returns -32601 Method not found.
 
-   ┌──────────────────────────────────────┐
-   │  WINDOWS  (PC-side MCP server)       │   runs in Autopilot.Mcp.exe; target may be any platform
-   └──────────────────────────────────────┘
+   No threads, no transport here — the caller (Autopilot.Mcp.Stdio) drives the readln loop.
+   Pure JSON in -> JSON out (or '' for notifications).
 
-   Single-line JSON-RPC 2.0 dispatcher. Implements the minimum MCP surface
-   Claude Code needs:
-     initialize, notifications/initialized (notification), ping,
-     tools/list, tools/call.
+   Tool instance caching: each tool name maps to one IMCPTool, created via TMCPRegistry on first
+   use and held until shutdown.
 
-   Everything else returns -32601 Method not found.
+   id handling: every JSON-RPC response must echo the request's id verbatim, preserving its JSON
+   type (number, string, nil). We clone the raw TJSONValue so a number stays a number and a string
+   stays a string.
+=============================================================================================================}
 
-   No threads, no transport here — the caller (Autopilot.Mcp.Stdio) drives
-   the readln loop. Pure JSON in -> JSON out (or '' for notifications).
-
-   Tool instance caching: each tool name maps to one IMCPTool, created via
-   TMCPRegistry on first use and held until shutdown. Matches GDK behavior.
-
-   id handling: every JSON-RPC response must echo the request's id verbatim,
-   preserving its JSON type (number, string, null). We clone the raw TJSONValue
-   so a number stays a number and a string stays a string.
-=====================================================*)
-
-INTERFACE
+interface
 
 
 /// Process one JSON-RPC line. Returns the response line (no trailing newline)
 /// or '' if the request was a notification (no response expected).
-FUNCTION DispatchLine(CONST ALine: String): String;
+function DispatchLine(const ALine: String): String;
 
 /// Drop the cached tool instances. Used by unit tests; production never calls.
-PROCEDURE ResetToolCache;
+procedure ResetToolCache;
 
 
-IMPLEMENTATION
+implementation
 
-USES
+uses
   System.SysUtils, System.JSON, System.Generics.Collections,
   Autopilot.Bridge.Core,
   Autopilot.Bridge.Log,
@@ -48,7 +41,7 @@ USES
   MCPServer.Tool.Base;
 
 
-CONST
+const
   ErrParseError     = -32700;
   ErrInvalidRequest = -32600;
   ErrMethodNotFound = -32601;
@@ -57,7 +50,7 @@ CONST
 
   ServerName = 'Autopilot.Mcp';
 
-CONST
+const
   /// Versions we accept verbatim on initialize. Anything else negotiates down
   /// to MCP_PROTOCOL_VERSION. Order matters for readability only — lookup is linear.
   GSupportedVersions: array[0..3] of String = (
@@ -67,146 +60,146 @@ CONST
     '2024-11-05'
   );
 
-TYPE
+type
   /// Holder for the singleton tool-instance cache. Wrapped in a class so we can
   /// hang a class destructor on it (no finalization section, per project rule).
   /// One IMCPTool per tool name, built lazily on first tools/list or tools/call,
   /// reused for the rest of the server's lifetime.
-  TToolCache = CLASS
-  STRICT PRIVATE
-    CLASS VAR FMap: TDictionary<String, IMCPTool>;
-    CLASS PROCEDURE EnsureMap;
-  PUBLIC
-    CLASS FUNCTION Resolve(CONST AName: String): IMCPTool;
-    CLASS PROCEDURE Reset;
-    CLASS DESTRUCTOR Destroy;
-  END;
+  TToolCache = class
+  strict private
+    class var FMap: TDictionary<String, IMCPTool>;
+    class procedure EnsureMap;
+  public
+    class function Resolve(const AName: String): IMCPTool;
+    class procedure Reset;
+    class destructor Destroy;
+  end;
 
 
-CLASS PROCEDURE TToolCache.EnsureMap;
-BEGIN
-  if FMap = NIL then
+class procedure TToolCache.EnsureMap;
+begin
+  if FMap = nil then
     FMap := TDictionary<String, IMCPTool>.Create;
-END;
+end;
 
 
-CLASS FUNCTION TToolCache.Resolve(CONST AName: String): IMCPTool;
-BEGIN
+class function TToolCache.Resolve(const AName: String): IMCPTool;
+begin
   EnsureMap;
-  if FMap.TryGetValue(AName, Result) then EXIT;
-  if not TMCPRegistry.HasTool(AName) then EXIT(NIL);
+  if FMap.TryGetValue(AName, Result) then Exit;
+  if not TMCPRegistry.HasTool(AName) then Exit(nil);
   Result := TMCPRegistry.CreateTool(AName);
   FMap.Add(AName, Result);
-END;
+end;
 
 
-CLASS PROCEDURE TToolCache.Reset;
-BEGIN
+class procedure TToolCache.Reset;
+begin
   FreeAndNil(FMap);
-END;
+end;
 
 
-CLASS DESTRUCTOR TToolCache.Destroy;
-BEGIN
+class destructor TToolCache.Destroy;
+begin
   FreeAndNil(FMap);
-END;
+end;
 
 
-PROCEDURE ResetToolCache;
-BEGIN
+procedure ResetToolCache;
+begin
   TToolCache.Reset;
-END;
+end;
 
 
-/// Look up (or create-and-cache) the tool by name. Returns NIL if not registered.
-FUNCTION ResolveCachedTool(CONST AName: String): IMCPTool;
-BEGIN
+/// Look up (or create-and-cache) the tool by name. Returns nil if not registered.
+function ResolveCachedTool(const AName: String): IMCPTool;
+begin
   Result := TToolCache.Resolve(AName);
-END;
+end;
 
 
 /// True iff AVersion is one we accept verbatim during initialize negotiation.
-FUNCTION IsSupportedVersion(CONST AVersion: String): Boolean;
-VAR
+function IsSupportedVersion(const AVersion: String): Boolean;
+var
   V: String;
-BEGIN
+begin
   for V in GSupportedVersions do
-    if V = AVersion then EXIT(TRUE);
-  Result := FALSE;
-END;
+    if V = AVersion then Exit(true);
+  Result := false;
+end;
 
 
 /// Clone the request id into the response. The MUST-preserve-type rule of
 /// JSON-RPC 2.0 §5: a number response id matches a number request id, etc.
-/// AIdNode may be NIL (request had no id field, but we shouldn't get here in
+/// AIdNode may be nil (request had no id field, but we shouldn't get here in
 /// that case — notifications are handled earlier) or any TJSONValue subtype.
-FUNCTION CloneIdOrNull(AIdNode: TJSONValue): TJSONValue;
-BEGIN
-  if AIdNode = NIL
+function CloneIdOrNull(AIdNode: TJSONValue): TJSONValue;
+begin
+  if AIdNode = nil
     then Result := TJSONNull.Create
-    else Result := AIdNode.Clone AS TJSONValue;
-END;
+    else Result := AIdNode.Clone as TJSONValue;
+end;
 
 
 /// Build the {jsonrpc:'2.0', id, result:<inner>} envelope. Takes ownership of
 /// AInner and ACloneOfId.
-FUNCTION BuildOkEnvelope(ACloneOfId: TJSONValue; AInner: TJSONValue): String;
-VAR
+function BuildOkEnvelope(ACloneOfId: TJSONValue; AInner: TJSONValue): String;
+var
   Resp: TJSONObject;
-BEGIN
+begin
   Resp := TJSONObject.Create;
-  TRY
+  try
     Resp.AddPair('jsonrpc', '2.0');
     Resp.AddPair('id', ACloneOfId);
     Resp.AddPair('result', AInner);
     Result := Resp.ToJSON;
-  FINALLY
+  finally
     Resp.Free;
-  END;
-END;
+  end;
+end;
 
 
 /// Build the {jsonrpc:'2.0', id, error:{code,message}} envelope. Takes ownership
 /// of ACloneOfId.
-FUNCTION BuildErrorEnvelope(ACloneOfId: TJSONValue; ACode: Integer; CONST AMsg: String): String;
-VAR
+function BuildErrorEnvelope(ACloneOfId: TJSONValue; ACode: Integer; const AMsg: String): String;
+var
   Resp, Err: TJSONObject;
-BEGIN
+begin
   Err := TJSONObject.Create;
   Err.AddPair('code', TJSONNumber.Create(ACode));
   Err.AddPair('message', AMsg);
 
   Resp := TJSONObject.Create;
-  TRY
+  try
     Resp.AddPair('jsonrpc', '2.0');
     Resp.AddPair('id', ACloneOfId);
     Resp.AddPair('error', Err);
     Result := Resp.ToJSON;
-  FINALLY
+  finally
     Resp.Free;
-  END;
-END;
+  end;
+end;
 
 
 /// Negotiate the protocolVersion the client sent against our supported list.
-/// AParams may be NIL (no params on initialize is unusual but legal).
-FUNCTION NegotiateVersion(AParams: TJSONObject): String;
-VAR
+/// AParams may be nil (no params on initialize is unusual but legal).
+function NegotiateVersion(AParams: TJSONObject): String;
+var
   Node: TJSONValue;
-BEGIN
+begin
   Result := MCP_PROTOCOL_VERSION;
-  if AParams = NIL then EXIT;
+  if AParams = nil then Exit;
   Node := AParams.GetValue('protocolVersion');
-  if (Node <> NIL) and IsSupportedVersion(Node.Value) then
+  if (Node <> nil) and IsSupportedVersion(Node.Value) then
     Result := Node.Value;
-END;
+end;
 
 
 /// Build the result object for the initialize request.
-FUNCTION BuildInitializeResult(AParams: TJSONObject): TJSONObject;
-VAR
+function BuildInitializeResult(AParams: TJSONObject): TJSONObject;
+var
   Caps, ToolsCap, ServerInfo: TJSONObject;
-BEGIN
+begin
   ToolsCap := TJSONObject.Create; // empty {} — we don't support listChanged
   Caps     := TJSONObject.Create;
   Caps.AddPair('tools', ToolsCap);
@@ -219,18 +212,18 @@ BEGIN
   Result.AddPair('protocolVersion', NegotiateVersion(AParams));
   Result.AddPair('capabilities', Caps);
   Result.AddPair('serverInfo', ServerInfo);
-END;
+end;
 
 
 /// Build the tools/list result: {tools:[ {name,description,inputSchema}, ... ]}.
-FUNCTION BuildToolListResult: TJSONObject;
-VAR
+function BuildToolListResult: TJSONObject;
+var
   ToolsArr: TJSONArray;
   Names   : TArray<String>;
   Name    : String;
   Tool    : IMCPTool;
   Entry   : TJSONObject;
-BEGIN
+begin
   ToolsArr := TJSONArray.Create;
   Result   := TJSONObject.Create;
   Result.AddPair('tools', ToolsArr);
@@ -239,7 +232,7 @@ BEGIN
   for Name in Names do
   begin
     Tool := ResolveCachedTool(Name);
-    if Tool = NIL then Continue; // shouldn't happen — Names came from the registry
+    if Tool = nil then Continue; // shouldn't happen — Names came from the registry
 
     Entry := TJSONObject.Create;
     Entry.AddPair('name', Tool.Name);
@@ -248,48 +241,48 @@ BEGIN
     Entry.AddPair('inputSchema', Tool.InputSchema);
     ToolsArr.AddElement(Entry);
   end;
-END;
+end;
 
 
 /// True iff the tool's response string represents an error. Tries to parse it
 /// as JSON and looks at the conventional shape {ok:false} or {error:{...}}.
-/// Falls back to the GDK heuristic of "starts with Error:" if the string is
-/// not parseable JSON — that catches exception messages we wrap with that
-/// prefix in BuildToolCallResult.
-FUNCTION DetectIsError(CONST AText: String): Boolean;
-VAR
+/// Falls back to the heuristic of "starts with Error:" if the string is not
+/// parseable JSON — that catches exception messages we wrap with that prefix
+/// in BuildToolCallResult.
+function DetectIsError(const AText: String): Boolean;
+var
   Parsed: TJSONValue;
   Obj   : TJSONObject;
   OkVal : TJSONValue;
-BEGIN
+begin
   Parsed := TJSONObject.ParseJSONValue(AText);
-  TRY
-    if Parsed IS TJSONObject then
+  try
+    if Parsed is TJSONObject then
     begin
       Obj := TJSONObject(Parsed);
       OkVal := Obj.GetValue('ok');
-      if (OkVal IS TJSONBool) and (not TJSONBool(OkVal).AsBoolean) then
-        EXIT(TRUE);
-      if Obj.GetValue('error') <> NIL then
-        EXIT(TRUE);
-      EXIT(FALSE);
+      if (OkVal is TJSONBool) and (not TJSONBool(OkVal).AsBoolean) then
+        Exit(true);
+      if Obj.GetValue('error') <> nil then
+        Exit(true);
+      Exit(false);
     end;
-  FINALLY
+  finally
     Parsed.Free;
-  END;
+  end;
 
   // Not parseable JSON — fall back to the prefix heuristic.
   Result := AText.StartsWith('Error:');
-END;
+end;
 
 
 /// Wrap a plain text payload (the tool's return string) in the MCP tools/call
 /// content[] structure: {content:[{type:'text', text:<s>}], isError:<bool>}.
-FUNCTION WrapToolCallContent(CONST AText: String; AIsError: Boolean): TJSONObject;
-VAR
+function WrapToolCallContent(const AText: String; AIsError: Boolean): TJSONObject;
+var
   Item, Outer: TJSONObject;
   Arr        : TJSONArray;
-BEGIN
+begin
   Item := TJSONObject.Create;
   Item.AddPair('type', 'text');
   Item.AddPair('text', AText);
@@ -300,16 +293,16 @@ BEGIN
   Outer := TJSONObject.Create;
   Outer.AddPair('content', Arr);
   if AIsError then
-    Outer.AddPair('isError', TJSONBool.Create(TRUE));
+    Outer.AddPair('isError', TJSONBool.Create(true));
   Result := Outer;
-END;
+end;
 
 
 /// Build the tools/call result. Reads name + arguments from AParams (either
 /// may be missing or wrong-typed — handle gracefully), resolves the tool,
-/// runs it, and wraps the output. AParams may be NIL.
-FUNCTION BuildToolCallResult(AParams: TJSONObject): TJSONObject;
-VAR
+/// runs it, and wraps the output. AParams may be nil.
+function BuildToolCallResult(AParams: TJSONObject): TJSONObject;
+var
   ToolName  : String;
   NameNode  : TJSONValue;
   ArgsNode  : TJSONValue;
@@ -317,54 +310,54 @@ VAR
   ArgsOwned : Boolean;
   Tool      : IMCPTool;
   Text      : String;
-BEGIN
+begin
   ToolName := '';
-  if AParams <> NIL then
+  if AParams <> nil then
   begin
     NameNode := AParams.GetValue('name');
-    if NameNode IS TJSONString then
+    if NameNode is TJSONString then
       ToolName := NameNode.Value;
   end;
 
   if ToolName = '' then
-    EXIT(WrapToolCallContent('Error: tools/call missing required "name" parameter', TRUE));
+    Exit(WrapToolCallContent('Error: tools/call missing required "name" parameter', true));
 
   // Extract arguments. The spec lets clients omit "arguments" entirely or send
-  // null; either is treated as an empty object.
-  Args      := NIL;
-  ArgsOwned := FALSE;
-  if AParams <> NIL then
+  // nil; either is treated as an empty object.
+  Args      := nil;
+  ArgsOwned := false;
+  if AParams <> nil then
   begin
     ArgsNode := AParams.GetValue('arguments');
-    if ArgsNode IS TJSONObject then
+    if ArgsNode is TJSONObject then
       Args := TJSONObject(ArgsNode);
   end;
-  if Args = NIL then
+  if Args = nil then
   begin
     Args := TJSONObject.Create;
-    ArgsOwned := TRUE;
+    ArgsOwned := true;
   end;
 
-  TRY
+  try
     Tool := ResolveCachedTool(ToolName);
-    if Tool = NIL then
-      EXIT(WrapToolCallContent('Error: Tool not found: ' + ToolName, TRUE));
+    if Tool = nil then
+      Exit(WrapToolCallContent('Error: Tool not found: ' + ToolName, true));
 
-    TRY
+    try
       Text := Tool.Execute(Args);
-    EXCEPT
-      ON E: Exception DO
-        EXIT(WrapToolCallContent('Error executing tool: ' + E.Message, TRUE));
-    END;
+    except
+      on E: Exception do
+        Exit(WrapToolCallContent('Error executing tool: ' + E.Message, true));
+    end;
     Result := WrapToolCallContent(Text, DetectIsError(Text));
-  FINALLY
+  finally
     if ArgsOwned then Args.Free;
-  END;
-END;
+  end;
+end;
 
 
-FUNCTION DispatchLine(CONST ALine: String): String;
-VAR
+function DispatchLine(const ALine: String): String;
+var
   Parsed   : TJSONValue;
   Req      : TJSONObject;
   IdNode   : TJSONValue;
@@ -373,40 +366,40 @@ VAR
   Params   : TJSONObject;
   ParamsVal: TJSONValue;
   Inner    : TJSONObject;
-BEGIN
+begin
   Parsed := TJSONObject.ParseJSONValue(ALine);
-  if Parsed = NIL then
-    EXIT(BuildErrorEnvelope(TJSONNull.Create, ErrParseError, 'Parse error'));
+  if Parsed = nil then
+    Exit(BuildErrorEnvelope(TJSONNull.Create, ErrParseError, 'Parse error'));
 
-  TRY
-    if not (Parsed IS TJSONObject) then
+  try
+    if not (Parsed is TJSONObject) then
       // Batch arrays land here too — MCP doesn't use batches; reject.
-      EXIT(BuildErrorEnvelope(TJSONNull.Create, ErrInvalidRequest, 'Invalid request: expected JSON object'));
+      Exit(BuildErrorEnvelope(TJSONNull.Create, ErrInvalidRequest, 'Invalid request: expected JSON object'));
 
     Req := TJSONObject(Parsed);
 
     MethodVal := Req.GetValue('method');
-    if not (MethodVal IS TJSONString) then
-      EXIT(BuildErrorEnvelope(CloneIdOrNull(Req.GetValue('id')),
+    if not (MethodVal is TJSONString) then
+      Exit(BuildErrorEnvelope(CloneIdOrNull(Req.GetValue('id')),
                               ErrInvalidRequest, 'Invalid request: missing "method"'));
     Method := MethodVal.Value;
 
     IdNode := Req.GetValue('id');  // owned by Parsed — do not free
 
     ParamsVal := Req.GetValue('params');
-    if ParamsVal IS TJSONObject
+    if ParamsVal is TJSONObject
       then Params := TJSONObject(ParamsVal)
-      else Params := NIL;
+      else Params := nil;
 
     // Notifications: no id, no response. Spec uses 'notifications/initialized'.
-    if IdNode = NIL then
+    if IdNode = nil then
     begin
       if Method = 'notifications/initialized' then
         BridgeLogInfo('mcp', 'client initialized');
-      EXIT('');
+      Exit('');
     end;
 
-    TRY
+    try
       if Method = 'initialize' then
         Inner := BuildInitializeResult(Params)
       else if Method = 'ping' then
@@ -416,21 +409,20 @@ BEGIN
       else if Method = 'tools/call' then
         Inner := BuildToolCallResult(Params)
       else
-        EXIT(BuildErrorEnvelope(CloneIdOrNull(IdNode), ErrMethodNotFound, 'Method not found: ' + Method));
+        Exit(BuildErrorEnvelope(CloneIdOrNull(IdNode), ErrMethodNotFound, 'Method not found: ' + Method));
 
       Result := BuildOkEnvelope(CloneIdOrNull(IdNode), Inner);
-    EXCEPT
-      ON E: Exception DO
-      BEGIN
+    except
+      on E: Exception do
+      begin
         BridgeLogError('mcp', 'dispatch ' + Method + ': ' + E.ClassName + ': ' + E.Message);
-        Result := BuildErrorEnvelope(CloneIdOrNull(IdNode), ErrInternal,
-                                     E.ClassName + ': ' + E.Message);
-      END;
-    END;
-  FINALLY
+        Result := BuildErrorEnvelope(CloneIdOrNull(IdNode), ErrInternal, E.ClassName + ': ' + E.Message);
+      end;
+    end;
+  finally
     Parsed.Free;
-  END;
-END;
+  end;
+end;
 
 
-END.
+end.

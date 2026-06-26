@@ -1,71 +1,46 @@
-UNIT Autopilot.Bridge.Worker;
+﻿unit Autopilot.Bridge.Worker;
 
-{=====================================================
-   2026.06.10
-   GabrielMoraru.com / SciVance Tech
+{=============================================================================================================
+   2026.06
+   www.GabrielMoraru.com
+--------------------------------------------------------------------------------------------------------------
+   - Shared bridge worker thread (all platforms): accept → handshake → serve requests → recycle
+   - Drives one IBridgeTransport (injected); never touches Win32 or POSIX I/O directly
+   - Marshals each dispatcher call onto the main thread via TThread.Queue + TEvent timeout
+=============================================================================================================}
 
-   ┌──────────────────────────────┐
-   │  SHARED  (all platforms)     │   stdlib-only; the transport is injected
-   └──────────────────────────────┘
+interface
 
-   The shared bridge worker, extracted from Autopilot.Bridge.NamedPipe (2026-06-10,
-   Phase B of " Plans\05_AndroidTransport.md"). Owns one IBridgeTransport and runs
-   the session loop over it: accept -> handshake -> serve requests -> recycle.
-   The transport supplies the listener, the wake mechanism and a TStream per
-   connection; this unit never touches Win32 or POSIX I/O directly.
-
-   Win32 -> RTL swaps made during the extraction (behaviour-identical):
-     Interlocked* (Winapi)  -> TInterlocked.*    (System.SyncObjs)
-     GetTickCount64 (Winapi)-> TThread.GetTickCount64 (System.Classes)
-     Sleep (Winapi)         -> TThread.Sleep
-     GetCurrentProcessId    -> CurrentPid (IFDEF'd: Win32 / getpid)
-
-   The dispatcher (which DOES touch VCL/FMX) is injected as a callback —
-   the worker calls it via TThread.Queue so it runs on the main thread.
-
-   Each command round-trip:
-     1. Read length-prefixed frame
-     2. Parse JSON request
-     3. Marshal dispatcher call onto main thread via TThread.Queue
-        + wait on TEvent with per-command timeout
-     4. Write length-prefixed response frame
-     5. On a broken connection: RecycleConnection -> loop back to AcceptConnection
-
-   See Plans/01_TargetUnit.md "Threading model" and "Connection recovery".
-=====================================================}
-
-INTERFACE
-
-USES
+uses
   System.SysUtils, System.Classes, System.SyncObjs, System.JSON,
   Autopilot.Bridge.Core, Autopilot.Bridge.Transport;
 
-TYPE
+type
   /// One worker thread per bridge instance. Owns the transport (released after the
   /// thread is joined). Cooperates with the dispatcher (which lives in
   /// Autopilot.Bridge.Vcl / .Fmx) via the callback.
-  TBridgeWorker = CLASS(TThread)
-  STRICT PRIVATE
+  TBridgeWorker = class(TThread)
+  strict private
     FTransport : IBridgeTransport;
     FDispatch  : TBridgeDispatcher;
     FExeName   : String;
 
-    PROCEDURE HandshakeOrFail;
-    FUNCTION  ServeOneRequest: Boolean;  // returns FALSE on connection failure → caller recycles
-  PROTECTED
-    PROCEDURE Execute; OVERRIDE;
-  PUBLIC
+    procedure HandshakeOrFail;
+    function  ServeOneRequest: Boolean;  // returns FALSE on connection failure → caller recycles
+  protected
+    procedure Execute; override;
+  public
     /// ATransport: the listener/connection provider (pipe on Windows, socket on Android).
     /// ADispatch must run a TBridgeRequest on the main thread.
     /// AExeName: short exe filename used in the hello frame.
-    CONSTRUCTOR Create(CONST ATransport: IBridgeTransport; CONST AExeName: String; ADispatch: TBridgeDispatcher);
-    DESTRUCTOR Destroy; OVERRIDE;
-  END;
+    constructor Create(const ATransport: IBridgeTransport; const AExeName: String; ADispatch: TBridgeDispatcher);
+    destructor Destroy; override;
+  end;
 
 
-IMPLEMENTATION
+implementation
 
-USES
+uses
   {$IFDEF MSWINDOWS}
   Winapi.Windows,     // GetCurrentProcessId for the hello frame
   {$ELSE}
@@ -74,20 +49,20 @@ USES
   Autopilot.Bridge.Log;
 
 
-FUNCTION CurrentPid: Cardinal;
-BEGIN
+function CurrentPid: Cardinal;
+begin
   {$IFDEF MSWINDOWS}
   Result := GetCurrentProcessId;
   {$ELSE}
   Result := Cardinal(getpid);
   {$ENDIF}
-END;
+end;
 
 
 { TBridgeWorker --------------------------------------------------------- }
 
-CONSTRUCTOR TBridgeWorker.Create(CONST ATransport: IBridgeTransport; CONST AExeName: String; ADispatch: TBridgeDispatcher);
-BEGIN
+constructor TBridgeWorker.Create(const ATransport: IBridgeTransport; const AExeName: String; ADispatch: TBridgeDispatcher);
+begin
   Assert(Assigned(ADispatch), 'TBridgeWorker: dispatcher cannot be nil');
   Assert(ATransport <> NIL,   'TBridgeWorker: transport cannot be nil');
   FTransport := ATransport;
@@ -95,11 +70,11 @@ BEGIN
   FDispatch  := ADispatch;
   inherited Create(FALSE);    // start immediately; not suspended
   FreeOnTerminate := FALSE;   // owner controls lifetime
-END;
+end;
 
 
-DESTRUCTOR TBridgeWorker.Destroy;
-BEGIN
+destructor TBridgeWorker.Destroy;
+begin
   Terminate;
 
   // Wake the worker out of a blocked AcceptConnection. The transport owns the
@@ -116,53 +91,53 @@ BEGIN
   // worker and was the suspected cause of the HANDOVER §3 EInOutError leak.
   inherited;
   FTransport := NIL;
-END;
+end;
 
 
-TYPE
+type
   // Heap-allocated, reference-counted slot shared between the worker and the queued dispatcher.
   // ServeOneRequest creates one slot per request. Each side holds one ref; whoever drops the
-  // last ref frees the slot AND the embedded Done event, so the worker can return from the
+  // last ref frees the slot and the embedded Done event, so the worker can return from the
   // request without waiting for the late-firing queued procedure to settle.
   // Ownership transfer of the response payload is atomic (TInterlocked.CompareExchange on State).
   // Fixes Plans/04 R1: previously a stack-captured Resp could be written by the late-firing
   // queued proc after the worker had already moved on, leaking the produced ResultJson.
-  TDispatchSlot = CLASS
-  STRICT PRIVATE
+  TDispatchSlot = class
+  strict private
     FRefCount: Integer;
     FState   : Integer;   // 0=pending, 1=dispatched (queued proc wrote Resp), 2=timeout (worker wrote Resp)
-  PUBLIC
+  public
     Resp: TBridgeResponse;
     Done: TEvent;
     // Deep copy of the request's Args, owned by the slot. The queued dispatcher reads
     // THIS (not the worker's parsed Root) so the timeout path can FreeAndNil(Root) without
     // dangling the Args the late-firing proc still dereferences. Freed in Destroy when the
-    // last ref drops — outlives both the worker's return AND a late proc run.
+    // last ref drops — outlives both the worker's return and a late proc run.
     ArgsClone: TJSONObject;
-    CONSTRUCTOR Create;
-    DESTRUCTOR Destroy; OVERRIDE;
-    PROCEDURE AddRef;
-    PROCEDURE Release;
+    constructor Create;
+    destructor Destroy; override;
+    procedure AddRef;
+    procedure Release;
     // Returns TRUE if this caller wins the claim (no one else has claimed yet).
     // ANewState must be 1 (dispatched) or 2 (timeout).
-    FUNCTION TryClaim(ANewState: Integer): Boolean;
-    PROPERTY State: Integer READ FState;
-  END;
+    function TryClaim(ANewState: Integer): Boolean;
+    property State: Integer READ FState;
+  end;
 
 
-CONSTRUCTOR TDispatchSlot.Create;
-BEGIN
+constructor TDispatchSlot.Create;
+begin
   inherited;
   FRefCount := 1;
   FState    := 0;
   Resp      := Default(TBridgeResponse);
   ArgsClone := NIL;
   Done      := TEvent.Create(NIL, TRUE, FALSE, '');
-END;
+end;
 
 
-DESTRUCTOR TDispatchSlot.Destroy;
-BEGIN
+destructor TDispatchSlot.Destroy;
+begin
   FreeAndNil(Done);
   // Whoever drops the last ref frees any ResultJson the loser produced.
   // SerializeResponse on the winner clears ResultJson before this point.
@@ -172,78 +147,78 @@ BEGIN
   if ArgsClone <> NIL then
     FreeAndNil(ArgsClone);
   inherited;
-END;
+end;
 
 
-PROCEDURE TDispatchSlot.AddRef;
-BEGIN
+procedure TDispatchSlot.AddRef;
+begin
   TInterlocked.Increment(FRefCount);
-END;
+end;
 
 
-PROCEDURE TDispatchSlot.Release;
-BEGIN
+procedure TDispatchSlot.Release;
+begin
   if TInterlocked.Decrement(FRefCount) = 0 then
     Free;
-END;
+end;
 
 
-FUNCTION TDispatchSlot.TryClaim(ANewState: Integer): Boolean;
-BEGIN
+function TDispatchSlot.TryClaim(ANewState: Integer): Boolean;
+begin
   Result := TInterlocked.CompareExchange(FState, ANewState, 0) = 0;
-END;
+end;
 
 
-PROCEDURE TBridgeWorker.HandshakeOrFail;
-VAR
+procedure TBridgeWorker.HandshakeOrFail;
+var
   HelloRoot : TJSONObject;
   HelloText : String;
   Stream    : TStream;
   Ack       : String;
   AckRoot   : TJSONValue;
   AckPV     : TJSONValue;
-BEGIN
+begin
   HelloRoot := BuildHelloJson(FExeName, CurrentPid);
-  TRY
+  try
     HelloText := HelloRoot.ToJSON;
-  FINALLY
+  finally
     FreeAndNil(HelloRoot);
-  END;
+  end;
 
   // The transport OWNS the connection — the stream is a view over it and does
   // not close the underlying handle/fd. We own the stream object.
   Stream := FTransport.ConnectionStream;
-  TRY
+  try
     TBridgeWire.WriteFrame(Stream, HelloText);
 
     if not TBridgeWire.TryReadFrame(Stream, Ack) then
       raise EReadError.Create('Bridge: handshake read failed');
 
     AckRoot := TJSONObject.ParseJSONValue(Ack);
-    TRY
-      if not (AckRoot IS TJSONObject) then
+    try
+      if not (AckRoot is TJSONObject) then
         raise EParserError.Create('Bridge: handshake reply not an object');
       AckPV := TJSONObject(AckRoot).GetValue('helloAck');
-      if not (AckPV IS TJSONObject) then
+      if not (AckPV is TJSONObject) then
         raise EParserError.Create('Bridge: handshake reply missing helloAck');
       AckPV := TJSONObject(AckPV).GetValue('protocolVersion');
-      if not (AckPV IS TJSONNumber) then
+      if not (AckPV is TJSONNumber) then
         raise EParserError.Create('Bridge: handshake reply missing protocolVersion');
       if TJSONNumber(AckPV).AsInt <> ProtocolVersion then
         raise EParserError.Create('Bridge: protocol mismatch (server wants ' +
                                   IntToStr(TJSONNumber(AckPV).AsInt) +
                                   ', we speak ' + IntToStr(ProtocolVersion) + ')');
-    FINALLY
+    finally
       FreeAndNil(AckRoot);
-    END;
-  FINALLY
+    end;
+  finally
     FreeAndNil(Stream);
-  END;
-END;
+  end;
+end;
 
 
-FUNCTION TBridgeWorker.ServeOneRequest: Boolean;
-VAR
+function TBridgeWorker.ServeOneRequest: Boolean;
+var
   Stream  : TStream;
   FrameIn : String;
   Root    : TJSONValue;
@@ -253,14 +228,14 @@ VAR
   CapturedReq: TBridgeRequest;
   Slot    : TDispatchSlot;
   T0      : UInt64;
-BEGIN
+begin
   Result := FALSE;
   Stream := FTransport.ConnectionStream;
-  TRY
-    if not TBridgeWire.TryReadFrame(Stream, FrameIn) then EXIT;  // connection closed / EOF
+  try
+    if not TBridgeWire.TryReadFrame(Stream, FrameIn) then exit;  // connection closed / EOF
 
     Root := TJSONObject.ParseJSONValue(FrameIn);
-    if not (Root IS TJSONObject) then
+    if not (Root is TJSONObject) then
     begin
       Resp := Default(TBridgeResponse);
       Resp.Id := 0;
@@ -270,9 +245,9 @@ BEGIN
       TBridgeWire.WriteFrame(Stream, SerializeResponse(Resp));
       FreeAndNil(Root);
       Result := TRUE;   // wire is fine, just a bad frame; keep serving
-      EXIT;
+      exit;
     end;
-    TRY
+    try
       if not TryParseRequest(TJSONObject(Root), Req) then
       begin
         Resp := Default(TBridgeResponse);
@@ -281,7 +256,7 @@ BEGIN
         Resp.ErrorMessage := 'request missing id or cmd';
         TBridgeWire.WriteFrame(Stream, SerializeResponse(Resp));
         Result := TRUE;
-        EXIT;
+        exit;
       end;
 
       // Resolve timeout: caller-supplied > per-command default
@@ -305,13 +280,13 @@ BEGIN
       // It also fixes the related Done-event lifetime bug: if the worker timed out and freed
       // Done while the queued proc was mid-SetEvent, that was a use-after-free.
       Slot := TDispatchSlot.Create;     // refcount = 1 (worker)
-      TRY
+      try
         Slot.Resp.Id := Req.Id;
         // Deep-copy Args into the slot BEFORE queuing. The queued dispatcher reads the
         // clone, not the worker's Root: on the timeout path the worker frees Root (line
         // FreeAndNil(Root) below) and moves on while the late-firing proc may still run —
         // dereferencing the original Args then would be a use-after-free. Clone (if it
-        // raises) does so before AddRef, so the FINALLY's single Release still frees the slot.
+        // raises) does so before AddRef, so the finally's single Release still frees the slot.
         if Req.Args <> NIL then
           Slot.ArgsClone := TJSONObject(Req.Args.Clone);
 
@@ -320,16 +295,16 @@ BEGIN
         Slot.AddRef;                     // refcount = 2 (queued proc will drop its ref when done)
 
         TThread.Queue(NIL,
-          PROCEDURE
-          VAR
+          procedure
+          var
             LocalResp: TBridgeResponse;
-          BEGIN
-            TRY
-              TRY
+          begin
+            try
+              try
                 LocalResp := FDispatch(CapturedReq);
-              EXCEPT
-                ON E: Exception DO
-                BEGIN
+              except
+                on E: Exception do
+                begin
                   // Log on the target side too — the client gets the error in its frame, but
                   // without this, the bridge's own log file shows no trace of what failed.
                   BridgeLogError('bridge', 'dispatcher raised: id=' + IntToStr(CapturedReq.Id) +
@@ -340,8 +315,8 @@ BEGIN
                   LocalResp.Ok := FALSE;
                   LocalResp.ErrorCode := ErrInternalError;
                   LocalResp.ErrorMessage := E.ClassName + ': ' + E.Message;
-                END;
-              END;
+                end;
+              end;
               if Slot.TryClaim(1) then
               begin
                 // Winner: hand the produced response to the slot.
@@ -351,14 +326,21 @@ BEGIN
               end
               else
               begin
-                // Loser: worker already timed out. Free anything we produced.
+                // Loser: worker already timed out. Free anything we produced. Both owned
+                // members must go: success responses carry ResultJson, but set_property /
+                // read_property error responses (ErrRttiPropertyMissing) carry an ErrorData
+                // object (availableProperties). The worker's own timeout response is what
+                // reaches SerializeResponse, so this LocalResp is never serialized — freeing
+                // only ResultJson leaked that ErrorData on a dispatch-timeout race.
                 if LocalResp.ResultJson <> NIL then
                   FreeAndNil(LocalResp.ResultJson);
+                if LocalResp.ErrorData <> NIL then
+                  FreeAndNil(LocalResp.ErrorData);
               end;
-            FINALLY
+            finally
               Slot.Release;     // queued proc drops its ref
-            END;
-          END);
+            end;
+          end);
 
         if Slot.Done.WaitFor(Timeout) = wrSignaled then
         begin
@@ -382,9 +364,9 @@ BEGIN
           Resp := Slot.Resp;
           Slot.Resp.ResultJson := NIL;
         end;
-      FINALLY
+      finally
         Slot.Release;     // worker drops its ref. Slot survives if queued proc still holds one.
-      END;
+      end;
 
       if Resp.Ok then
         BridgeLogInfo('bridge', 'out id=' + IntToStr(Resp.Id) + ' cmd=' + Req.Cmd + ' ok' +
@@ -395,44 +377,44 @@ BEGIN
                                 ' elapsedMs=' + IntToStr(TThread.GetTickCount64 - T0));
       TBridgeWire.WriteFrame(Stream, SerializeResponse(Resp));
       Result := TRUE;
-    FINALLY
+    finally
       FreeAndNil(Root);
-    END;
-  FINALLY
+    end;
+  finally
     FreeAndNil(Stream);
-  END;
-END;
+  end;
+end;
 
 
-PROCEDURE TBridgeWorker.Execute;
-BEGIN
+procedure TBridgeWorker.Execute;
+begin
   NameThreadForDebugging('Autopilot.Bridge.Worker');
   BridgeLogInfo('bridge', 'worker started, endpoint=' + FTransport.EndpointLabel);
-  TRY
-    WHILE not Terminated DO
-    BEGIN
+  try
+    while not Terminated do
+    begin
       // (Re-)arm the listener. Pipe: a fresh instance per client session.
       // Socket: created once, no-op afterwards.
-      TRY
+      try
         FTransport.StartListening;
-      EXCEPT
-        ON E: Exception DO
-        BEGIN
+      except
+        on E: Exception do
+        begin
           BridgeLogError('bridge', 'StartListening failed: ' + E.ClassName + ': ' + E.Message);
           // Can't arm the listener. Sleep briefly and try again so we don't busy-loop on a
           // transient error. If the error is persistent (someone else owns the endpoint),
           // it'll keep failing — which is fine, the worker just stays idle until terminated.
-          if Terminated then EXIT;
+          if Terminated then exit;
           TThread.Sleep(500);
           Continue;
-        END;
-      END;
+        end;
+      end;
 
       // FALSE = woken for shutdown, or a transient accept failure the transport
       // already cleaned up after. Terminated distinguishes the two.
       if not FTransport.AcceptConnection then
       begin
-        if Terminated then EXIT;
+        if Terminated then exit;
         Continue;
       end;
 
@@ -445,27 +427,27 @@ BEGIN
       if Terminated then
       begin
         FTransport.RecycleConnection;
-        EXIT;
+        exit;
       end;
 
       BridgeLogInfo('bridge', 'client connected');
-      TRY
+      try
         HandshakeOrFail;
         // Serve requests until the connection breaks.
-        WHILE (not Terminated) and ServeOneRequest DO
+        while (not Terminated) and ServeOneRequest do
           ; // loop
-      EXCEPT
-        ON E: Exception DO
+      except
+        on E: Exception do
           BridgeLogWarn('bridge', 'session ended with ' + E.ClassName + ': ' + E.Message);
-      END;
+      end;
       BridgeLogInfo('bridge', 'client disconnected');
 
       FTransport.RecycleConnection;
-    END;
-  FINALLY
+    end;
+  finally
     BridgeLogInfo('bridge', 'worker exit');
-  END;
-END;
+  end;
+end;
 
 
-END.
+end.

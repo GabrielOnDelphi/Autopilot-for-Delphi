@@ -1,84 +1,81 @@
-UNIT Autopilot.Mcp.Tool.SetChecked;
+unit Autopilot.Mcp.Tool.SetChecked;
 
-(*=====================================================
-   2026.05.13
-   GabrielMoraru.com / SciVance Tech
+{=============================================================================================================
+   2026.06
+   www.GabrielMoraru.com
+--------------------------------------------------------------------------------------------------------------
+   - MCP tool: set_checked
+   - Toggles a control's Checked property (TCheckBox, TRadioButton, anything with a published Checked).
+   - Refuses if the control is disabled.
+   - Runs in Autopilot.Mcp.exe (Windows PC-side MCP server); target may be any platform.
+=============================================================================================================}
 
-   ┌──────────────────────────────────────┐
-   │  WINDOWS  (PC-side MCP server)       │   runs in Autopilot.Mcp.exe; target may be any platform
-   └──────────────────────────────────────┘
+interface
 
-   MCP tool: set_checked
-   Toggles a control's Checked property (TCheckBox, TRadioButton, anything with a
-   published Checked property). Refuses if the control is disabled.
-=====================================================*)
-
-INTERFACE
-
-USES
+uses
   System.SysUtils, System.JSON,
   MCPServer.Tool.Base, MCPServer.Types,
   Autopilot.Mcp.ToolBase;
 
-TYPE
-  TSetCheckedParams = CLASS
-  PRIVATE
+type
+  TSetCheckedParams = class
+  private
     FPath   : String;
     FChecked: Boolean;
     FPid    : Integer;
-  PUBLIC
+  public
     [SchemaDescription('Path to the control. See list_tree for available paths. ' +
                        'Forms: "Form", "Form.Leaf", "Form.A.B.C". Unnamed components: "@TButton#N".')]
-    PROPERTY Path: String READ FPath WRITE FPath;
+    property Path: String read FPath write FPath;
 
     [SchemaDescription('TRUE to check, FALSE to uncheck.')]
-    PROPERTY Checked: Boolean READ FChecked WRITE FChecked;
+    property Checked: Boolean read FChecked write FChecked;
 
     [Optional]
     [SchemaDescription('Optional PID to disambiguate when multiple targets are active.')]
-    PROPERTY Pid: Integer READ FPid WRITE FPid;
-  END;
+    property Pid: Integer read FPid write FPid;
+  end;
 
-  TSetCheckedTool = CLASS(TMCPToolBase<TSetCheckedParams>)
-  PROTECTED
-    FUNCTION ExecuteWithParams(CONST Params: TSetCheckedParams): String; OVERRIDE;
-  PUBLIC
-    CONSTRUCTOR Create; OVERRIDE;
-  END;
+  TSetCheckedTool = class(TMCPToolBase<TSetCheckedParams>)
+  protected
+    function ExecuteWithParams(const Params: TSetCheckedParams): String; override;
+  public
+    constructor Create; override;
+  end;
 
 
-IMPLEMENTATION
+implementation
 
-USES
+uses
   MCPServer.Registration;
 
 
-CONSTRUCTOR TSetCheckedTool.Create;
-BEGIN
+constructor TSetCheckedTool.Create;
+begin
   inherited;
   FName := 'set_checked';
   FDescription := 'Set the Checked property of a TCheckBox / TRadioButton / similar.';
-END;
+end;
 
 
-FUNCTION TSetCheckedTool.ExecuteWithParams(CONST Params: TSetCheckedParams): String;
-VAR
+function TSetCheckedTool.ExecuteWithParams(const Params: TSetCheckedParams): String;
+var
   Args: TJSONObject;
-BEGIN
+begin
   Args := TJSONObject.Create;
   Args.AddPair('path', Params.Path);
   Args.AddPair('checked', TJSONBool.Create(Params.Checked));
   Result := RunCommandOnTarget(Cardinal(Params.Pid), BuildRequest(1, 'set_checked', Args));
-END;
+end;
 
 
-INITIALIZATION
+initialization
   TMCPRegistry.RegisterTool('set_checked',
-    FUNCTION: IMCPTool
-    BEGIN
+    function: IMCPTool
+    begin
       Result := TSetCheckedTool.Create;
-    END
+    end
   );
 
 
-END.
+end.

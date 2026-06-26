@@ -1,84 +1,80 @@
-UNIT Autopilot.Mcp.Tool.Screenshot;
+unit Autopilot.Mcp.Tool.Screenshot;
 
-(*=====================================================
-   2026.05.13
-   GabrielMoraru.com / SciVance Tech
+{=============================================================================================================
+   2026.06
+   www.GabrielMoraru.com
+--------------------------------------------------------------------------------------------------------------
+   - MCP tool: screenshot
+   - Captures a form as a base64-encoded PNG. Form name optional; defaults to the target's main form.
+   - Returns the PNG inline in the response so Claude Code can display it as an image attachment.
+   - Runs in Autopilot.Mcp.exe (Windows PC-side MCP server); target may be any platform.
+=============================================================================================================}
 
-   ┌──────────────────────────────────────┐
-   │  WINDOWS  (PC-side MCP server)       │   runs in Autopilot.Mcp.exe; target may be any platform
-   └──────────────────────────────────────┘
+interface
 
-   MCP tool: screenshot
-   Captures a form as a base64-encoded PNG. Form name optional; defaults to the
-   target's main form. Returns the PNG inline in the response so Claude Code can
-   display it as an image attachment.
-=====================================================*)
-
-INTERFACE
-
-USES
+uses
   System.SysUtils, System.JSON,
   MCPServer.Tool.Base, MCPServer.Types,
   Autopilot.Bridge.Core,
   Autopilot.Mcp.ToolBase;
 
-TYPE
-  TScreenshotParams = CLASS
-  PRIVATE
+type
+  TScreenshotParams = class
+  private
     FForm: String;
     FPid : Integer;
-  PUBLIC
+  public
     [Optional]
     [SchemaDescription('Name of the form to capture. Empty/omitted = main form.')]
-    PROPERTY Form: String READ FForm WRITE FForm;
+    property Form: String read FForm write FForm;
 
     [Optional]
     [SchemaDescription('Optional PID to disambiguate when multiple targets are active.')]
-    PROPERTY Pid: Integer READ FPid WRITE FPid;
-  END;
+    property Pid: Integer read FPid write FPid;
+  end;
 
-  TScreenshotTool = CLASS(TMCPToolBase<TScreenshotParams>)
-  PROTECTED
-    FUNCTION ExecuteWithParams(CONST Params: TScreenshotParams): String; OVERRIDE;
-  PUBLIC
-    CONSTRUCTOR Create; OVERRIDE;
-  END;
+  TScreenshotTool = class(TMCPToolBase<TScreenshotParams>)
+  protected
+    function ExecuteWithParams(const Params: TScreenshotParams): String; override;
+  public
+    constructor Create; override;
+  end;
 
 
-IMPLEMENTATION
+implementation
 
-USES
+uses
   MCPServer.Registration;
 
 
-CONSTRUCTOR TScreenshotTool.Create;
-BEGIN
+constructor TScreenshotTool.Create;
+begin
   inherited;
   FName := 'screenshot';
   FDescription := 'Capture a form as a base64-encoded PNG.';
-END;
+end;
 
 
-FUNCTION TScreenshotTool.ExecuteWithParams(CONST Params: TScreenshotParams): String;
-VAR
+function TScreenshotTool.ExecuteWithParams(const Params: TScreenshotParams): String;
+var
   Args: TJSONObject;
-BEGIN
+begin
   Args := TJSONObject.Create;
   Args.AddPair('form', Params.Form);
   // Per-command default of 30 s lives on the bridge side (DefaultTimeoutScreenshotMs).
   Result := RunCommandOnTarget(Cardinal(Params.Pid),
                                BuildRequest(1, 'screenshot', Args),
                                DefaultTimeoutScreenshotMs);
-END;
+end;
 
 
-INITIALIZATION
+initialization
   TMCPRegistry.RegisterTool('screenshot',
-    FUNCTION: IMCPTool
-    BEGIN
+    function: IMCPTool
+    begin
       Result := TScreenshotTool.Create;
-    END
+    end
   );
 
 
-END.
+end.

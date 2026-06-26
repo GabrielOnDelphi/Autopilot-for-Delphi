@@ -1,27 +1,20 @@
-UNIT Autopilot.Mcp.Tool.WaitFor;
+unit Autopilot.Mcp.Tool.WaitFor;
 
-(*=====================================================
-   2026.05.13
-   GabrielMoraru.com / SciVance Tech
+{=============================================================================================================
+   2026.06
+   www.GabrielMoraru.com
+--------------------------------------------------------------------------------------------------------------
+   - MCP tool: wait_for
+   - Polls a control's Text/Caption every PollIntervalMs until it equals ExpectedText, or deadline expires.
+   - Returns matched:true/false with the final observed value, so callers can branch without inspecting a
+     raised error.
+   - The polling loop runs on the MCP server side so the bridge worker stays simple.
+   - Runs in Autopilot.Mcp.exe (Windows PC-side MCP server); target may be any platform.
+=============================================================================================================}
 
-   ┌──────────────────────────────────────┐
-   │  WINDOWS  (PC-side MCP server)       │   runs in Autopilot.Mcp.exe; target may be any platform
-   └──────────────────────────────────────┘
+interface
 
-   MCP tool: wait_for
-   Polls a control's Text/Caption every PollIntervalMs until it equals AnExpected
-   string, or the deadline expires. Returns matched=TRUE/FALSE with the final
-   observed value, so callers can branch without inspecting a thrown error.
-
-   Phase-2 MVP: only Text/Caption is polled. Extending to Checked/Enabled/Visible
-   needs either a generic get_property bridge command or per-type tools — deferred.
-
-   The polling loop runs on the MCP server side so the bridge worker stays simple.
-=====================================================*)
-
-INTERFACE
-
-USES
+uses
   Winapi.Windows,
   System.SysUtils, System.JSON,
   MCPServer.Tool.Base, MCPServer.Types,
@@ -30,89 +23,89 @@ USES
   Autopilot.Mcp.PipeClient,
   Autopilot.Mcp.ToolBase;
 
-CONST
+const
   DefaultPollIntervalMs = 100;
   DefaultWaitTimeoutMs  = 10_000;
 
-TYPE
-  TWaitForParams = CLASS
-  PRIVATE
+type
+  TWaitForParams = class
+  private
     FPath          : String;
     FExpectedText  : String;
     FTimeoutMs     : Integer;
     FPollIntervalMs: Integer;
     FPid           : Integer;
-  PUBLIC
+  public
     [SchemaDescription('Path to the control whose Text/Caption is polled. See list_tree for paths. ' +
                        'Forms: "Form", "Form.Leaf", "Form.A.B.C". Unnamed components: "@TButton#N".')]
-    PROPERTY Path: String READ FPath WRITE FPath;
+    property Path: String read FPath write FPath;
 
     [SchemaDescription('Polls until the control''s Text/Caption equals this value (exact match).')]
-    PROPERTY ExpectedText: String READ FExpectedText WRITE FExpectedText;
+    property ExpectedText: String read FExpectedText write FExpectedText;
 
     [Optional]
     [SchemaDescription('Overall deadline in milliseconds. Default 10000.')]
-    PROPERTY TimeoutMs: Integer READ FTimeoutMs WRITE FTimeoutMs;
+    property TimeoutMs: Integer read FTimeoutMs write FTimeoutMs;
 
     [Optional]
     [SchemaDescription('How often to poll, in milliseconds. Default 100.')]
-    PROPERTY PollIntervalMs: Integer READ FPollIntervalMs WRITE FPollIntervalMs;
+    property PollIntervalMs: Integer read FPollIntervalMs write FPollIntervalMs;
 
     [Optional]
     [SchemaDescription('Optional PID to disambiguate when multiple targets are active.')]
-    PROPERTY Pid: Integer READ FPid WRITE FPid;
-  END;
+    property Pid: Integer read FPid write FPid;
+  end;
 
-  TWaitForTool = CLASS(TMCPToolBase<TWaitForParams>)
-  PROTECTED
-    FUNCTION ExecuteWithParams(CONST Params: TWaitForParams): String; OVERRIDE;
-  PUBLIC
-    CONSTRUCTOR Create; OVERRIDE;
-  END;
+  TWaitForTool = class(TMCPToolBase<TWaitForParams>)
+  protected
+    function ExecuteWithParams(const Params: TWaitForParams): String; override;
+  public
+    constructor Create; override;
+  end;
 
 
-IMPLEMENTATION
+implementation
 
-USES
+uses
   MCPServer.Registration;
 
 
-CONSTRUCTOR TWaitForTool.Create;
-BEGIN
+constructor TWaitForTool.Create;
+begin
   inherited;
   FName := 'wait_for';
   FDescription := 'Wait until a control''s Text/Caption equals a target value, polling at a fixed interval.';
-END;
+end;
 
 
 // Pull "text" out of a successful get_text response, or '' on failure.
-FUNCTION ExtractTextFromResponse(CONST AResponseJson: String): String;
-VAR
+function ExtractTextFromResponse(const AResponseJson: String): String;
+var
   Root, Result_: TJSONValue;
   Obj: TJSONObject;
   V: TJSONValue;
-BEGIN
+begin
   Result := '';
   Root := TJSONObject.ParseJSONValue(AResponseJson);
-  if Root = NIL then EXIT;
-  TRY
-    if not (Root IS TJSONObject) then EXIT;
+  if Root = nil then EXIT;
+  try
+    if not (Root is TJSONObject) then EXIT;
     Obj := TJSONObject(Root);
     V := Obj.GetValue('ok');
-    if not (V IS TJSONBool) or not TJSONBool(V).AsBoolean then EXIT;
+    if not (V is TJSONBool) or not TJSONBool(V).AsBoolean then EXIT;
     Result_ := Obj.GetValue('result');
-    if not (Result_ IS TJSONObject) then EXIT;
+    if not (Result_ is TJSONObject) then EXIT;
     V := TJSONObject(Result_).GetValue('text');
-    if V IS TJSONString then
-      Result := TJSONString(V).Value;
-  FINALLY
-    Root.Free;
-  END;
-END;
+    if V is TJSONString
+    then Result := TJSONString(V).Value;
+  finally
+    FreeAndNil(Root);
+  end;
+end;
 
 
-FUNCTION TWaitForTool.ExecuteWithParams(CONST Params: TWaitForParams): String;
-VAR
+function TWaitForTool.ExecuteWithParams(const Params: TWaitForParams): String;
+var
   Args, Wrap: TJSONObject;
   Resp: String;
   Deadline: UInt64;
@@ -120,60 +113,58 @@ VAR
   Current: String;
   Matched: Boolean;
   PollCount: Integer;
-BEGIN
-  if Params.TimeoutMs > 0 then
-    OverallTimeout := Params.TimeoutMs
-  else
-    OverallTimeout := DefaultWaitTimeoutMs;
-  if Params.PollIntervalMs > 0 then
-    PollIv := Params.PollIntervalMs
-  else
-    PollIv := DefaultPollIntervalMs;
+begin
+  if Params.TimeoutMs > 0
+  then OverallTimeout := Params.TimeoutMs
+  else OverallTimeout := DefaultWaitTimeoutMs;
+  if Params.PollIntervalMs > 0
+  then PollIv := Params.PollIntervalMs
+  else PollIv := DefaultPollIntervalMs;
 
   Deadline := GetTickCount64 + OverallTimeout;
   Matched   := FALSE;
   Current   := '';
   PollCount := 0;
 
-  WHILE TRUE DO
-  BEGIN
+  while TRUE do
+  begin
     Args := TJSONObject.Create;
     Args.AddPair('path', Params.Path);
     Resp := RunCommandOnTarget(Cardinal(Params.Pid), BuildRequest(1, 'get_text', Args));
     Inc(PollCount);
     Current := ExtractTextFromResponse(Resp);
-    if Current = Params.ExpectedText then
-    begin
+    if Current = Params.ExpectedText
+    then begin
       Matched := TRUE;
       Break;
     end;
     if GetTickCount64 >= Deadline then Break;
     Sleep(PollIv);
-  END;
+  end;
 
   BridgeLogInfo('mcp', 'wait_for path=' + Params.Path + ' matched=' + BoolToStr(Matched, TRUE) +
                        ' polls=' + IntToStr(PollCount));
 
   Wrap := TJSONObject.Create;
-  TRY
+  try
     Wrap.AddPair('matched', TJSONBool.Create(Matched));
     Wrap.AddPair('currentValue', Current);
     Wrap.AddPair('expectedValue', Params.ExpectedText);
     Wrap.AddPair('pollCount', TJSONNumber.Create(PollCount));
     Result := Wrap.ToJSON;
-  FINALLY
-    Wrap.Free;
-  END;
-END;
+  finally
+    FreeAndNil(Wrap);
+  end;
+end;
 
 
-INITIALIZATION
+initialization
   TMCPRegistry.RegisterTool('wait_for',
-    FUNCTION: IMCPTool
-    BEGIN
+    function: IMCPTool
+    begin
       Result := TWaitForTool.Create;
-    END
+    end
   );
 
 
-END.
+end.

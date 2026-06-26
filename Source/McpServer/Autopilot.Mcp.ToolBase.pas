@@ -1,25 +1,19 @@
-UNIT Autopilot.Mcp.ToolBase;
+unit Autopilot.Mcp.ToolBase;
 
-(*=====================================================
-   2026.05.12
-   GabrielMoraru.com / SciVance Tech
+{=============================================================================================================
+   2026.06
+   www.GabrielMoraru.com
+--------------------------------------------------------------------------------------------------------------
+   - Shared logic for all Autopilot MCP tools.
+   - Resolves the active target pipe from the discovery folder, then runs a single command and returns a
+     string response. Each tool is a thin wrapper that builds the request JSON and delegates here.
+   - Tools do not open pipes themselves.
+   - Runs in Autopilot.Mcp.exe (Windows PC-side MCP server); target may be any platform.
+=============================================================================================================}
 
-   ┌──────────────────────────────────────┐
-   │  WINDOWS  (PC-side MCP server)       │   runs in Autopilot.Mcp.exe; target may be any platform
-   └──────────────────────────────────────┘
+interface
 
-   Shared logic for Autopilot MCP tools.
-
-   Resolves the active target pipe from the discovery folder,
-   then runs a single command and returns a string response.
-
-   Each tool is a thin wrapper that builds the request JSON and
-   delegates to RunCommandOnTarget. Tools don't open pipes themselves.
-=====================================================*)
-
-INTERFACE
-
-USES
+uses
   Winapi.Windows,
   System.SysUtils, System.JSON,
   Autopilot.Bridge.Core,
@@ -31,130 +25,127 @@ USES
 
 /// Resolve the target pipe. If APid > 0, pick that PID; otherwise expect exactly one active target.
 /// Raises if zero or ambiguous.
-FUNCTION ResolveTargetPipe(APid: Cardinal; OUT APipeName: String): Boolean;
+function ResolveTargetPipe(APid: Cardinal; out APipeName: String): Boolean;
 
 /// Build a request envelope: {id, cmd, args, timeoutMs?}.
 /// AArgs is consumed (we hand it to the JSON tree; caller no longer owns it).
 /// Pass ATimeoutMs > 0 to add a top-level timeoutMs field — the bridge worker will use it
 /// as its main-thread wait timeout instead of the per-command default.
-FUNCTION BuildRequest(AId: Int64; CONST ACmd: String; AArgs: TJSONObject; ATimeoutMs: Cardinal = 0): TJSONObject;
+function BuildRequest(AId: Int64; const ACmd: String; AArgs: TJSONObject; ATimeoutMs: Cardinal = 0): TJSONObject;
 
 /// Run a request through the resolved target, return the response as a compact JSON string.
 /// Frees the response object internally so callers don't deal with ownership.
-/// On NIL request raises; on transport failure raises; on bridge-level errors,
+/// On nil request raises; on transport failure raises; on bridge-level errors,
 /// returns the {ok:false,error:{...}} JSON as a string (the caller can parse if needed).
 /// ATimeoutMs governs the pipe-side wait; should be >= any timeoutMs embedded in ARequest
 /// so the pipe doesn't time out before the bridge does.
-FUNCTION RunCommandOnTarget(APid: Cardinal; ARequest: TJSONObject; ATimeoutMs: Cardinal = 0): String;
+function RunCommandOnTarget(APid: Cardinal; ARequest: TJSONObject; ATimeoutMs: Cardinal = 0): String;
 
 
-IMPLEMENTATION
+implementation
 
 
-FUNCTION ResolveTargetPipe(APid: Cardinal; OUT APipeName: String): Boolean;
-VAR
+function ResolveTargetPipe(APid: Cardinal; out APipeName: String): Boolean;
+var
   Targets: TTargetList;
   i: Integer;
-BEGIN
+begin
   APipeName := '';
   Targets := ListTargets;
-  if APid <> 0 then
-  begin
+  if APid <> 0
+  then begin
     for i := 0 to High(Targets) do
-      if Targets[i].Pid = APid then
-      begin
+      if Targets[i].Pid = APid
+      then begin
         APipeName := Targets[i].PipeName;
         EXIT(TRUE);
       end;
     raise Exception.CreateFmt('No bridge for pid %d. Is the target app running with AUTOPILOT on?', [APid]);
   end;
-  if Length(Targets) = 0 then
-    raise Exception.Create('No active Autopilot target found. Start a target app linked to Autopilot.Bridge.Vcl.');
-  if Length(Targets) > 1 then
-    raise Exception.CreateFmt('%d targets active; call attach(pid) first to pick one.', [Length(Targets)]);
+  if Length(Targets) = 0
+  then raise Exception.Create('No active Autopilot target found. Start a target app linked to Autopilot.Bridge.Vcl.');
+  if Length(Targets) > 1
+  then raise Exception.CreateFmt('%d targets active; call attach(pid) first to pick one.', [Length(Targets)]);
   APipeName := Targets[0].PipeName;
   Result := TRUE;
-END;
+end;
 
 
-FUNCTION BuildRequest(AId: Int64; CONST ACmd: String; AArgs: TJSONObject; ATimeoutMs: Cardinal = 0): TJSONObject;
-BEGIN
+function BuildRequest(AId: Int64; const ACmd: String; AArgs: TJSONObject; ATimeoutMs: Cardinal = 0): TJSONObject;
+begin
   Result := TJSONObject.Create;
   Result.AddPair('id', TJSONNumber.Create(AId));
   Result.AddPair('cmd', ACmd);
-  if AArgs <> NIL then
-    Result.AddPair('args', AArgs)
-  else
-    Result.AddPair('args', TJSONObject.Create);
-  if ATimeoutMs > 0 then
-    Result.AddPair('timeoutMs', TJSONNumber.Create(ATimeoutMs));
-END;
+  if AArgs <> nil
+  then Result.AddPair('args', AArgs)
+  else Result.AddPair('args', TJSONObject.Create);
+  if ATimeoutMs > 0
+  then Result.AddPair('timeoutMs', TJSONNumber.Create(ATimeoutMs));
+end;
 
 
-FUNCTION RunCommandOnTarget(APid: Cardinal; ARequest: TJSONObject; ATimeoutMs: Cardinal = 0): String;
-VAR
+function RunCommandOnTarget(APid: Cardinal; ARequest: TJSONObject; ATimeoutMs: Cardinal = 0): String;
+var
   PipeName, CmdName: String;
   Resp: TJSONObject;
   PipeTimeout: Cardinal;
   CmdValue: TJSONValue;
   T0: UInt64;
-BEGIN
-  if ARequest = NIL then
+begin
+  if ARequest = nil then
     raise Exception.Create('RunCommandOnTarget: ARequest is nil');
   CmdName := '?';
   CmdValue := ARequest.GetValue('cmd');
-  if CmdValue IS TJSONString then
-    CmdName := TJSONString(CmdValue).Value;
-  TRY
-    if ATimeoutMs > 0 then
-      PipeTimeout := ATimeoutMs
-    else
-      PipeTimeout := DefaultTimeoutClickMs;
+  if CmdValue is TJSONString
+  then CmdName := TJSONString(CmdValue).Value;
+  try
+    if ATimeoutMs > 0
+    then PipeTimeout := ATimeoutMs
+    else PipeTimeout := DefaultTimeoutClickMs;
 
     // Transport selection. Default (tmPipe) is the original Windows path, byte
     // for byte. tmAdbSocket (set by `--target adb:<port>`) reaches an Android
     // target over the adb-forwarded loopback port — no pipe, no discovery file.
-    if CurrentTargetMode = tmAdbSocket then
-    begin
+    if CurrentTargetMode = tmAdbSocket
+    then begin
       BridgeLogInfo('mcp', 'in  cmd=' + CmdName + ' adb-socket port=' + IntToStr(AdbHostPort) +
                             ' timeoutMs=' + IntToStr(PipeTimeout));
       T0 := GetTickCount64;
-      TRY
+      try
         Resp := CallTargetSocket(AdbHostPort, ARequest, PipeTimeout);
-      EXCEPT
-        ON E: Exception DO
-        BEGIN
+      except
+        on E: Exception do
+        begin
           BridgeLogError('mcp', 'cmd=' + CmdName + ' transport-fail (adb-socket): ' + E.ClassName + ': ' + E.Message);
           raise;
-        END;
-      END;
+        end;
+      end;
     end
-    else
-    begin
+    else begin
       ResolveTargetPipe(APid, PipeName);
       BridgeLogInfo('mcp', 'in  cmd=' + CmdName + ' pid=' + IntToStr(APid) +
                             ' timeoutMs=' + IntToStr(PipeTimeout));
       T0 := GetTickCount64;
-      TRY
+      try
         Resp := CallTarget(PipeName, ARequest, PipeTimeout);
-      EXCEPT
-        ON E: Exception DO
-        BEGIN
+      except
+        on E: Exception do
+        begin
           BridgeLogError('mcp', 'cmd=' + CmdName + ' transport-fail: ' + E.ClassName + ': ' + E.Message);
           raise;
-        END;
-      END;
+        end;
+      end;
     end;
-    TRY
+    try
       Result := Resp.ToJSON;
       BridgeLogInfo('mcp', 'out cmd=' + CmdName + ' elapsedMs=' + IntToStr(GetTickCount64 - T0));
-    FINALLY
-      Resp.Free;
-    END;
-  FINALLY
-    ARequest.Free;
-  END;
-END;
+    finally
+      FreeAndNil(Resp);
+    end;
+  finally
+    FreeAndNil(ARequest);
+  end;
+end;
 
 
-END.
+end.

@@ -1,63 +1,41 @@
-UNIT Autopilot.Bridge.Log;
+﻿unit Autopilot.Bridge.Log;
 
-(*=====================================================
-   2026.06.12 — POSIX log dir: TPath.GetCachePath (on Android, GetTempPath resolves
-                to external files/tmp, not the internal cache the docs point at).
-   2026.06.10 — Phase B: POSIX write path added (TFileStream append + getpid),
-                so the bridge logs on Android too. Windows path byte-unchanged.
-   2026.05.13
-   GabrielMoraru.com / SciVance Tech
+{=============================================================================================================
+   2026.06
+   www.GabrielMoraru.com
+--------------------------------------------------------------------------------------------------------------
+   - Append-only file logger for the Autopilot bridge and MCP server (all platforms)
+   - Windows: Win32 atomic-append via FILE_APPEND_DATA; Android/POSIX: TFileStream + seek-to-end
+   - Log file: %TEMP%\Autopilot\<ExeBase>-<PID>.log (Windows) or GetCachePath\Autopilot\... (Android)
+=============================================================================================================}
 
-   ┌──────────────────────────────┐
-   │  SHARED  (all platforms)     │   Win32 atomic-append on Windows; TFileStream on POSIX
-   └──────────────────────────────┘
+interface
 
-   Append-only logging for the Autopilot bridge and MCP server.
-
-   File: <TEMP>\Autopilot\<ExeBaseName>-<PID>.log
-   Windows: %TEMP%. Android: the app's private cache dir (TPath.GetCachePath) —
-   pull with `adb shell run-as <pkg> cat cache/Autopilot/<name>.log`.
-   Format: ISO-8601 timestamp + level + tag + message, one line per entry.
-   Thread safety: a single TCriticalSection serializes writes — fine for the
-   handful of log calls per request the bridge produces.
-
-   Stdlib + OS only. No VCL, no FMX, no LightSaber. Linked by both the bridge
-   (.NamedPipe + .Vcl + .Fmx + .Socket) and the MCP server, so it stays dependency-free.
-
-   Per global CLAUDE.md "no swallowed exceptions": file I/O failures inside the
-   logger are caught at the outermost layer (so they don't crash the bridge worker)
-   but are tracked via FInitFailed and re-raised on the next successful flush attempt
-   would be too noisy — we record the message and move on. The logger is a diagnostic;
-   it must not take down the host process.
-=====================================================*)
-
-INTERFACE
-
-USES
+uses
   System.SysUtils, System.Classes, System.SyncObjs;
 
-TYPE
+type
   TBridgeLogLevel = (llDebug, llInfo, llWarn, llError);
 
 /// Append a log line. Lazy-initializes the file on first call. Safe to call from any thread.
-PROCEDURE BridgeLog(ALevel: TBridgeLogLevel; CONST ATag, AMessage: String);
+procedure BridgeLog(ALevel: TBridgeLogLevel; const ATag, AMessage: String);
 
 /// Convenience wrappers — same semantics as BridgeLog with the level baked in.
-PROCEDURE BridgeLogInfo (CONST ATag, AMessage: String); INLINE;
-PROCEDURE BridgeLogWarn (CONST ATag, AMessage: String); INLINE;
-PROCEDURE BridgeLogError(CONST ATag, AMessage: String); INLINE;
+procedure BridgeLogInfo (const ATag, AMessage: String); inline;
+procedure BridgeLogWarn (const ATag, AMessage: String); inline;
+procedure BridgeLogError(const ATag, AMessage: String); inline;
 
 /// Returns the resolved log path (or '' if not yet written to).
-FUNCTION BridgeLogPath: String;
+function BridgeLogPath: String;
 
 /// Tear down the lock and close any handles. Idempotent.
-/// Called from FINALIZATION; safe to call manually too.
-PROCEDURE BridgeLogShutdown;
+/// Called from finalization; safe to call manually too.
+procedure BridgeLogShutdown;
 
 
-IMPLEMENTATION
+implementation
 
-USES
+uses
   {$IFDEF MSWINDOWS}
   Winapi.Windows,
   {$ELSE}
@@ -66,14 +44,14 @@ USES
   System.IOUtils;
 
 
-VAR
+var
   GLogLock : TCriticalSection = NIL;
   GLogPath : String = '';
   GLogReady: Boolean = FALSE;
 
 
-FUNCTION LevelToStr(ALevel: TBridgeLogLevel): String;
-BEGIN
+function LevelToStr(ALevel: TBridgeLogLevel): String;
+begin
   case ALevel of
     llDebug: Result := 'DEBUG';
     llInfo : Result := 'INFO ';
@@ -82,29 +60,29 @@ BEGIN
   else
     Result := '?????';
   end;
-END;
+end;
 
 
-PROCEDURE EnsureLogLockNoBlock;
-BEGIN
+procedure EnsureLogLockNoBlock;
+begin
   // Lazy lock creation. We deliberately avoid initialization sections (project rule).
   // First-call race is theoretically possible but practically nil: the bridge calls
   // BridgeLog from main-thread StartBridge before any worker threads exist, so the
   // lock is created before any concurrent caller.
   if GLogLock = NIL then
     GLogLock := TCriticalSection.Create;
-END;
+end;
 
 
-PROCEDURE EnsurePath;
-VAR
+procedure EnsurePath;
+var
   Folder, ExeBase: String;
-BEGIN
-  if GLogReady then EXIT;
+begin
+  if GLogReady then exit;
   {$IFDEF MSWINDOWS}
   Folder  := TPath.Combine(TPath.GetTempPath, 'Autopilot');
   {$ELSE}
-  // Android (verified 2026-06-12, System.IOUtils source + on-device): TPath.GetTempPath returns getExternalFilesDir()+'/tmp' — the TMPDIR lookup is Linux-only code — so the pre-fix log landed on EXTERNAL storage (files/tmp/Autopilot/), not in the internal cache the pull commands point at.
+  // Android (verified 2026-06-12, System.IOUtils source + on-device): TPath.GetTempPath returns getExternalFilesDir()+'/tmp' — the TMPDIR lookup is Linux-only code — so the pre-fix log landed on external storage (files/tmp/Autopilot/), not in the internal cache the pull commands point at.
   // TPath.GetCachePath = getCacheDir(): internal app cache, always present, matches `run-as <pkg> cat cache/Autopilot/<file>.log`.
   Folder  := TPath.Combine(TPath.GetCachePath, 'Autopilot');
   {$ENDIF}
@@ -117,16 +95,16 @@ BEGIN
   GLogPath := TPath.Combine(Folder, ExeBase + '-' + IntToStr(getpid) + '.log');
   {$ENDIF}
   GLogReady := TRUE;
-END;
+end;
 
 
 {$IFDEF MSWINDOWS}
-PROCEDURE AppendRaw(CONST ALine: String);
-VAR
+procedure AppendRaw(const ALine: String);
+var
   Bytes: TBytes;
   H: THandle;
   Written: DWORD;
-BEGIN
+begin
   // CreateFile with FILE_APPEND_DATA + OPEN_ALWAYS gives us atomic appends without
   // racing on file position between threads (we already hold the lock, but this also
   // guards against other processes appending to the same file in degenerate cases).
@@ -134,19 +112,19 @@ BEGIN
   H := CreateFileW(PWideChar(GLogPath), FILE_APPEND_DATA,
                    FILE_SHARE_READ or FILE_SHARE_WRITE, NIL,
                    OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, 0);
-  if H = INVALID_HANDLE_VALUE then EXIT;
-  TRY
+  if H = INVALID_HANDLE_VALUE then exit;
+  try
     WriteFile(H, Bytes[0], Length(Bytes), Written, NIL);
-  FINALLY
+  finally
     CloseHandle(H);
-  END;
-END;
+  end;
+end;
 {$ELSE}
-PROCEDURE AppendRaw(CONST ALine: String);
-VAR
+procedure AppendRaw(const ALine: String);
+var
   Bytes: TBytes;
   FS: TFileStream;
-BEGIN
+begin
   // Seek-to-end under GLogLock (the caller holds it). The Win32 path's
   // cross-process atomic append has no equivalent need here — on Android one
   // app owns its private cache dir, so in-process serialization is enough.
@@ -156,82 +134,82 @@ BEGIN
     FS := TFileStream.Create(GLogPath, fmOpenWrite or fmShareDenyNone)
   else
     FS := TFileStream.Create(GLogPath, fmCreate or fmShareDenyNone);
-  TRY
+  try
     FS.Seek(0, soEnd);
     if Length(Bytes) > 0 then
       FS.WriteBuffer(Bytes[0], Length(Bytes));
-  FINALLY
+  finally
     FreeAndNil(FS);
-  END;
-END;
+  end;
+end;
 {$ENDIF}
 
 
-PROCEDURE BridgeLog(ALevel: TBridgeLogLevel; CONST ATag, AMessage: String);
-VAR
+procedure BridgeLog(ALevel: TBridgeLogLevel; const ATag, AMessage: String);
+var
   Stamp, Line: String;
-BEGIN
-  TRY
+begin
+  try
     EnsureLogLockNoBlock;
     GLogLock.Enter;
-    TRY
+    try
       EnsurePath;
       // ISO-8601 with milliseconds. FormatDateTime uses local time, which is what
       // a developer reading the log wants.
       Stamp := FormatDateTime('yyyy-mm-dd"T"hh:nn:ss.zzz', Now);
       Line  := Stamp + ' ' + LevelToStr(ALevel) + ' [' + ATag + '] ' + AMessage;
       AppendRaw(Line);
-    FINALLY
+    finally
       GLogLock.Leave;
-    END;
-  EXCEPT
+    end;
+  except
     // Logger must not crash the host. A failure here means stderr is the best fallback.
-    ON E: Exception DO
-      TRY
+    on E: Exception do
+      try
         WriteLn(ErrOutput, 'BridgeLog suppressed: ' + E.ClassName + ': ' + E.Message);
-      EXCEPT
+      except
         // No stderr either (detached console). Truly nothing we can do.
-      END;
-  END;
-END;
+      end;
+  end;
+end;
 
 
-PROCEDURE BridgeLogInfo (CONST ATag, AMessage: String);
-BEGIN
+procedure BridgeLogInfo (const ATag, AMessage: String);
+begin
   BridgeLog(llInfo, ATag, AMessage);
-END;
+end;
 
-PROCEDURE BridgeLogWarn (CONST ATag, AMessage: String);
-BEGIN
+procedure BridgeLogWarn (const ATag, AMessage: String);
+begin
   BridgeLog(llWarn, ATag, AMessage);
-END;
+end;
 
-PROCEDURE BridgeLogError(CONST ATag, AMessage: String);
-BEGIN
+procedure BridgeLogError(const ATag, AMessage: String);
+begin
   BridgeLog(llError, ATag, AMessage);
-END;
+end;
 
 
-FUNCTION BridgeLogPath: String;
-BEGIN
+function BridgeLogPath: String;
+begin
   Result := GLogPath;
-END;
+end;
 
 
-PROCEDURE BridgeLogShutdown;
-BEGIN
+procedure BridgeLogShutdown;
+begin
   if GLogLock <> NIL then
     FreeAndNil(GLogLock);
   GLogReady := FALSE;
   GLogPath  := '';
-END;
+end;
 
 
 // Finalization at the bottom of the unit (footgun #2 — never inside an IFDEF).
-INITIALIZATION
+initialization
 
-FINALIZATION
+finalization
   BridgeLogShutdown;
 
 
-END.
+end.

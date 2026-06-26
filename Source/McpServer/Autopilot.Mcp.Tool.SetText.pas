@@ -1,84 +1,81 @@
-UNIT Autopilot.Mcp.Tool.SetText;
+unit Autopilot.Mcp.Tool.SetText;
 
-(*=====================================================
-   2026.05.13
-   GabrielMoraru.com / SciVance Tech
+{=============================================================================================================
+   2026.06
+   www.GabrielMoraru.com
+--------------------------------------------------------------------------------------------------------------
+   - MCP tool: set_text
+   - Writes a control's Text (preferred) or Caption property by path.
+   - Refuses if the control is disabled, or if the property exists but is read-only.
+   - Runs in Autopilot.Mcp.exe (Windows PC-side MCP server); target may be any platform.
+=============================================================================================================}
 
-   ┌──────────────────────────────────────┐
-   │  WINDOWS  (PC-side MCP server)       │   runs in Autopilot.Mcp.exe; target may be any platform
-   └──────────────────────────────────────┘
+interface
 
-   MCP tool: set_text
-   Writes a control's Text (preferred) or Caption property by path. Refuses if the
-   control is disabled, or if the property exists but is read-only.
-=====================================================*)
-
-INTERFACE
-
-USES
+uses
   System.SysUtils, System.JSON,
   MCPServer.Tool.Base, MCPServer.Types,
   Autopilot.Mcp.ToolBase;
 
-TYPE
-  TSetTextParams = CLASS
-  PRIVATE
+type
+  TSetTextParams = class
+  private
     FPath: String;
     FText: String;
     FPid : Integer;
-  PUBLIC
+  public
     [SchemaDescription('Path to the control. See list_tree for available paths. ' +
                        'Forms: "Form", "Form.Leaf", "Form.A.B.C". Unnamed components: "@TButton#N".')]
-    PROPERTY Path: String READ FPath WRITE FPath;
+    property Path: String read FPath write FPath;
 
     [SchemaDescription('Value to write to the control''s Text (preferred) or Caption.')]
-    PROPERTY Text: String READ FText WRITE FText;
+    property Text: String read FText write FText;
 
     [Optional]
     [SchemaDescription('Optional PID to disambiguate when multiple targets are active.')]
-    PROPERTY Pid: Integer READ FPid WRITE FPid;
-  END;
+    property Pid: Integer read FPid write FPid;
+  end;
 
-  TSetTextTool = CLASS(TMCPToolBase<TSetTextParams>)
-  PROTECTED
-    FUNCTION ExecuteWithParams(CONST Params: TSetTextParams): String; OVERRIDE;
-  PUBLIC
-    CONSTRUCTOR Create; OVERRIDE;
-  END;
+  TSetTextTool = class(TMCPToolBase<TSetTextParams>)
+  protected
+    function ExecuteWithParams(const Params: TSetTextParams): String; override;
+  public
+    constructor Create; override;
+  end;
 
 
-IMPLEMENTATION
+implementation
 
-USES
+uses
   MCPServer.Registration;
 
 
-CONSTRUCTOR TSetTextTool.Create;
-BEGIN
+constructor TSetTextTool.Create;
+begin
   inherited;
   FName := 'set_text';
   FDescription := 'Set the Text (preferred) or Caption of a control on a running target form.';
-END;
+end;
 
 
-FUNCTION TSetTextTool.ExecuteWithParams(CONST Params: TSetTextParams): String;
-VAR
+function TSetTextTool.ExecuteWithParams(const Params: TSetTextParams): String;
+var
   Args: TJSONObject;
-BEGIN
+begin
   Args := TJSONObject.Create;
   Args.AddPair('path', Params.Path);
   Args.AddPair('text', Params.Text);
   Result := RunCommandOnTarget(Cardinal(Params.Pid), BuildRequest(1, 'set_text', Args));
-END;
+end;
 
 
-INITIALIZATION
+initialization
   TMCPRegistry.RegisterTool('set_text',
-    FUNCTION: IMCPTool
-    BEGIN
+    function: IMCPTool
+    begin
       Result := TSetTextTool.Create;
-    END
+    end
   );
 
 
-END.
+end.

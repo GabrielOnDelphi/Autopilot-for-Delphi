@@ -1,116 +1,114 @@
-UNIT MCPServer.Registration;
+unit MCPServer.Registration;
 
-(*=====================================================
-   2026.05.19
-   GabrielMoraru.com / SciVance Tech
-
-   ┌──────────────────────────────────────┐
-   │  WINDOWS  (PC-side MCP server)       │   runs in Autopilot.Mcp.exe; target may be any platform
-   └──────────────────────────────────────┘
-
-   Name -> factory map for tool registration. Each Autopilot.Mcp.Tool.* unit
-   registers a factory in its INITIALIZATION section by calling
+{=============================================================================================================
+   2026.06
+   www.GabrielMoraru.com
+--------------------------------------------------------------------------------------------------------------
+   Name -> factory map for tool registration. Each Autopilot.Mcp.Tool.* unit registers a factory
+   in its initialization section by calling:
        TMCPRegistry.RegisterTool('name', function: IMCPTool begin ... end);
-   The JSON-RPC dispatcher pulls the factory back out on first use, instantiates
-   one IMCPTool per name, and caches that instance for the server's lifetime.
+   The JSON-RPC dispatcher pulls the factory back out on first use, instantiates one IMCPTool per
+   name, and caches that instance for the server's lifetime.
 
-   Generic surface: only the inner TDictionary, which is the natural fit for a
-   name -> ref-to-function map (per the project's "generics where forced" rule).
-   The public API surface is generics-free.
+   Generic surface: only the inner TDictionary, which is the natural fit for a name -> anonymous
+   method map (per the project's "generics where forced" rule). The public API surface is
+   generics-free.
 
-   Lifetime: class destructor frees the dictionary so we don't need a
-   finalization section (project rule).
-=====================================================*)
+   Lifetime: class destructor frees the dictionary so we don't need a finalization section
+   (project rule).
+=============================================================================================================}
 
-INTERFACE
+interface
 
-USES
+uses
+  System.Generics.Collections,
   MCPServer.Tool.Base;
 
-TYPE
+type
   /// Each tool unit hands us one of these. We call it (at most) once per tool
   /// name to create the cached IMCPTool. Capturing locals is fine; the produced
   /// IMCPTool owns its state.
-  TMCPToolFactory = REFERENCE TO FUNCTION: IMCPTool;
+  TMCPToolFactory = reference to function: IMCPTool;
 
-  TMCPRegistry = CLASS
-  PUBLIC
-    CLASS PROCEDURE RegisterTool(CONST AName: String; AFactory: TMCPToolFactory);
-    CLASS FUNCTION  CreateTool(CONST AName: String): IMCPTool;
-    CLASS FUNCTION  HasTool(CONST AName: String): Boolean;
-    CLASS FUNCTION  GetToolNames: TArray<String>;
+  TMCPRegistry = class
+  strict private
+    /// The name -> factory singleton. A class var (not a unit global) so it is
+    /// owned by the class and torn down by the class destructor — same pattern
+    /// as TToolCache.FMap in Autopilot.Mcp.JsonRpc.pas.
+    class var FFactories: TDictionary<String, TMCPToolFactory>;
+    /// Lazy-create the singleton. We deliberately avoid an initialization
+    /// section so the create order doesn't matter (project rule).
+    class procedure EnsureMap;
+  public
+    class procedure RegisterTool(const AName: String; AFactory: TMCPToolFactory);
+    class function  CreateTool(const AName: String): IMCPTool;
+    class function  HasTool(const AName: String): Boolean;
+    class function  GetToolNames: TArray<String>;
     /// For unit tests. Production code never calls this.
-    CLASS PROCEDURE Clear;
+    class procedure Clear;
 
-    CLASS DESTRUCTOR Destroy;
-  END;
+    class destructor Destroy;
+  end;
 
 
-IMPLEMENTATION
+implementation
 
-USES
+uses
   System.SysUtils,
-  System.Generics.Collections,
   Autopilot.Bridge.Log;
 
 
-VAR
-  GFactories: TDictionary<String, TMCPToolFactory> = NIL;
+class procedure TMCPRegistry.EnsureMap;
+begin
+  if FFactories = nil then
+    FFactories := TDictionary<String, TMCPToolFactory>.Create;
+end;
 
 
-/// Lazy-create the singleton. We deliberately avoid an initialization
-/// section so the create order doesn't matter (project rule).
-PROCEDURE EnsureMap;
-BEGIN
-  if GFactories = NIL then
-    GFactories := TDictionary<String, TMCPToolFactory>.Create;
-END;
-
-
-CLASS PROCEDURE TMCPRegistry.RegisterTool(CONST AName: String; AFactory: TMCPToolFactory);
-BEGIN
+class procedure TMCPRegistry.RegisterTool(const AName: String; AFactory: TMCPToolFactory);
+begin
   EnsureMap;
-  GFactories.AddOrSetValue(AName, AFactory);
+  FFactories.AddOrSetValue(AName, AFactory);
   BridgeLogInfo('mcp', 'registered tool: ' + AName);
-END;
+end;
 
 
-CLASS FUNCTION TMCPRegistry.CreateTool(CONST AName: String): IMCPTool;
-VAR
+class function TMCPRegistry.CreateTool(const AName: String): IMCPTool;
+var
   Factory: TMCPToolFactory;
-BEGIN
+begin
   EnsureMap;
-  if not GFactories.TryGetValue(AName, Factory) then
+  if not FFactories.TryGetValue(AName, Factory) then
     raise Exception.CreateFmt('Tool not registered: %s', [AName]);
   Result := Factory();
-END;
+end;
 
 
-CLASS FUNCTION TMCPRegistry.HasTool(CONST AName: String): Boolean;
-BEGIN
+class function TMCPRegistry.HasTool(const AName: String): Boolean;
+begin
   EnsureMap;
-  Result := GFactories.ContainsKey(AName);
-END;
+  Result := FFactories.ContainsKey(AName);
+end;
 
 
-CLASS FUNCTION TMCPRegistry.GetToolNames: TArray<String>;
-BEGIN
+class function TMCPRegistry.GetToolNames: TArray<String>;
+begin
   EnsureMap;
-  Result := GFactories.Keys.ToArray;
-END;
+  Result := FFactories.Keys.ToArray;
+end;
 
 
-CLASS PROCEDURE TMCPRegistry.Clear;
-BEGIN
-  if GFactories <> NIL then
-    GFactories.Clear;
-END;
+class procedure TMCPRegistry.Clear;
+begin
+  if FFactories <> nil then
+    FFactories.Clear;
+end;
 
 
-CLASS DESTRUCTOR TMCPRegistry.Destroy;
-BEGIN
-  FreeAndNil(GFactories);
-END;
+class destructor TMCPRegistry.Destroy;
+begin
+  FreeAndNil(FFactories);
+end;
 
 
-END.
+end.
