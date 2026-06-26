@@ -12,7 +12,7 @@ BuildTests.cmd
 Tests.exe
 ```
 
-Expected: **101 pass, 0 ignored, 0 leaked** (last verified 2026-06-12 evening). `Tests.LeakSuppressor.pas` swallows the 3rd-party `EInOutError` + companion FMessage leak.
+Expected: **105 pass, 0 ignored, 0 leaked** (last verified 2026-06-25 PM). `Tests.LeakSuppressor.pas` swallows the 3rd-party `EInOutError` + companion FMessage leak.
 
 ---
 

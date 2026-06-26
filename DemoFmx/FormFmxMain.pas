@@ -1,23 +1,21 @@
-UNIT FormFmxMain;
+﻿unit FormFmxMain;
 
-(*=====================================================
-   2026.05.14
-   GabrielMoraru.com / SciVance Tech
+{=============================================================================================================
+   2026.06
+   www.GabrielMoraru.com
+--------------------------------------------------------------------------------------------------------------
+   - FMX demo form for the Autopilot bridge.
+   - Mirrors the VCL demo layout; adds cbxFlag (TCheckBox.IsChecked) so the set_checked tool has a target to flip.
+=============================================================================================================}
 
-   Demo form for the Autopilot bridge (FMX flavor).
-   Mirrors the VCL demo's form layout: btnIncrement, lblCounter, edtName,
-   lblNameEcho. Adds cbxFlag (FMX TCheckBox uses IsChecked) so set_checked
-   has something to flip.
-=====================================================*)
+interface
 
-INTERFACE
-
-USES
+uses
   System.SysUtils, System.Classes,
   FMX.Types, FMX.Controls, FMX.Forms, FMX.StdCtrls, FMX.Edit, FMX.Controls.Presentation;
 
-TYPE
-  TfrmFmxMain = CLASS(TForm)
+type
+  TfrmFmxMain = class(TForm)
     btnIncrement: TButton;
     lblCounter  : TLabel;
     edtName     : TEdit;
@@ -25,42 +23,41 @@ TYPE
     lblHeader   : TLabel;
     cbxFlag     : TCheckBox;
     lblFlag     : TLabel;
-    PROCEDURE btnIncrementClick(Sender: TObject);
-    PROCEDURE edtNameChangeTracking(Sender: TObject);
-    PROCEDURE cbxFlagChange(Sender: TObject);
-  PRIVATE
+    procedure btnIncrementClick(Sender: TObject);
+    procedure edtNameChangeTracking(Sender: TObject);
+    procedure cbxFlagChange(Sender: TObject);
+  private
     FCounter: Integer;
-  END;
+  end;
 
-VAR
+var
   frmFmxMain: TfrmFmxMain;
 
 
-IMPLEMENTATION
+implementation
 
 {$R *.fmx}
 
 
-PROCEDURE TfrmFmxMain.btnIncrementClick(Sender: TObject);
-BEGIN
+procedure TfrmFmxMain.btnIncrementClick(Sender: TObject);
+begin
   Inc(FCounter);
   lblCounter.Text := IntToStr(FCounter);
-END;
+end;
 
 
-PROCEDURE TfrmFmxMain.edtNameChangeTracking(Sender: TObject);
-BEGIN
+procedure TfrmFmxMain.edtNameChangeTracking(Sender: TObject);
+begin
   lblNameEcho.Text := edtName.Text;
-END;
+end;
 
 
-PROCEDURE TfrmFmxMain.cbxFlagChange(Sender: TObject);
-BEGIN
-  if cbxFlag.IsChecked then
-    lblFlag.Text := 'on'
-  else
-    lblFlag.Text := 'off';
-END;
+procedure TfrmFmxMain.cbxFlagChange(Sender: TObject);
+begin
+  if cbxFlag.IsChecked
+  then lblFlag.Text := 'on'
+  else lblFlag.Text := 'off';
+end;
 
 
-END.
+end.

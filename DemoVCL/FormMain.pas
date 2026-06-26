@@ -1,67 +1,65 @@
-UNIT FormMain;
+﻿unit FormMain;
 
-(*=====================================================
-   2026.05.12
-   GabrielMoraru.com / SciVance Tech
+{=============================================================================================================
+   2026.06
+   www.GabrielMoraru.com
+--------------------------------------------------------------------------------------------------------------
+   - VCL demo form for the Autopilot bridge.
+   - One form with four controls (btnIncrement, lblCounter, edtName, lblNameEcho) to exercise list_tree, click, and get_text end-to-end.
+=============================================================================================================}
 
-   Demo form for the Autopilot bridge.
-   Minimal surface — one form, four controls. Enough to exercise list_tree,
-   click, get_text end-to-end. The bigger plan in Plans/03_DemoApp.md adds
-   more controls in Phase 2.
-=====================================================*)
+interface
 
-INTERFACE
-
-USES
+uses
   Winapi.Windows, Winapi.Messages,
   System.SysUtils, System.Variants, System.Classes,
   Vcl.Graphics, Vcl.Controls, Vcl.Forms, Vcl.Dialogs, Vcl.StdCtrls;
 
-TYPE
-  TfrmMain = CLASS(TForm)
+type
+  TfrmMain = class(TForm)
     btnIncrement: TButton;
     lblCounter  : TLabel;
     edtName     : TEdit;
     lblNameEcho : TLabel;
     lblHeader   : TLabel;
     btnDialog   : TButton;
-    PROCEDURE btnIncrementClick(Sender: TObject);
-    PROCEDURE edtNameChange(Sender: TObject);
-    PROCEDURE btnDialogClick(Sender: TObject);
-  PRIVATE
+    procedure btnIncrementClick(Sender: TObject);
+    procedure edtNameChange(Sender: TObject);
+    procedure btnDialogClick(Sender: TObject);
+  private
     FCounter: Integer;
-  END;
+  end;
 
-VAR
+var
   frmMain: TfrmMain;
 
 
-IMPLEMENTATION
+implementation
 
 {$R *.dfm}
 
 
-PROCEDURE TfrmMain.btnIncrementClick(Sender: TObject);
-BEGIN
+procedure TfrmMain.btnIncrementClick(Sender: TObject);
+begin
   Inc(FCounter);
   lblCounter.Caption := IntToStr(FCounter);
-END;
+end;
 
 
-PROCEDURE TfrmMain.edtNameChange(Sender: TObject);
-BEGIN
+procedure TfrmMain.edtNameChange(Sender: TObject);
+begin
   lblNameEcho.Caption := edtName.Text;
-END;
+end;
 
 
 // Raises a native Win32 modal dialog: the main thread now spins in MessageBox's own modal
 // loop, so this OnClick never returns until the dialog closes. The component tools cannot
 // see this dialog (it has no TComponent) — dismiss_dialog reaches it through Win32.
-PROCEDURE TfrmMain.btnDialogClick(Sender: TObject);
-BEGIN
+procedure TfrmMain.btnDialogClick(Sender: TObject);
+begin
   Application.MessageBox('A native modal dialog is up. The main thread is blocked in its modal loop.',
                         'Native Dialog', MB_YESNOCANCEL or MB_ICONWARNING);
-END;
+end;
 
 
-END.
+end.
