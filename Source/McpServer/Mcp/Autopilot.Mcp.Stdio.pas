@@ -14,10 +14,13 @@ unit Autopilot.Mcp.Stdio;
      - Shutdown is signalled by the parent closing our stdin (we see EOF on Input).
        No explicit Ctrl-C handling needed.
 
-   We set the console output codepage to UTF-8 once at startup as a defensive measure —
-   Writeln(Output, ...) then emits raw UTF-8 bytes regardless of the user's chcp. JSON itself
-   is ASCII-safe so this matters only when a tool's response contains non-ASCII (e.g. a
-   control's Caption with accented chars).
+   Stdin / stdout carry UTF-8 per the MCP spec. For redirected stdio (the real case — Claude
+   Code pipes it), Delphi opens Input/Output with CodePage = DefaultSystemCodePage (ANSI), NOT
+   UTF-8: System.pas TextOpen only uses the console codepage for a true console handle. So at
+   startup we force both text files to CP_UTF8 (SetTextCodePage) — Readln then decodes, and
+   Writeln encodes, as UTF-8. The wire is ASCII both ways in practice (Claude Code escapes
+   non-ASCII as \uXXXX in requests; our System.JSON escapes every char > 127 the same way in
+   responses), so this is spec-correctness for any client, not a fix for a visible bug.
 =============================================================================================================}
 
 interface
@@ -30,26 +33,32 @@ procedure RunStdioServer;
 implementation
 
 uses
-  System.SysUtils, Winapi.Windows,
+  System.SysUtils, System.JSON, Winapi.Windows,
   Autopilot.Bridge.Log,
   Autopilot.Mcp.JsonRpc;
 
 
-/// Switch the console output to UTF-8 so accented characters in tool responses
-/// land on the wire correctly. Best-effort; we log a warning if it fails but
-/// don't abort — JSON-RPC traffic from Claude Code is ASCII-safe in practice.
-procedure EnableUtf8Output;
+/// Force stdin and stdout to UTF-8. For piped stdio Delphi would otherwise decode/encode via
+/// DefaultSystemCodePage (ANSI); SetTextCodePage overrides the text-file codepage so Readln and
+/// Writeln use UTF-8. SetConsoleOutputCP additionally covers the rare real-console case. Safe to
+/// set before the first read: _ReadByte opens Input via its Mode check, and TextOpen preserves a
+/// non-zero CodePage. _ReadLString reads a whole line of bytes before converting, so a multi-byte
+/// UTF-8 sequence never splits across the read buffer. Best-effort; a failed SetConsoleOutputCP is logged.
+procedure EnableUtf8Io;
 begin
   if not SetConsoleOutputCP(CP_UTF8) then
     BridgeLogWarn('mcp', 'SetConsoleOutputCP(CP_UTF8) failed; LastError=' + IntToStr(GetLastError));
+  SetTextCodePage(Output, CP_UTF8);
+  SetTextCodePage(Input, CP_UTF8);
 end;
 
 
 procedure RunStdioServer;
 var
   Line, Response: String;
+  JErr: TJSONString;
 begin
-  EnableUtf8Output;
+  EnableUtf8Io;
   BridgeLogInfo('mcp', 'stdio loop entered');
 
   while not Eof(Input) do
@@ -69,10 +78,10 @@ begin
     // PowerShell's pipe-to-native typically prepends EF BB BF, and we don't
     // want it to wreck ParseJSONValue with a -32700.
     //
-    // Two encodings to handle: (a) one Unicode char $FEFF if the runtime
-    // decoded the bytes as UTF-8 already; (b) three separate bytes
-    // $EF $BB $BF if the runtime saw raw bytes (default Readln on Windows
-    // does this — the console codepage decides). Both head the line.
+    // Two encodings to handle: (a) one Unicode char $FEFF — the normal case now
+    // that EnableUtf8Io forces CP_UTF8, since the BOM bytes decode as UTF-8; (b)
+    // three separate bytes $EF $BB $BF, the belt-and-braces fallback if the line
+    // ever arrived decoded byte-per-char (ANSI). Both head the line.
     if (Length(Line) >= 1) and (Line[1] = #$FEFF) then
       Delete(Line, 1, 1)
     else if (Length(Line) >= 3) and (Line[1] = #$EF) and (Line[2] = #$BB) and (Line[3] = #$BF) then
@@ -90,8 +99,15 @@ begin
         // If we land here, something escaped — keep the loop alive, log and
         // emit a generic envelope so the client doesn't hang.
         BridgeLogError('mcp', 'dispatch escaped: ' + E.ClassName + ': ' + E.Message);
-        Response := '{"jsonrpc":"2.0","id":null,"error":{"code":-32603,"message":"' +
-                    StringReplace(E.Message, '"', '\"', [rfReplaceAll]) + '"}}';
+        // Escape the message via TJSONString so backslashes, newlines and quotes
+        // in E.Message stay valid JSON. Quote-only escaping emitted broken JSON for
+        // Windows paths ("C:\x") and multi-line messages, which the client cannot parse.
+        JErr := TJSONString.Create(E.Message);
+        try
+          Response := '{"jsonrpc":"2.0","id":null,"error":{"code":-32603,"message":' + JErr.ToJSON + '}}';
+        finally
+          JErr.Free;
+        end;
       end;
     end;
 
