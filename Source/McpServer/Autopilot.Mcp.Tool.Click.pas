@@ -51,6 +51,7 @@ type
 implementation
 
 uses
+  Autopilot.Bridge.Core,
   MCPServer.Registration;
 
 
@@ -82,7 +83,7 @@ begin
   // by reducing the window where main-thread-blocked fires while the queued procedure is still
   // running. Default 5000 ms for count <= 1; extra 100 ms per extra click.
   if Params.Count > 1
-  then TimeoutMs := Cardinal(Params.Count) * PerClickBudgetMs
+  then TimeoutMs := DefaultTimeoutClickMs + Cardinal(Params.Count - 1) * PerClickBudgetMs
   else TimeoutMs := 0;   // 0 = let bridge use its per-command default
   Result := RunCommandOnTarget(Cardinal(Params.Pid),
                                BuildRequest(1, 'click', Args, TimeoutMs),
