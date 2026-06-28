@@ -824,9 +824,8 @@ var
   PipeName: String;
 begin
   PipeName := FPipeName;
-  // The assertion MUST live inside the worker proc: RunOnWorkerAndPump ends its success path
-  // with Assert.Pass (raises ETestPass), so any assertion AFTER it is unreachable. A failure
-  // here raises ETestFailure on the worker, which the pump re-emits on the main thread.
+  // The assertion lives inside the worker proc: a worker-side Assert failure raises ETestFailure,
+  // which RunOnWorkerAndPump catches and re-emits on the main thread so DUnitX records it.
   RunOnWorkerAndPump(
     procedure
     var
