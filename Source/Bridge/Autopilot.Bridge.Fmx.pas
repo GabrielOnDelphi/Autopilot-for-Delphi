@@ -1,7 +1,7 @@
 ﻿unit Autopilot.Bridge.Fmx;
 
 {=============================================================================================================
-   2026.06
+   2026.07.07
    www.GabrielMoraru.com
 --------------------------------------------------------------------------------------------------------------
    - Public bridge interface for FMX target projects (cross-platform: Windows pipe + POSIX AF_UNIX socket)
@@ -980,7 +980,7 @@ begin
   if not TryGetTextProperty(Comp, Text) then
   begin
     Result.Ok := FALSE; Result.ErrorCode := ErrRttiPropertyMissing;
-    Result.ErrorMessage := Comp.ClassName + ' has no readable Text property';
+    Result.ErrorMessage := Comp.ClassName + ' has no readable Text/Caption property';
     exit;
   end;
   Wrap := TJSONObject.Create;
@@ -994,7 +994,7 @@ function HandleClick(const AReq: TBridgeRequest): TBridgeResponse;
 const
   MaxClickCount = 1000;
 var
-  PathVal, CountVal: TJSONValue;
+  PathVal, CountVal, ModeVal: TJSONValue;
   Path: String;
   Comp: TComponent;
   Enabled: Boolean;
@@ -1005,7 +1005,7 @@ var
   Notify: TNotifyEvent;
   RawValue: TValue;
   RequestedCount, ClicksDone: Integer;
-  StoppedReason: String;
+  StoppedReason, Mode: String;
 begin
   Assert(TThread.CurrentThread.ThreadID = MainThreadID, 'HandleClick must run on the main thread');
   Result := Default(TBridgeResponse);
@@ -1047,6 +1047,36 @@ begin
       Result.Ok := FALSE; Result.ErrorCode := ErrInvalidRequest;
       Result.ErrorMessage := 'click args.count must be 1..' + IntToStr(MaxClickCount) +
                              ' (got ' + IntToStr(RequestedCount) + ')';
+      exit;
+    end;
+  end;
+
+  // mode=message is VCL-on-Windows only: it posts BM_CLICK to the control's HWND, and an
+  // FMX control has no per-control window handle to post to (FMX paints its own controls).
+  // Reject explicitly — silently falling back to the synchronous OnClick path would defeat
+  // the caller's no-block intent. Validated strictly, like the VCL twin.
+  ModeVal := AReq.Args.GetValue('mode');
+  if ModeVal <> NIL then
+  begin
+    if not (ModeVal is TJSONString) then
+    begin
+      Result.Ok := FALSE; Result.ErrorCode := ErrInvalidRequest;
+      Result.ErrorMessage := 'click args.mode must be a string ("auto" or "message")';
+      exit;
+    end;
+    Mode := LowerCase(Trim(TJSONString(ModeVal).Value));
+    if Mode = 'message' then
+    begin
+      Result.Ok := FALSE; Result.ErrorCode := ErrUnsupportedAction;
+      Result.ErrorMessage := 'click mode=message is VCL-on-Windows only (FMX controls have no window ' +
+                             'handle); omit mode to use the OnClick dispatch';
+      exit;
+    end;
+    if (Mode <> '') and (Mode <> 'auto') then
+    begin
+      Result.Ok := FALSE; Result.ErrorCode := ErrInvalidRequest;
+      Result.ErrorMessage := 'click args.mode must be "auto" or "message" (got "' +
+                             TJSONString(ModeVal).Value + '")';
       exit;
     end;
   end;
@@ -1258,9 +1288,9 @@ begin
   begin
     Result.Ok := FALSE; Result.ErrorCode := ErrCode;
     if ErrCode = ErrUnsupportedAction then
-      Result.ErrorMessage := Comp.ClassName + '.Text is read-only'
+      Result.ErrorMessage := Comp.ClassName + '.Text/Caption is read-only'
     else
-      Result.ErrorMessage := Comp.ClassName + ' has no writable Text property';
+      Result.ErrorMessage := Comp.ClassName + ' has no writable Text/Caption property';
     exit;
   end;
   Wrap := TJSONObject.Create;
@@ -1315,7 +1345,10 @@ begin
   if not TrySetCheckedProperty(Comp, Checked, ErrCode) then
   begin
     Result.Ok := FALSE; Result.ErrorCode := ErrCode;
-    Result.ErrorMessage := Comp.ClassName + ' has no IsChecked/Checked property';
+    if ErrCode = ErrUnsupportedAction then
+      Result.ErrorMessage := Comp.ClassName + '.IsChecked/Checked is read-only'
+    else
+      Result.ErrorMessage := Comp.ClassName + ' has no IsChecked/Checked property';
     exit;
   end;
   Wrap := TJSONObject.Create;
@@ -1498,6 +1531,9 @@ begin
   end;
   Wrap := TJSONObject.Create;
   Wrap.AddPair('form', Form.Name);
+  // Same field set as the VCL twin (width/height in client units, here dp).
+  Wrap.AddPair('width', TJSONNumber.Create(W));
+  Wrap.AddPair('height', TJSONNumber.Create(H));
   Wrap.AddPair('encoding', 'base64');
   Wrap.AddPair('format', 'png');
   Wrap.AddPair('image', Base64);

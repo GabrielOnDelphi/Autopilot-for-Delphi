@@ -1,7 +1,7 @@
 ﻿unit Autopilot.Bridge.Worker;
 
 {=============================================================================================================
-   2026.06
+   2026.07.07
    www.GabrielMoraru.com
 --------------------------------------------------------------------------------------------------------------
    - Shared bridge worker thread (all platforms): accept → handshake → serve requests → recycle
@@ -228,6 +228,8 @@ var
   CapturedReq: TBridgeRequest;
   Slot    : TDispatchSlot;
   T0      : UInt64;
+  WaitRes : TWaitResult;
+  ElapsedMs: UInt64;
 begin
   Result := FALSE;
   Stream := FTransport.ConnectionStream;
@@ -237,13 +239,15 @@ begin
     Root := TJSONObject.ParseJSONValue(FrameIn);
     if not (Root is TJSONObject) then
     begin
+      // Free the non-object parse (e.g. a bare array/number) BEFORE the write:
+      // WriteFrame raises on a broken pipe and would otherwise leak it.
+      FreeAndNil(Root);
       Resp := Default(TBridgeResponse);
       Resp.Id := 0;
       Resp.Ok := FALSE;
       Resp.ErrorCode := ErrInvalidRequest;
       Resp.ErrorMessage := 'request is not a JSON object';
       TBridgeWire.WriteFrame(Stream, SerializeResponse(Resp));
-      FreeAndNil(Root);
       Result := TRUE;   // wire is fine, just a bad frame; keep serving
       exit;
     end;
@@ -259,10 +263,16 @@ begin
         exit;
       end;
 
-      // Resolve timeout: caller-supplied > per-command default
+      // Resolve timeout: caller-supplied > per-command default.
+      // The 5000 ms bucket is every command that runs USER code on the main thread
+      // (Plans/04: "5000 ms (click/set)"): click/set_text/set_checked/set_property fire
+      // setters + OnChange/OnClick handlers; execute_action fires OnExecute;
+      // dismiss_dialog's SendMessageTimeout alone can block up to 4000 ms on a
+      // cross-thread dialog — all of them overran the 2000 ms list/get default.
       if Req.TimeoutMs > 0 then
         Timeout := Req.TimeoutMs
-      else if (Req.Cmd = 'click') or (Req.Cmd = 'set_text') or (Req.Cmd = 'set_checked') or (Req.Cmd = 'execute_action') then
+      else if (Req.Cmd = 'click') or (Req.Cmd = 'set_text') or (Req.Cmd = 'set_checked')
+           or (Req.Cmd = 'set_property') or (Req.Cmd = 'execute_action') or (Req.Cmd = 'dismiss_dialog') then
         Timeout := DefaultTimeoutClickMs
       else if Req.Cmd = 'screenshot' then
         Timeout := DefaultTimeoutScreenshotMs
@@ -342,7 +352,26 @@ begin
             end;
           end);
 
-        if Slot.Done.WaitFor(Timeout) = wrSignaled then
+        // EINTR-safe timed wait. On Android a stray signal interrupts sem_timedwait and
+        // TEvent.WaitFor maps every non-ETIMEDOUT failure — EINTR included — to wrError,
+        // with no retry (System.SyncObjs.pas:1004-1013); treating wrError as a timeout
+        // here produced a spurious -32004 long before the deadline. Re-wait for the time
+        // still remaining, deadline anchored at T0 so retries never extend the budget.
+        // On Windows the non-alertable wait on a valid event never returns wrError, so
+        // the loop body never runs.
+        WaitRes := Slot.Done.WaitFor(Timeout);
+        while WaitRes = wrError do
+        begin
+          ElapsedMs := TThread.GetTickCount64 - T0;
+          if ElapsedMs >= Timeout then
+          begin
+            WaitRes := wrTimeout;
+            Break;
+          end;
+          WaitRes := Slot.Done.WaitFor(Timeout - Cardinal(ElapsedMs));
+        end;
+
+        if WaitRes = wrSignaled then
         begin
           // Queued proc finished and won the claim. Slot.Resp is the dispatch result.
           Resp := Slot.Resp;
@@ -360,7 +389,17 @@ begin
         end
         else
         begin
-          // Race: queued proc claimed during WaitFor expiry. Take its result.
+          // Race: queued proc claimed between our WaitFor expiry and TryClaim(2). The
+          // winner writes Slot.Resp only AFTER its claim and sets Done right after the
+          // write — so wait for Done before reading, or this branch can copy a
+          // half-written record (a garbage ok=false/code=0 response goes out and the
+          // winner's ResultJson/ErrorData leak). The wait is bounded: the winner is two
+          // straight-line assignments away from SetEvent and nothing in between can raise.
+          // Loop: on Android a signal can interrupt sem_wait (EINTR) and TEvent.WaitFor
+          // returns wrError without re-arming — the event is refcount-held, so re-wait.
+          // On Windows the non-alertable wait on a valid event only returns wrSignaled.
+          while Slot.Done.WaitFor(INFINITE) <> wrSignaled do
+            ; // re-arm
           Resp := Slot.Resp;
           Slot.Resp.ResultJson := NIL;
         end;

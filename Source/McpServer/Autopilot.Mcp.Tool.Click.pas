@@ -1,12 +1,15 @@
 unit Autopilot.Mcp.Tool.Click;
 
 {=============================================================================================================
-   2026.06
+   2026.07.07
    www.GabrielMoraru.com
 --------------------------------------------------------------------------------------------------------------
    - MCP tool: click
    - Dispatches a click to a control. Path format: "FormName.ComponentName" or "FormName.Panel.NestedComponent".
    - '*.Name' wildcards the form. Optional count parameter; scales timeoutMs proportionally.
+   - Optional timeoutMs parameter overrides the bridge's main-thread wait (short value + dismiss_dialog = the modal-dialog recipe).
+   - Optional mode parameter: 'message' posts BM_CLICK asynchronously (VCL button-class controls only) —
+     presses a modal-opening button without blocking; FMX targets reject it with -32005.
    - Runs in Autopilot.Mcp.exe (Windows PC-side MCP server); target may be any platform.
 =============================================================================================================}
 
@@ -23,6 +26,8 @@ type
     FPath : String;
     FPid  : Integer;
     FCount: Integer;
+    FMode : String;
+    FTimeoutMs: Integer;
   public
     [SchemaDescription('Path to the control. See list_tree for available paths. ' +
                        'Forms: "Form", "Form.Leaf", "Form.A.B.C". Unnamed components: "@TButton#N".')]
@@ -38,6 +43,22 @@ type
                        'between iterations and stops early with stoppedReason="disabled" if the control ' +
                        'gets disabled by a previous click.')]
     property Count: Integer read FCount write FCount;
+
+    [Optional]
+    [SchemaDescription('Dispatch mode. Omit (or "auto") for the default path (Click method / OnClick). ' +
+                       '"message": VCL-on-Windows only — posts BM_CLICK to a button-class control ' +
+                       '(TButton/TBitBtn/TCheckBox/TRadioButton) and returns at once; the click runs when ' +
+                       'the app next pumps messages. Use it to press a button whose OnClick opens a modal ' +
+                       'dialog: the response returns immediately (no -32004), then call dismiss_dialog. ' +
+                       'FMX targets reject it with -32005. Response reports dispatchedVia="message".')]
+    property Mode: String read FMode write FMode;
+
+    [Optional]
+    [SchemaDescription('Override the bridge''s main-thread wait for this call, in milliseconds. ' +
+                       'Default: 5000 for a single click, 5000 + (count-1)*100 for batched clicks. ' +
+                       'Pass a short value (e.g. 500) when the click is expected to open a modal ' +
+                       'dialog and block — expect -32004 main_thread_blocked, then call dismiss_dialog.')]
+    property TimeoutMs: Integer read FTimeoutMs write FTimeoutMs;
   end;
 
   TClickTool = class(TMCPToolBase<TClickParams>)
@@ -78,11 +99,20 @@ begin
   if Params.Count <> 0
   then Args.AddPair('count', TJSONNumber.Create(Params.Count));
 
-  // Scale the worker-side wait with the requested count so the timeout fires only after
-  // a genuinely stuck dispatch, not after a legitimate long count loop. Mitigates Plans/04 R1
-  // by reducing the window where main-thread-blocked fires while the queued procedure is still
-  // running. Default 5000 ms for count <= 1; extra 100 ms per extra click.
-  if Params.Count > 1
+  // Forward mode verbatim when set; the bridge validates it ("auto"/"message") so a typo
+  // comes back as a clear ErrInvalidRequest instead of being silently swallowed here.
+  if Params.Mode <> ''
+  then Args.AddPair('mode', Params.Mode);
+
+  // Caller-supplied timeoutMs wins (the documented modal-dialog recipe: pass a short
+  // timeout, expect -32004, then dismiss_dialog). Otherwise scale the worker-side wait
+  // with the requested count so the timeout fires only after a genuinely stuck dispatch,
+  // not after a legitimate long count loop. Mitigates Plans/04 R1 by reducing the window
+  // where main-thread-blocked fires while the queued procedure is still running.
+  // Default 5000 ms for count <= 1; extra 100 ms per extra click.
+  if Params.TimeoutMs > 0
+  then TimeoutMs := Cardinal(Params.TimeoutMs)
+  else if Params.Count > 1
   then TimeoutMs := DefaultTimeoutClickMs + Cardinal(Params.Count - 1) * PerClickBudgetMs
   else TimeoutMs := 0;   // 0 = let bridge use its per-command default
   Result := RunCommandOnTarget(Cardinal(Params.Pid),

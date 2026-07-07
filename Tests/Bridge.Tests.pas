@@ -1,7 +1,7 @@
 ﻿unit Bridge.Tests;
 
 {=============================================================================================================
-   2026.06
+   2026.07.07
    www.GabrielMoraru.com
 --------------------------------------------------------------------------------------------------------------
    - DUnitX tests for the Autopilot VCL bridge: handshake, list_tree, click, get_text, set_text, set_checked, set_property, and dismiss_dialog.
@@ -35,6 +35,9 @@ type
     [Test] procedure Test_Click_CountFiresNTimes;
     [Test] procedure Test_Click_CountZeroReturnsError;
     [Test] procedure Test_Click_CountAboveCapReturnsError;
+    [Test] procedure Test_Click_ModeInvalidReturnsError;
+    [Test] procedure Test_Click_ModeMessageOnNonButtonReturnsUnsupported;
+    [Test] procedure Test_Click_ModeMessagePostsBmClickAsync;
     [Test] procedure Test_DismissDialog_FractionalHwndReturnsInvalidRequest;
     [Test] procedure Test_Click_CountStopsWhenDisabledMidLoop;
     [Test] procedure Test_Click_CountFiresOnClickPathNTimes;
@@ -68,6 +71,7 @@ type
     [Test] procedure Test_SetProperty_WritesNestedClassMemberLinesText;
     [Test] procedure Test_SetProperty_WritesNestedClassMemberFontSize;
     [Test] procedure Test_SetProperty_DottedFontWriteFlipsParentFontFalse;
+    [Test] procedure Test_SetProperty_FailedDottedWriteKeepsParentFontTrue;
     [Test] procedure Test_SetProperty_DottedUnknownInnerListsInnerWritables;
     [Test] procedure Test_SetProperty_DottedOnNonClassOuterReturnsUnsupportedAction;
     [Test] procedure Test_SetProperty_DottedTwoLevelsReturnsUnsupportedAction;
@@ -700,6 +704,138 @@ begin
       end;
     end, 5000);
   Assert.AreEqual(ErrControlDisabled, Code, 'expected control_disabled error');
+end;
+
+
+// A typo'd mode must be rejected loudly, never silently fall back to the synchronous
+// dispatch (the caller asked for async semantics; a quiet sync click would defeat that).
+procedure TBridgeTests.Test_Click_ModeInvalidReturnsError;
+var
+  PipeName: String;
+  Code: Integer;
+begin
+  PipeName := FPipeName;
+  Code := 0;
+  RunOnWorkerAndPump(
+    procedure
+    var
+      Client: TBridgeTestClient;
+      Args, Resp: TJSONObject;
+    begin
+      Client := TBridgeTestClient.Create;
+      try
+        Assert.IsTrue(Client.ConnectAndHandshake(PipeName, 2000), 'connect');
+        Args := TJSONObject.Create;
+        Args.AddPair('path', 'FixtureForm.btnTest');
+        Args.AddPair('mode', 'bogus');
+        Resp := Client.Call(230, 'click', Args);
+        try
+          Code := GetErrorCode(Resp);
+        finally
+          Resp.Free;
+        end;
+      finally
+        Client.Free;
+      end;
+    end, 5000);
+  Assert.AreEqual(ErrInvalidRequest, Code, 'mode=bogus must be an invalid-request error');
+  Assert.AreEqual(0, GFixtureForm.ClickCount, 'no click may fire on a rejected mode');
+end;
+
+
+// mode=message posts BM_CLICK, which only button-class (BUTTON window class) controls
+// handle — posting it to a TEdit would report success while doing nothing. The bridge
+// must reject the class mismatch instead.
+procedure TBridgeTests.Test_Click_ModeMessageOnNonButtonReturnsUnsupported;
+var
+  PipeName: String;
+  Code: Integer;
+begin
+  PipeName := FPipeName;
+  Code := 0;
+  RunOnWorkerAndPump(
+    procedure
+    var
+      Client: TBridgeTestClient;
+      Args, Resp: TJSONObject;
+    begin
+      Client := TBridgeTestClient.Create;
+      try
+        Assert.IsTrue(Client.ConnectAndHandshake(PipeName, 2000), 'connect');
+        Args := TJSONObject.Create;
+        Args.AddPair('path', 'FixtureForm.edtName');   // TEdit: TWinControl but NOT TButtonControl
+        Args.AddPair('mode', 'message');
+        Resp := Client.Call(231, 'click', Args);
+        try
+          Code := GetErrorCode(Resp);
+        finally
+          Resp.Free;
+        end;
+      finally
+        Client.Free;
+      end;
+    end, 5000);
+  Assert.AreEqual(ErrUnsupportedAction, Code, 'mode=message on a non-button must be unsupported_action');
+end;
+
+
+// mode=message on a TButton: the response must report dispatchedVia='message' and
+// clicksDispatched=1, and the click itself runs only when the queue is pumped — the
+// BM_CLICK was POSTED before the response frame was written, so by the time the client
+// has the response the message is guaranteed to sit in this (main) thread's queue.
+// Draining the queue afterwards must fire OnClick exactly once: the BUTTON class proc
+// turns BM_CLICK into WM_LBUTTONDOWN/UP plus BN_CLICKED, which the VCL routes to OnClick.
+procedure TBridgeTests.Test_Click_ModeMessagePostsBmClickAsync;
+var
+  PipeName: String;
+  DispatchedVia: String;
+  ClicksDispatched: Integer;
+  Msg: TMsg;
+begin
+  PipeName := FPipeName;
+  DispatchedVia := '';
+  ClicksDispatched := 0;
+  RunOnWorkerAndPump(
+    procedure
+    var
+      Client: TBridgeTestClient;
+      Args, Resp, R: TJSONObject;
+      V: TJSONValue;
+    begin
+      Client := TBridgeTestClient.Create;
+      try
+        Assert.IsTrue(Client.ConnectAndHandshake(PipeName, 2000), 'connect');
+        Args := TJSONObject.Create;
+        Args.AddPair('path', 'FixtureForm.btnTest');
+        Args.AddPair('mode', 'message');
+        Resp := Client.Call(232, 'click', Args);
+        try
+          R := GetOkResult(Resp);
+          Assert.IsNotNull(R, 'click mode=message should return ok');
+          V := R.GetValue('dispatchedVia');
+          if V IS TJSONString then
+            DispatchedVia := TJSONString(V).Value;
+          V := R.GetValue('clicksDispatched');
+          if V IS TJSONNumber then
+            ClicksDispatched := TJSONNumber(V).AsInt;
+        finally
+          Resp.Free;
+        end;
+      finally
+        Client.Free;
+      end;
+    end, 5000);
+  Assert.AreEqual('message', DispatchedVia, 'expected dispatchedVia=message');
+  Assert.AreEqual(1, ClicksDispatched, 'expected clicksDispatched=1');
+  // Drain the queue: the posted BM_CLICK (and the mouse messages the button proc
+  // synthesizes from it) dispatch here, on the thread that owns Btn's window.
+  while PeekMessage(Msg, 0, 0, 0, PM_REMOVE) do
+  begin
+    TranslateMessage(Msg);
+    DispatchMessage(Msg);
+  end;
+  Assert.AreEqual(1, GFixtureForm.ClickCount,
+                  'pumping the posted BM_CLICK must fire OnClick exactly once');
 end;
 
 
@@ -2114,13 +2250,14 @@ begin
 end;
 
 
-// 2026-05-20: bridge now turns ParentFont off before a dotted Font.* write.
+// 2026-05-20: bridge turns ParentFont off on a dotted Font.* write (since
+// 2026-07-07 the flip runs AFTER a successful write, no longer before it).
 // The VCL does the same flip itself as a side effect of TControl.FontChanged,
 // so the post-write end state was always Font.Size=N and ParentFont=False
-// even without the bridge's help. The bridge pre-flip matters in the elision
+// even without the bridge's help. The bridge flip matters in the elision
 // path (no actual SetValue → no FontChanged → no VCL auto-flip), and pins
-// the contract: after any set_property Font.* call, ParentFont is False.
-// Verify both legs: the size landed AND ParentFont is now False.
+// the contract: after any SUCCESSFUL set_property Font.* call, ParentFont is
+// False. Verify both legs: the size landed AND ParentFont is now False.
 procedure TBridgeTests.Test_SetProperty_DottedFontWriteFlipsParentFontFalse;
 var
   PipeName: String;
@@ -2164,6 +2301,51 @@ begin
                   'Btn.Font.Size should be 20 after the bridge write');
   Assert.IsFalse(GFixtureForm.Btn.ParentFont,
                  'bridge should have auto-flipped Btn.ParentFont to False so the size sticks');
+end;
+
+
+// Counterpart of the test above, pinning the 2026-07-07 flip-on-success rule: a
+// REJECTED dotted write must leave Parent<X> untouched. Before the fix, the flip ran
+// before the write, so 'Font.Size := garbage' detached ParentFont without changing
+// anything — a silent state change on an error response.
+procedure TBridgeTests.Test_SetProperty_FailedDottedWriteKeepsParentFontTrue;
+var
+  PipeName: String;
+  Code: Integer;
+begin
+  Assert.IsTrue(GFixtureForm.Btn.ParentFont,
+                'precondition: Btn.ParentFont must be True for this test');
+
+  PipeName := FPipeName;
+  Code := 0;
+  RunOnWorkerAndPump(
+    procedure
+    var
+      Client: TBridgeTestClient;
+      Args, Resp: TJSONObject;
+    begin
+      Client := TBridgeTestClient.Create;
+      try
+        Assert.IsTrue(Client.ConnectAndHandshake(PipeName, 2000), 'connect');
+        Args := TJSONObject.Create;
+        Args.AddPair('path', 'FixtureForm.btnTest');
+        Args.AddPair('propName', 'Font.Size');
+        Args.AddPair('value', 'garbage');            // integer coercion fails → write rejected
+        Resp := Client.Call(233, 'set_property', Args);
+        try
+          Code := GetErrorCode(Resp);
+        finally
+          Resp.Free;
+        end;
+      finally
+        Client.Free;
+      end;
+    end, 5000);
+  Assert.AreEqual(ErrUnsupportedAction, Code, 'a non-integer Font.Size value must be rejected');
+  Assert.IsTrue(GFixtureForm.Btn.ParentFont,
+                'a rejected write must not detach ParentFont (flip-on-success contract)');
+  Assert.AreEqual(8, GFixtureForm.Btn.Font.Size,
+                  'a rejected write must leave Font.Size unchanged');
 end;
 
 

@@ -1,14 +1,15 @@
 ﻿unit Autopilot.Bridge.Vcl;
 
 {=============================================================================================================
-   2026.06
+   2026.07.07
    www.GabrielMoraru.com
 --------------------------------------------------------------------------------------------------------------
    - Public bridge interface for VCL target projects (Windows only)
    - StartBridge / StopBridge / IsBridgeRunning; real bodies only when AUTOPILOT is defined
    - Full VCL dispatcher: list_tree, click, get_text, set_text, set_checked, set_property, read_property,
      execute_action, screenshot, wait_for, dismiss_dialog (13 MCP tools total)
-   - TColor and TAlphaColor coercion, one-level dotted propName, parent-inheritance auto-flip (VCL-only)
+   - TColor and TAlphaColor coercion, one-level dotted propName, parent-inheritance auto-flip (VCL-only),
+     opt-in click mode='message' (async BM_CLICK post to button-class controls)
 =============================================================================================================}
 
 interface
@@ -42,7 +43,7 @@ implementation
 
 {$IFDEF AUTOPILOT}
 uses
-  Winapi.Windows,
+  Winapi.Windows, Winapi.Messages,
   System.SysUtils, System.SyncObjs, System.JSON, System.Rtti, System.TypInfo,
   System.NetEncoding, System.UITypes, System.UIConsts,
   Vcl.Forms, Vcl.Controls, Vcl.StdCtrls, Vcl.ExtCtrls, Vcl.Graphics, Vcl.Imaging.PngImage,
@@ -704,14 +705,17 @@ end;
 // default-TRUE state means "this control inherits <X> from its parent". The
 // VCL itself auto-flips Parent<X>:=FALSE inside SetColor/FontChanged/etc.
 // when a *value-changing* write happens (Vcl.Controls.pas:6937 for
-// FontChanged, :7026 for SetColor). The bridge pre-flips here for two
-// reasons: (a) consistency — every successful set_property leaves the
-// control owning the property, never inheriting it, regardless of elision;
-// (b) the elision path: when the live value already equals the requested
-// value the bridge skips SetValue, so the VCL never gets a chance to do the
-// auto-flip itself — without this helper, an elided Color resend on a
-// freshly-created control would leave ParentColor=TRUE, making the "elided
-// → no change" response a half-truth (Parent inheritance is still active).
+// FontChanged, :7026 for SetColor). The bridge calls this from
+// HandleSetProperty AFTER a successful write (or elision) for two reasons:
+// (a) consistency — every successful set_property leaves the control owning
+// the property, never inheriting it, regardless of elision; (b) the elision
+// path: when the live value already equals the requested value the bridge
+// skips SetValue, so the VCL never gets a chance to do the auto-flip itself
+// — without this helper, an elided Color resend on a freshly-created control
+// would leave ParentColor=TRUE, making the "elided → no change" response a
+// half-truth (Parent inheritance is still active). Success-only since
+// 2026-07-07: a REJECTED value must not detach Parent<X> (before that, the
+// flip ran pre-write, so a failed write still detached inheritance).
 // Silent: no extra field in the response. List sourced from
 // c:\Delphi\Delphi 13\source\vcl (Vcl.Controls.pas / Vcl.Forms.pas /
 // Vcl.ComCtrls.pas), 2026-05-20.
@@ -871,10 +875,8 @@ begin
     finally
       Ctx.Free;
     end;
-    // ParentFont/ParentColor/etc. live on the OUTER instance (AInstance), not
-    // on the inner — flip them here, before we recurse into the inner where
-    // they're invisible. Look up by OuterName ('Font' triggers ParentFont).
-    TurnOffParentInheritFor(AInstance, OuterName);
+    // Parent<X> flipping happens in HandleSetProperty, on overall success only —
+    // see TurnOffParentInheritFor's header comment.
     exit(TrySetGenericProperty(Inner, InnerName, AStrValue, AErrCode, AErrMsg, AFailedInstance, AElided));
   end;
 
@@ -898,14 +900,6 @@ begin
       AErrMsg := AInstance.ClassName + '.' + APropName + ' is read-only';
       exit;
     end;
-
-    // Direct write to a Parent-governed property (Color, BiDiMode, ShowHint,
-    // DoubleBuffered, CustomHint, Ctl3D). Font as a whole isn't writable here
-    // (it's tkClass, dotted writes go through the recursive branch above) but
-    // listing 'Font' in the pair table costs nothing. Flip BEFORE the
-    // elision read so the resulting Parent<X>=FALSE state holds even on a
-    // no-op resend — see header comment on TurnOffParentInheritFor.
-    TurnOffParentInheritFor(AInstance, APropName);
 
     // Read the live value once, up front, so each branch can elide when the
     // coerced new value equals it. Some properties are writable but raise on
@@ -1345,12 +1339,12 @@ function HandleClick(const AReq: TBridgeRequest): TBridgeResponse;
 const
   MaxClickCount = 1000;   // sane cap; protects the main thread from being pinned by a runaway count.
 var
-  PathVal, CountVal: TJSONValue;
+  PathVal, CountVal, ModeVal: TJSONValue;
   Path: String;
   Comp: TComponent;
   Enabled: Boolean;
   Wrap: TJSONObject;
-  DispatchedVia, StoppedReason: String;
+  DispatchedVia, StoppedReason, Mode: String;
   Ctx: TRttiContext;
   RT: TRttiType;
   OnClickProp: TRttiProperty;
@@ -1402,10 +1396,20 @@ var
     end;
   end;
 
-  // Dispatch one click using the resolved path. Assumes ResolveDispatchPath returned TRUE.
+  // Dispatch one click using the resolved path. Assumes ResolveDispatchPath returned TRUE
+  // (or DispatchedVia='message', which needs no resolve).
   procedure DispatchOneClick;
   begin
-    if Comp is TButton then
+    if DispatchedVia = 'message' then
+    begin
+      // Asynchronous on purpose: the posted BM_CLICK is processed only after this response
+      // has gone out, so a button whose OnClick opens a modal dialog no longer blocks the
+      // dispatcher into -32004 (pair with dismiss_dialog). A failed post (e.g. full message
+      // queue) raises EOSError, which the caller's loop reports as stoppedReason.
+      if not PostMessage(TButtonControl(Comp).Handle, BM_CLICK, 0, 0) then
+        RaiseLastOSError;
+    end
+    else if Comp is TButton then
       TButton(Comp).Click
     else if Comp is TWinControl then
       TWinControlClass(Comp).Click
@@ -1472,6 +1476,35 @@ begin
     end;
   end;
 
+  // Optional mode: absent/'auto' → the automatic dispatch policy below; 'message' → post
+  // BM_CLICK asynchronously (the click runs when the app pumps messages, AFTER this
+  // response has returned — the non-blocking way to press a button whose OnClick opens a
+  // modal dialog; pair with dismiss_dialog). Validated strictly: a typo'd mode silently
+  // falling back to the synchronous path would defeat the caller's no-block intent.
+  Mode := '';
+  ModeVal := AReq.Args.GetValue('mode');
+  if ModeVal <> NIL then
+  begin
+    if not (ModeVal is TJSONString) then
+    begin
+      Result.Ok := FALSE;
+      Result.ErrorCode := ErrInvalidRequest;
+      Result.ErrorMessage := 'click args.mode must be a string ("auto" or "message")';
+      exit;
+    end;
+    Mode := LowerCase(Trim(TJSONString(ModeVal).Value));
+    if Mode = 'auto' then
+      Mode := '';
+    if (Mode <> '') and (Mode <> 'message') then
+    begin
+      Result.Ok := FALSE;
+      Result.ErrorCode := ErrInvalidRequest;
+      Result.ErrorMessage := 'click args.mode must be "auto" or "message" (got "' +
+                             TJSONString(ModeVal).Value + '")';
+      exit;
+    end;
+  end;
+
   Comp := FindComponentByPath(Path);
   if Comp = NIL then
   begin
@@ -1489,7 +1522,25 @@ begin
     exit;
   end;
 
-  if not ResolveDispatchPath then
+  if Mode = 'message' then
+  begin
+    // BM_CLICK is a button-class message: user32's BUTTON window proc turns it into
+    // WM_LBUTTONDOWN+UP plus a BN_CLICKED to the parent (learn.microsoft.com, BM_CLICK).
+    // Any other window class ignores it in DefWindowProc — posting there would report
+    // success while doing nothing, so reject loudly. Non-windowed controls (TLabel,
+    // TSpeedButton) have no HWND to post to at all.
+    if not (Comp is TButtonControl) then
+    begin
+      Result.Ok := FALSE;
+      Result.ErrorCode := ErrUnsupportedAction;
+      Result.ErrorMessage := Comp.ClassName + ' cannot take mode=message: BM_CLICK is only handled ' +
+                             'by button-class controls (TButton/TBitBtn/TCheckBox/TRadioButton). ' +
+                             'Omit mode for the default dispatch.';
+      exit;
+    end;
+    DispatchedVia := 'message';
+  end
+  else if not ResolveDispatchPath then
   begin
     Result.Ok := FALSE;
     Result.ErrorCode := ErrUnsupportedAction;
@@ -1503,6 +1554,8 @@ begin
   // Wrap the dispatch in try/except so an OnClick that frees the control / form,
   // raises, or otherwise disrupts the loop stops cleanly instead of AV'ing on the
   // next iteration's TryGetEnabled(stale Comp).
+  // mode=message note: the posted clicks run only after this response returns, so the
+  // re-check can only see changes made by other activity, never by these clicks themselves.
   while ClicksDone < RequestedCount do
   begin
     if TryGetEnabled(Comp, Enabled) and not Enabled then
@@ -1773,6 +1826,7 @@ var
   Wrap: TJSONObject;
   FailedInstance: TObject;
   Elided: Boolean;
+  DotPos: Integer;
 begin
   Assert(GetCurrentThreadId = MainThreadID, 'HandleSetProperty must run on the main thread');
   Result := Default(TBridgeResponse);
@@ -1847,6 +1901,19 @@ begin
     end;
     exit;
   end;
+
+  // Success — written or elided. Now flip the matching Parent<X> (ParentFont/ParentColor/
+  // ...) so the control owns the property from here on. Keyed by the FIRST segment:
+  // 'Font.Size' flips ParentFont on Comp (the inner TFont has no Parent<X> of its own).
+  // On failure the flip is skipped on purpose: a rejected value must not detach the
+  // control from parent inheritance (pre-2026-07-07 the flip ran before the write and did
+  // exactly that). Value-changing writes are auto-flipped by the VCL itself already —
+  // this call matters for the ELIDED resend, where SetValue is skipped and the VCL
+  // auto-flip never runs. See TurnOffParentInheritFor's header comment.
+  DotPos := Pos('.', PropName);
+  if DotPos > 0
+  then TurnOffParentInheritFor(Comp, Copy(PropName, 1, DotPos - 1))
+  else TurnOffParentInheritFor(Comp, PropName);
 
   Wrap := TJSONObject.Create;
   Wrap.AddPair('path', Path);

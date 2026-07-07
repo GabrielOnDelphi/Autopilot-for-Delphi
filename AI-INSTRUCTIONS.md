@@ -58,14 +58,15 @@ The first node is the form itself (with the form's path equal to its name). Subs
 
 ### `click`
 
-`click(path, count?, mode?, pid?)`
+`click(path, count?, mode?, timeoutMs?, pid?)`
 
 Default behavior: invokes the control's `Click` (`TButton.Click` for buttons, `TWinControlClass(Ctrl).Click` cast for other TWinControl descendants, falling back to `OnClick(Self)` for non-TWinControl visuals like TLabel/TImage with handlers).
 
 - `count` (1..1000, default 1) — fires N clicks in one round-trip. Bridge resolves the dispatch path once, re-checks `Enabled` between iterations, stops early with `stoppedReason='disabled'` if the control becomes disabled mid-loop.
-- `mode='message'` — opt-in `PostMessage(BM_CLICK)`. Use this when your test depends on the real Windows message flow (e.g. some VCL Styles redraw paths). Default dispatch is faster and fires `OnClick` directly.
+- `timeoutMs` — overrides the bridge's main-thread wait for this call, in milliseconds. Default 5000 for a single click, 5000 + (count-1)*100 for batched clicks. Pass a short value (e.g. 500) when the click will open a modal dialog — expect `-32004 main_thread_blocked`, then call `dismiss_dialog`.
+- `mode='message'` (VCL-on-Windows only, implemented 2026-07-07) — posts `BM_CLICK` to the control and returns at once; the click runs when the app next pumps messages, AFTER this response. Only button-class controls handle `BM_CLICK` (`TButton`/`TBitBtn`/`TCheckBox`/`TRadioButton`) — any other class is rejected with `-32005` instead of silently no-opping. **The main use: a button whose `OnClick` opens a modal dialog** — `mode='message'` returns immediately (no `-32004`), then call `dismiss_dialog`. FMX targets reject the mode with `-32005` (use the `timeoutMs` recipe there). Windows caveat (documented BM_CLICK behavior): a button inside a native dialog box may ignore `BM_CLICK` when that dialog is not the active window — but for native dialogs you should be using `dismiss_dialog` anyway.
 
-Return shape: `{dispatchedVia: 'Click' | 'CastClick' | 'OnClick' | 'BM_CLICK', clicksDispatched: N, stoppedReason?: 'disabled'}`.
+Return shape: `{dispatchedVia: 'click' | 'onclick' | 'message', clicksDispatched: N, stoppedReason?: 'disabled'}` — `'click'` = the control's `Click` method ran (buttons and other windowed controls), `'onclick'` = the `OnClick` handler was invoked directly (non-windowed visuals like `TLabel`), `'message'` = a `BM_CLICK` was posted (async). With `mode='message'` + `count`, all posted clicks run after the response returns, so the between-iterations `Enabled` re-check cannot see those clicks' own effects.
 
 **Click the control, not the `TAction` — or use `execute_action`.** A `TAction` / `TBasicAction` has no `OnClick` — it carries `OnExecute` — so `click(path='Form.actFileExit')` fails with `-32005 unsupported_action` ("has no OnClick"). Two ways out:
 - **`execute_action(path='Form.actFileExit')`** — fires the action's `OnExecute` directly. Use this for shortcut-only actions (no menu item or button), and for actions shared by several controls when you don't want to pick one. See `### execute_action` below.
@@ -135,7 +136,7 @@ Writes `Text` (or `Caption` for label-class controls) via RTTI. `OnChange` fires
 
 Comparison is type-aware: string identity, integer/int64 equality (TAlphaColor/TColor as 32-bit), boolean equality, enum/set ordinal equality (so `[fcRed,fcBlue]` elides against `[fcBlue,fcRed]`), float exact-bits (no epsilon). This means you can resend the same value harmlessly and the host app won't see a phantom `OnChange`.
 
-**Parent-inheritance auto-flip (VCL only):** when you write `Font.*`, `Color`, `BiDiMode`, `ShowHint`, `DoubleBuffered`, `CustomHint`, or `Ctl3D` on a control whose `Parent<X>` is `TRUE` (the VCL default), the bridge sets `Parent<X>:=FALSE` first. The VCL does the same flip inside `SetColor`/`FontChanged` — but only on a *value-changing* write; pre-empting it guarantees the flip even on an elided resend, so the state is always "the control owns this property", never a lying no-op. Silent (no response field). To restore inheritance, write `ParentFont:=true` (or the matching `Parent<X>`) afterward. FMX has no equivalent and does not flip.
+**Parent-inheritance auto-flip (VCL only):** when a write to `Font.*`, `Color`, `BiDiMode`, `ShowHint`, `DoubleBuffered`, `CustomHint`, or `Ctl3D` SUCCEEDS — including an elided resend — the bridge sets the matching `Parent<X>:=FALSE`, so the state is always "the control owns this property". (The VCL only does that flip itself on a *value-changing* write, which an elided resend never reaches.) Success-only since 2026-07-07: a REJECTED value (bad coercion, read-only inner) leaves `Parent<X>` untouched instead of detaching inheritance as a side effect of a failed call. Silent (no response field). To restore inheritance, write `ParentFont:=true` (or the matching `Parent<X>`) afterward. FMX has no equivalent and does not flip.
 
 ### `read_property`
 
@@ -195,7 +196,12 @@ Lists and dismisses native OS dialogs that the component tools cannot see. `Appl
 - Call with **no `button`** to LIST the dialogs currently up. Response: `{dialogs:[{hwnd, class, caption, text, buttons:[{id, caption, enabled}]}], supported, platform}`.
 - Call with **`button`** to dismiss one. `button` is a role (`ok`/`cancel`/`yes`/`no`/`retry`/`abort`/`ignore`/`close`/`tryagain`/`continue`), a button caption (exact then substring, case-insensitive), or a numeric control id. `hwnd` targets a specific dialog when several are stacked; omit it for the topmost. Response adds `{clicked, clickedId, clickedCaption, reason?}`. `reason` is `no_dialog` or `button_not_found` when `clicked:false`.
 
-**The footgun this solves.** When you `click` a control whose `OnClick` opens a modal dialog, that click never returns — the main thread enters the dialog's modal loop — so the call ends in `-32004 main_thread_blocked` while the dialog stays up. Pass a short `timeoutMs` to that `click`, expect `main_thread_blocked`, then call `dismiss_dialog(button=...)`. The dialog's own modal loop still pumps the bridge, so the dismiss lands and the app unblocks.
+**The footgun this solves.** When you `click` a control whose `OnClick` opens a modal dialog, that click never returns — the main thread enters the dialog's modal loop. Two recipes:
+
+- **Preferred (VCL button-class controls, 2026-07-07):** `click(path, mode='message')` — returns immediately (the `BM_CLICK` is posted; the dialog opens after the response), then `dismiss_dialog(button=...)`. No error, no timeout burned.
+- **Fallback (FMX targets, or non-button controls):** pass a short `timeoutMs` to the `click`, expect `-32004 main_thread_blocked`, then call `dismiss_dialog(button=...)`.
+
+Either way the dialog's own modal loop still pumps the bridge, so the dismiss lands and the app unblocks.
 
 Windows targets only. Against an Android FMX target the response is `supported:false` (Android dialogs are ART windows, out of Win32 reach).
 

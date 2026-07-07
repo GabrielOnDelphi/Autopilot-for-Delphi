@@ -1,7 +1,7 @@
 ﻿unit Autopilot.Bridge.NativeDialogs;
 
 {=============================================================================================================
-   2026.06
+   2026.07.07
    www.GabrielMoraru.com
 --------------------------------------------------------------------------------------------------------------
    - Native Win32 dialog escape hatch: reaches MessageBox / Task Dialog / common dialogs with no TComponent
@@ -53,16 +53,31 @@ end;
 
 { Win32 reads --------------------------------------------------------------- }
 
+const
+  TextReadTimeoutMs = 1000;   // per-read cap; after the first hung read SMTO_ABORTIFHUNG fails the rest fast
+
+// GetWindowText would be simpler, but for a window of THIS process it sends WM_GETTEXT and
+// waits with NO timeout (learn.microsoft.com GetWindowTextW, Remarks: "if the target window
+// is not responding and it belongs to the calling application, GetWindowText will cause the
+// calling application to become unresponsive") — and every window enumerated here IS
+// same-process. A dialog owned by a hung non-main thread would freeze the dispatcher, and
+// with it the whole app. SendMessageTimeout degrades that to an empty string instead. For a
+// window on the CURRENT thread the proc is called directly and the timeout is ignored
+// (SendMessageTimeoutW, Remarks), so the normal main-thread-dialog path behaves as before.
 function WindowTextOf(AWnd: HWND): String;
 var
-  Len: Integer;
+  Len, Copied: DWORD_PTR;
 begin
-  Len := GetWindowTextLength(AWnd);
-  if Len <= 0 then exit('');
-  SetLength(Result, Len);
-  Len := GetWindowText(AWnd, PChar(Result), Len + 1);   // nMaxCount includes the null terminator
-  if Len < 0 then Len := 0;
-  SetLength(Result, Len);
+  Result := '';
+  Len := 0;
+  if SendMessageTimeout(AWnd, WM_GETTEXTLENGTH, 0, 0, SMTO_ABORTIFHUNG, TextReadTimeoutMs, @Len) = 0 then exit;
+  if Len = 0 then exit;
+  SetLength(Result, Integer(Len));
+  Copied := 0;
+  // wParam counts the terminating null too; String[Len] has an implicit #0 slot beyond Len.
+  if SendMessageTimeout(AWnd, WM_GETTEXT, WPARAM(Len) + 1, LPARAM(PChar(Result)), SMTO_ABORTIFHUNG, TextReadTimeoutMs, @Copied) = 0 then
+    exit('');
+  SetLength(Result, Integer(Copied));
 end;
 
 
