@@ -1,7 +1,7 @@
 ﻿unit Autopilot.Mcp.AdbForward;
 
 {=============================================================================================================
-   2026.06
+   2026.07.07
    www.GabrielMoraru.com
 --------------------------------------------------------------------------------------------------------------
    - Thin wrapper around the `adb forward` command: tunnels a host loopback TCP port over USB to a listener on the Android device.
@@ -111,6 +111,7 @@ var
   Sa        : TSecurityAttributes;
   ReadPipe  : THandle;
   WritePipe : THandle;
+  NulIn     : THandle;
   Si        : TStartupInfo;
   Pi        : TProcessInformation;
   FullCmd   : String;
@@ -127,11 +128,21 @@ begin
   Sa.nLength        := SizeOf(Sa);
   Sa.bInheritHandle := True;
 
+  NulIn := INVALID_HANDLE_VALUE;
   if not CreatePipe(ReadPipe, WritePipe, @Sa, 0) then
     raise Exception.CreateFmt('CreatePipe failed (code %d)', [GetLastError]);
   try
     // The read end must NOT be inherited by the child.
     SetHandleInformation(ReadPipe, HANDLE_FLAG_INHERIT, 0);
+
+    // The child must NOT inherit our real stdin either: that handle IS the MCP
+    // JSON-RPC channel from the AI host, and the long-lived adb SERVER a cold adb
+    // run forks would keep holding it (and could read from it, stealing protocol
+    // bytes). Hand the child an inheritable NUL handle instead.
+    NulIn := CreateFileW('NUL', GENERIC_READ, FILE_SHARE_READ or FILE_SHARE_WRITE,
+                         @Sa, OPEN_EXISTING, 0, 0);
+    if NulIn = INVALID_HANDLE_VALUE then
+      raise Exception.CreateFmt('CreateFile(NUL) failed (code %d)', [GetLastError]);
 
     Si := Default(TStartupInfo);
     Si.cb         := SizeOf(Si);
@@ -139,7 +150,7 @@ begin
     Si.wShowWindow:= SW_HIDE;
     Si.hStdOutput := WritePipe;
     Si.hStdError  := WritePipe;
-    Si.hStdInput  := GetStdHandle(STD_INPUT_HANDLE);
+    Si.hStdInput  := NulIn;
 
     // CreateProcessW may modify the command-line buffer in place — use a UniqueString.
     FullCmd := '"' + AExe + '" ' + ACmdLine;
@@ -191,6 +202,7 @@ begin
       CloseHandle(Pi.hProcess);
     end;
   finally
+    if NulIn <> INVALID_HANDLE_VALUE then CloseHandle(NulIn);
     if WritePipe <> 0 then CloseHandle(WritePipe);
     CloseHandle(ReadPipe);
   end;

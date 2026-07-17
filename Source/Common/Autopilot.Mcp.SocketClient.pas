@@ -1,12 +1,15 @@
 ﻿unit Autopilot.Mcp.SocketClient;
 
 {=============================================================================================================
-   2026.06
+   2026.07.07
    www.GabrielMoraru.com
 --------------------------------------------------------------------------------------------------------------
    - TCP loopback socket client for the MCP-server side of the bridge — reaches an Android target via `adb forward`.
    - TSocketStream wraps a Winsock socket as a TStream so TBridgeWire can frame over it without modification.
    - Same hello/helloAck handshake and length-prefixed frame wire format as the named-pipe client.
+   - Every recv/send after connect runs under an I/O deadline (SO_RCVTIMEO/SO_SNDTIMEO): a target that accepts
+     the connection but stops servicing the wire (frozen app, dead adb forward) raises ETargetNotResponding
+     instead of blocking the single-threaded MCP server forever.
    - No VCL, no FMX, no LightSaber, no Indy. Stdlib + Winsock only.
 =============================================================================================================}
 
@@ -35,6 +38,8 @@ type
 /// Run one round-trip over a loopback TCP socket: connect, read bridge hello,
 /// write helloAck, send one command frame, read one response, close.
 /// Returns the parsed response object (caller frees) or raises on transport failure.
+/// ATimeoutMs budgets the connect phase; every recv/send after connect runs under a deadline of
+/// ATimeoutMs + IoDeadlineGraceMs and raises ETargetNotResponding when it expires (frozen target).
 /// Mirrors Autopilot.Mcp.PipeClient.CallTarget exactly, port for socket.
 function CallTargetSocket(APort: Word; ARequestJson: TJSONObject; ATimeoutMs: Cardinal = 5000): TJSONObject;
 
@@ -119,19 +124,27 @@ end;
 
 function TSocketStream.Read(var Buffer; Count: Longint): Longint;
 var
-  N: Integer;
+  N, Err: Integer;
 begin
   if Count <= 0 then Exit(0);
   N := recv(FSocket, Buffer, Count, 0);
   if N = SOCKET_ERROR then
-    raise Exception.CreateFmt('socket recv failed (code %d)', [WSAGetLastError]);
+  begin
+    Err := WSAGetLastError;
+    // WSAETIMEDOUT here = the SO_RCVTIMEO deadline set by CallTargetSocket expired:
+    // the target accepted the connection but sent nothing back within the deadline.
+    if Err = WSAETIMEDOUT then
+      raise ETargetNotResponding.Create(
+        'target accepted the socket connection but sent no reply within the I/O deadline — frozen, hung, or screen-off-frozen (Android)?');
+    raise Exception.CreateFmt('socket recv failed (code %d)', [Err]);
+  end;
   // N = 0 means the peer closed — surface as 0 so TBridgeWire.ReadFully sees EOF.
   Result := N;
 end;
 
 function TSocketStream.Write(const Buffer; Count: Longint): Longint;
 var
-  Sent, N: Integer;
+  Sent, N, Err: Integer;
   P: PByte;
 begin
   // send() may write fewer bytes than asked — loop until the whole buffer goes
@@ -142,7 +155,14 @@ begin
   begin
     N := send(FSocket, P^, Count - Sent, 0);
     if N = SOCKET_ERROR then
-      raise Exception.CreateFmt('socket send failed (code %d)', [WSAGetLastError]);
+    begin
+      Err := WSAGetLastError;
+      // SO_SNDTIMEO deadline: the peer stopped draining its receive buffer.
+      if Err = WSAETIMEDOUT then
+        raise ETargetNotResponding.Create(
+          'target accepted the socket connection but stopped accepting data within the I/O deadline — frozen or hung?');
+      raise Exception.CreateFmt('socket send failed (code %d)', [Err]);
+    end;
     if N = 0 then
       raise Exception.Create('socket send returned 0 (peer closed)');
     Inc(Sent, N);
@@ -267,15 +287,24 @@ end;
 
 function CallTargetSocket(APort: Word; ARequestJson: TJSONObject; ATimeoutMs: Cardinal): TJSONObject;
 var
-  Sock    : TSocket;
-  Stream  : TSocketStream;
-  HelloRaw: String;
-  Frame   : String;
-  Parsed  : TJSONValue;
+  Sock       : TSocket;
+  Stream     : TSocketStream;
+  HelloRaw   : String;
+  Frame      : String;
+  Parsed     : TJSONValue;
+  IoTimeoutMs: DWORD;
 begin
   EnsureWinsock;   // one-time, lock-free; raises if Winsock can't start
   Sock := ConnectLoopbackWithTimeout(APort, ATimeoutMs);
   try
+    // I/O deadline: on Windows SO_RCVTIMEO/SO_SNDTIMEO take a DWORD of milliseconds.
+    // A recv/send past the deadline fails with WSAETIMEDOUT, which TSocketStream turns
+    // into ETargetNotResponding. The socket is in an indeterminate state after such a
+    // timeout (per WinSock docs) — fine here: it is closed on the way out of this call.
+    IoTimeoutMs := ATimeoutMs + IoDeadlineGraceMs;
+    if (setsockopt(Sock, SOL_SOCKET, SO_RCVTIMEO, PAnsiChar(@IoTimeoutMs), SizeOf(IoTimeoutMs)) = SOCKET_ERROR) or
+       (setsockopt(Sock, SOL_SOCKET, SO_SNDTIMEO, PAnsiChar(@IoTimeoutMs), SizeOf(IoTimeoutMs)) = SOCKET_ERROR) then
+      raise Exception.CreateFmt('setsockopt(SO_RCVTIMEO/SO_SNDTIMEO) failed (code %d)', [WSAGetLastError]);
     Stream := TSocketStream.Create(Sock);
     try
       // Bridge writes hello first. We don't verify contents — the bridge owns the wire format.
