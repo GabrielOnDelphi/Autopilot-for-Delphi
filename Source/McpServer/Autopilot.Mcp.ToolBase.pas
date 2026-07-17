@@ -1,7 +1,7 @@
 unit Autopilot.Mcp.ToolBase;
 
 {=============================================================================================================
-   2026.06
+   2026.07.07
    www.GabrielMoraru.com
 --------------------------------------------------------------------------------------------------------------
    - Shared logic for all Autopilot MCP tools.
@@ -37,6 +37,9 @@ function BuildRequest(AId: Int64; const ACmd: String; AArgs: TJSONObject; ATimeo
 /// Frees the response object internally so callers don't deal with ownership.
 /// On nil request raises; on transport failure raises; on bridge-level errors,
 /// returns the {ok:false,error:{...}} JSON as a string (the caller can parse if needed).
+/// Exception: an I/O-deadline expiry (target accepted the connection but stopped responding —
+/// ETargetNotResponding from either transport client) is NOT re-raised; it comes back as the
+/// documented {ok:false,error:{code:-32098,message:...}} envelope, same shape as a bridge error.
 /// ATimeoutMs governs the pipe-side wait; should be >= any timeoutMs embedded in ARequest
 /// so the pipe doesn't time out before the bridge does.
 function RunCommandOnTarget(APid: Cardinal; ARequest: TJSONObject; ATimeoutMs: Cardinal = 0): String;
@@ -84,6 +87,30 @@ begin
 end;
 
 
+// The ErrTargetNotResponding envelope, byte-compatible with SerializeResponse's error
+// shape, so tools (and the AI) see the same {ok:false,error:{code,message}} contract
+// whether the error came from the bridge or from the MCP-side I/O deadline.
+function BuildNotRespondingEnvelope(ARequest: TJSONObject; const AMessage: String): String;
+var
+  Root, ErrObj: TJSONObject;
+  IdVal: Int64;
+begin
+  if not TryJsonInt64(ARequest.GetValue('id'), IdVal) then IdVal := 0;
+  Root := TJSONObject.Create;
+  try
+    Root.AddPair('id', TJSONNumber.Create(IdVal));
+    Root.AddPair('ok', TJSONBool.Create(False));
+    ErrObj := TJSONObject.Create;
+    Root.AddPair('error', ErrObj);   // attach before filling so Root owns it from here on
+    ErrObj.AddPair('code', TJSONNumber.Create(ErrTargetNotResponding));
+    ErrObj.AddPair('message', AMessage);
+    Result := Root.ToJSON;
+  finally
+    FreeAndNil(Root);
+  end;
+end;
+
+
 function RunCommandOnTarget(APid: Cardinal; ARequest: TJSONObject; ATimeoutMs: Cardinal = 0): String;
 var
   PipeName, CmdName: String;
@@ -114,6 +141,11 @@ begin
       try
         Resp := CallTargetSocket(AdbHostPort, ARequest, PipeTimeout);
       except
+        on E: ETargetNotResponding do
+        begin
+          BridgeLogError('mcp', 'cmd=' + CmdName + ' target-not-responding (adb-socket): ' + E.Message);
+          Exit(BuildNotRespondingEnvelope(ARequest, E.Message));   // outer finally still frees ARequest
+        end;
         on E: Exception do
         begin
           BridgeLogError('mcp', 'cmd=' + CmdName + ' transport-fail (adb-socket): ' + E.ClassName + ': ' + E.Message);
@@ -129,6 +161,11 @@ begin
       try
         Resp := CallTarget(PipeName, ARequest, PipeTimeout);
       except
+        on E: ETargetNotResponding do
+        begin
+          BridgeLogError('mcp', 'cmd=' + CmdName + ' target-not-responding: ' + E.Message);
+          Exit(BuildNotRespondingEnvelope(ARequest, E.Message));   // outer finally still frees ARequest
+        end;
         on E: Exception do
         begin
           BridgeLogError('mcp', 'cmd=' + CmdName + ' transport-fail: ' + E.ClassName + ': ' + E.Message);
