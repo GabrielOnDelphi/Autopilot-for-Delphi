@@ -265,7 +265,7 @@ All bridge errors use JSON-RPC error envelopes with custom codes:
 | -32004 | `main_thread_blocked`   | Dispatch timed out                   | Target main thread is busy (long handler, modal with custom message loop)       |
 | -32005 | `unsupported_action`    | Class doesn't support the request    | e.g. clicking a `TPanel` with no `OnClick`, set_property on a non-writable kind |
 | -32006 | `rtti_property_missing` | Property not exposed via RTTI        | Property isn't `published`, or doesn't exist                                    |
-| -32098 | `target_not_responding` | Pipe write timeout (MCP side)        | Bridge worker stuck — target may have crashed                                   |
+| -32098 | `target_not_responding` | I/O deadline expired after connect (MCP side) | Whole target frozen (IDE breakpoint, hang) — the call fails after per-call timeout + 2 s instead of hanging |
 | -32099 | `target_not_running`    | Pipe not connected (MCP side)        | Discovery file absent; ask the user to launch the target                        |
 
 `set_property` failures with code `rtti_property_missing` carry `error.data.availableProperties` — use it to self-correct.
