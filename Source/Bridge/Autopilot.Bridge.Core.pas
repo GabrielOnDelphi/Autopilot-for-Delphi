@@ -1,7 +1,7 @@
 ﻿unit Autopilot.Bridge.Core;
 
 {=============================================================================================================
-   2026.06
+   2026.07.07
    www.GabrielMoraru.com
 --------------------------------------------------------------------------------------------------------------
    - Shared protocol types and wire-framing helpers for the Autopilot bridge (all platforms)
@@ -31,6 +31,12 @@ const
   DefaultTimeoutClickMs      = 5000;
   DefaultTimeoutScreenshotMs = 30000;
 
+  // Grace added on top of the per-command timeout to form the MCP-side I/O deadline.
+  // The bridge worker itself answers ErrMainThreadBlocked at ~timeoutMs, so the MCP
+  // client must wait LONGER than that before declaring the target dead — a deadline
+  // equal to the command timeout would race the worker's own -32004 response.
+  IoDeadlineGraceMs = 2000;
+
   // JSON-RPC custom error codes. Same numbers used on both sides of the pipe.
   ErrNotFound            = -32001;
   ErrAmbiguousPath       = -32002;
@@ -45,6 +51,13 @@ const
   ErrInternalError       = -32603;
 
 type
+  /// Raised by the MCP-side transport clients (PipeClient / SocketClient) when the
+  /// I/O deadline expires AFTER a connection was established: the target accepted the
+  /// connection but stopped servicing the wire (typical case: the whole target is
+  /// frozen on an IDE breakpoint, so even its worker thread is suspended).
+  /// Autopilot.Mcp.ToolBase catches this and emits the ErrTargetNotResponding envelope.
+  ETargetNotResponding = class(Exception);
+
   /// Owned-result record returned by the main-thread dispatcher.
   /// Caller frees ResultJson / ErrorMessage strings normally; the JSON is owned.
   TBridgeResponse = record
