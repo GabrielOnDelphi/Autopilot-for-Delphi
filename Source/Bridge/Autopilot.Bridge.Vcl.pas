@@ -550,52 +550,64 @@ var
 begin
   Assert(GetCurrentThreadId = MainThreadID, 'ListWritableProperties: VCL touched off the main thread');
   Result := TJSONArray.Create;
-  Ctx := TRttiContext.Create;
   try
-    RT := Ctx.GetType(AInstance.ClassType);
-    if RT = NIL then exit;
-    for Prop in RT.GetProperties do
-    begin
-      if not Prop.IsWritable then Continue;
-      // Only list types set_property can write today: string / int / int64 / enum / set / float / class.
-      // Surfacing methods, interfaces, variants etc. just sets the AI up to fail again.
-      // tkClass is included so the AI sees that 'Outer.Inner' nesting is available.
-      // TAlphaColor is tkInteger by RTTI but we label it 'alphacolor' so the AI
-      // knows to send '#AARRGGBB' / 'claName' rather than a raw integer.
-      case Prop.PropertyType.TypeKind of
-        tkString, tkLString, tkWString, tkUString: KindName := 'string';
-        tkInteger:
-          if Prop.PropertyType.Handle = TypeInfo(TAlphaColor) then
-            KindName := 'alphacolor'
-          else if Prop.PropertyType.Handle = TypeInfo(TColor) then
-            KindName := 'color'
-          else
-            KindName := 'integer';
-        tkInt64:                                    KindName := 'int64';
-        tkEnumeration:
-          if Prop.PropertyType.Handle = TypeInfo(Boolean) then
-            KindName := 'boolean'
-          else
-            KindName := 'enum';
-        tkSet:                                      KindName := 'set';
-        tkFloat:                                    KindName := 'float';
-        tkClass:                                    KindName := 'class';
-      else
-        Continue;
+    Ctx := TRttiContext.Create;
+    try
+      RT := Ctx.GetType(AInstance.ClassType);
+      if RT = NIL then exit;
+      for Prop in RT.GetProperties do
+      begin
+        if not Prop.IsWritable then Continue;
+        // Only list types set_property can write today: string / int / int64 / enum / set / float / class.
+        // Surfacing methods, interfaces, variants etc. just sets the AI up to fail again.
+        // tkClass is included so the AI sees that 'Outer.Inner' nesting is available.
+        // TAlphaColor is tkInteger by RTTI but we label it 'alphacolor' so the AI
+        // knows to send '#AARRGGBB' / 'claName' rather than a raw integer.
+        case Prop.PropertyType.TypeKind of
+          tkString, tkLString, tkWString, tkUString: KindName := 'string';
+          tkInteger:
+            if Prop.PropertyType.Handle = TypeInfo(TAlphaColor) then
+              KindName := 'alphacolor'
+            else if Prop.PropertyType.Handle = TypeInfo(TColor) then
+              KindName := 'color'
+            else
+              KindName := 'integer';
+          tkInt64:                                    KindName := 'int64';
+          tkEnumeration:
+            if Prop.PropertyType.Handle = TypeInfo(Boolean) then
+              KindName := 'boolean'
+            else
+              KindName := 'enum';
+          tkSet:                                      KindName := 'set';
+          tkFloat:                                    KindName := 'float';
+          tkClass:                                    KindName := 'class';
+        else
+          Continue;
+        end;
+        Node := TJSONObject.Create;
+        try
+          Node.AddPair('name', Prop.Name);
+          Node.AddPair('kind', KindName);
+          // For tkClass the 'currentValue' string would be a meaningless object pointer.
+          // Skip it for that kind — TryReadPropertyAsString already returns FALSE for
+          // tkClass, which omits the field, but be explicit.
+          if Prop.PropertyType.TypeKind <> tkClass then
+            if TryReadPropertyAsString(AInstance, Prop, CurStr) then
+              Node.AddPair('currentValue', CurStr);
+          Result.AddElement(Node);   // ownership moves to Result
+        except
+          FreeAndNil(Node);
+          raise;
+        end;
       end;
-      Node := TJSONObject.Create;
-      Node.AddPair('name', Prop.Name);
-      Node.AddPair('kind', KindName);
-      // For tkClass the 'currentValue' string would be a meaningless object pointer.
-      // Skip it for that kind — TryReadPropertyAsString already returns FALSE for
-      // tkClass, which omits the field, but be explicit.
-      if Prop.PropertyType.TypeKind <> tkClass then
-        if TryReadPropertyAsString(AInstance, Prop, CurStr) then
-          Node.AddPair('currentValue', CurStr);
-      Result.AddElement(Node);
+    finally
+      Ctx.Free;
     end;
-  finally
-    Ctx.Free;
+  except
+    // OOM-class guard: free the partly-built array (and its nodes) before re-raising —
+    // the caller receives only the exception, never the orphaned Result.
+    FreeAndNil(Result);
+    raise;
   end;
 end;
 
@@ -1897,7 +1909,14 @@ begin
     begin
       Result.ErrorData := TJSONObject.Create;
       if FailedInstance = NIL then FailedInstance := Comp;
-      Result.ErrorData.AddPair('availableProperties', ListWritableProperties(FailedInstance));
+      try
+        Result.ErrorData.AddPair('availableProperties', ListWritableProperties(FailedInstance));
+      except
+        // OOM-class guard: a raise out of the lister must not orphan the just-built
+        // ErrorData — the worker's catch sees only the exception, never this record.
+        FreeAndNil(Result.ErrorData);
+        raise;
+      end;
     end;
     exit;
   end;
@@ -2034,46 +2053,56 @@ var
 begin
   Assert(GetCurrentThreadId = MainThreadID, 'ListReadableProperties: VCL touched off the main thread');
   Result := TJSONArray.Create;
-  Ctx := TRttiContext.Create;
   try
-    RT := Ctx.GetType(AInstance.ClassType);
-    if RT = NIL then exit;
-    for Prop in RT.GetProperties do
-    begin
-      if not Prop.IsReadable then Continue;
-      // Same kind filter as ListWritableProperties — surfacing methods / variants /
-      // interfaces sets the AI up to fail again on the retry.
-      case Prop.PropertyType.TypeKind of
-        tkString, tkLString, tkWString, tkUString: KindName := 'string';
-        tkInteger:
-          if Prop.PropertyType.Handle = TypeInfo(TAlphaColor) then
-            KindName := 'alphacolor'
-          else if Prop.PropertyType.Handle = TypeInfo(TColor) then
-            KindName := 'color'
-          else
-            KindName := 'integer';
-        tkInt64:                                    KindName := 'int64';
-        tkEnumeration:
-          if Prop.PropertyType.Handle = TypeInfo(Boolean) then
-            KindName := 'boolean'
-          else
-            KindName := 'enum';
-        tkSet:                                      KindName := 'set';
-        tkFloat:                                    KindName := 'float';
-        tkClass:                                    KindName := 'class';
-      else
-        Continue;
+    Ctx := TRttiContext.Create;
+    try
+      RT := Ctx.GetType(AInstance.ClassType);
+      if RT = NIL then exit;
+      for Prop in RT.GetProperties do
+      begin
+        if not Prop.IsReadable then Continue;
+        // Same kind filter as ListWritableProperties — surfacing methods / variants /
+        // interfaces sets the AI up to fail again on the retry.
+        case Prop.PropertyType.TypeKind of
+          tkString, tkLString, tkWString, tkUString: KindName := 'string';
+          tkInteger:
+            if Prop.PropertyType.Handle = TypeInfo(TAlphaColor) then
+              KindName := 'alphacolor'
+            else if Prop.PropertyType.Handle = TypeInfo(TColor) then
+              KindName := 'color'
+            else
+              KindName := 'integer';
+          tkInt64:                                    KindName := 'int64';
+          tkEnumeration:
+            if Prop.PropertyType.Handle = TypeInfo(Boolean) then
+              KindName := 'boolean'
+            else
+              KindName := 'enum';
+          tkSet:                                      KindName := 'set';
+          tkFloat:                                    KindName := 'float';
+          tkClass:                                    KindName := 'class';
+        else
+          Continue;
+        end;
+        Node := TJSONObject.Create;
+        try
+          Node.AddPair('name', Prop.Name);
+          Node.AddPair('kind', KindName);
+          if Prop.PropertyType.TypeKind <> tkClass then
+            if TryReadPropertyAsString(AInstance, Prop, CurStr) then
+              Node.AddPair('currentValue', CurStr);
+          Result.AddElement(Node);   // ownership moves to Result
+        except
+          FreeAndNil(Node);
+          raise;
+        end;
       end;
-      Node := TJSONObject.Create;
-      Node.AddPair('name', Prop.Name);
-      Node.AddPair('kind', KindName);
-      if Prop.PropertyType.TypeKind <> tkClass then
-        if TryReadPropertyAsString(AInstance, Prop, CurStr) then
-          Node.AddPair('currentValue', CurStr);
-      Result.AddElement(Node);
+    finally
+      Ctx.Free;
     end;
-  finally
-    Ctx.Free;
+  except
+    FreeAndNil(Result);   // same OOM-class guard as ListWritableProperties
+    raise;
   end;
 end;
 
@@ -2295,7 +2324,12 @@ begin
     begin
       Result.ErrorData := TJSONObject.Create;
       if FailedInstance = NIL then FailedInstance := Comp;
-      Result.ErrorData.AddPair('availableProperties', ListReadableProperties(FailedInstance));
+      try
+        Result.ErrorData.AddPair('availableProperties', ListReadableProperties(FailedInstance));
+      except
+        FreeAndNil(Result.ErrorData);   // same OOM-class guard as HandleSetProperty
+        raise;
+      end;
     end;
     exit;
   end;
