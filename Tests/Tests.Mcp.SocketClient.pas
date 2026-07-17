@@ -1,11 +1,12 @@
 ﻿unit Tests.Mcp.SocketClient;
 
 {=============================================================================================================
-   2026.06
+   2026.07.07
    www.GabrielMoraru.com
 --------------------------------------------------------------------------------------------------------------
    - DUnitX tests for Autopilot.Mcp.SocketClient: PC-side proof using a synthetic TFakeBridgeListener that runs on a background thread and speaks the wire protocol (hello frame, request/response round-trip).
-   - Covers connect+handshake, response field inspection, and connect-refused timeout behaviour.
+   - Covers connect+handshake, response field inspection, connect-refused timeout behaviour, and the S2 wedge
+     scenario (target accepts + handshakes then never answers -> ETargetNotResponding via SO_RCVTIMEO).
    - No physical Android device needed. Stdlib + Winsock only.
 =============================================================================================================}
 
@@ -21,6 +22,7 @@ type
     [Test] procedure Test_RoundTrip_EchoesResponse;
     [Test] procedure Test_Response_CarriesResultFields;
     [Test] procedure Test_ConnectRefused_RaisesWithinTimeout;
+    [Test] procedure Test_WedgedTarget_RaisesNotResponding;
   end;
 
 
@@ -37,21 +39,25 @@ uses
 
 // A one-shot loopback TCP listener that imitates the device bridge for exactly
 // one connection: accept → write hello → read one request frame → write the
-// response the test gave it → close. Runs on its own thread so the test thread
-// can drive CallTargetSocket synchronously. Picks an ephemeral port (bind :0)
-// and exposes it via Port once StartListening returns.
+// response the test gave it → close. In wedge mode it instead answers NOTHING
+// after reading the request and holds the connection open (the frozen target of
+// review item S2). Runs on its own thread so the test thread can drive
+// CallTargetSocket synchronously. Picks an ephemeral port (bind :0) and exposes
+// it via Port once StartListening returns.
 type
   TFakeBridgeListener = class(TThread)
   strict private
     FListenSock : TSocket;
     FPort       : Word;
     FResponse   : String;     // canned response JSON written back to the client
+    FWedge      : Boolean;    // TRUE = never respond; hold the connection until released
     FReady      : TEvent;     // signalled once bound+listening (Port is valid)
+    FRelease    : TEvent;     // signalled by Destroy to let a wedged Execute finish
     FSawRequest : String;     // the request frame the client sent (for assertions)
   protected
     procedure Execute; override;
   public
-    constructor Create(const AResponseJson: String);
+    constructor Create(const AResponseJson: String; AWedgeAfterRequest: Boolean = False);
     destructor Destroy; override;
     procedure WaitUntilReady;
     property Port: Word read FPort;
@@ -59,7 +65,7 @@ type
   end;
 
 
-constructor TFakeBridgeListener.Create(const AResponseJson: String);
+constructor TFakeBridgeListener.Create(const AResponseJson: String; AWedgeAfterRequest: Boolean = False);
 var
   WsaData: TWSAData;
 begin
@@ -70,7 +76,9 @@ begin
   if WSAStartup($0202, WsaData) <> 0 then
     raise Exception.CreateFmt('FakeBridgeListener: WSAStartup failed (code %d)', [WSAGetLastError]);
   FResponse := AResponseJson;
+  FWedge    := AWedgeAfterRequest;
   FReady    := TEvent.Create(nil, True, False, '');   // manual-reset
+  FRelease  := TEvent.Create(nil, True, False, '');
   FListenSock := INVALID_SOCKET;
   inherited Create(False);   // start immediately
 end;
@@ -78,6 +86,7 @@ end;
 
 destructor TFakeBridgeListener.Destroy;
 begin
+  FRelease.SetEvent;   // let a wedged Execute proceed to its cleanup
   if FListenSock <> INVALID_SOCKET then
   begin
     closesocket(FListenSock);
@@ -85,6 +94,7 @@ begin
   end;
   inherited;     // joins the thread
   FReady.Free;
+  FRelease.Free;
   WSACleanup;    // pairs with the WSAStartup in Create
 end;
 
@@ -140,8 +150,11 @@ begin
       if not TBridgeWire.TryReadFrame(Stream, ReqFrame) then Exit;   // helloAck
       if not TBridgeWire.TryReadFrame(Stream, FSawRequest) then Exit; // the command
 
-      // 3. Write the canned response.
-      TBridgeWire.WriteFrame(Stream, FResponse);
+      // 3. Write the canned response — or wedge like a frozen target (S2).
+      if FWedge then
+        FRelease.WaitFor(30000)
+      else
+        TBridgeWire.WriteFrame(Stream, FResponse);
     finally
       Stream.Free;
     end;
@@ -244,6 +257,50 @@ begin
   end;
   Assert.IsTrue(Raised, 'expected a transport exception on connect-refused');
   Assert.IsTrue(GetTickCount64 - T0 < 5000, 'connect-refused took too long — timeout not honoured');
+end;
+
+
+procedure TSocketClientTests.Test_WedgedTarget_RaisesNotResponding;
+var
+  Listener   : TFakeBridgeListener;
+  Req        : TJSONObject;
+  Resp       : TJSONObject;
+  T0, Elapsed: UInt64;
+  RaisedRight: Boolean;
+begin
+  // Review item S2, socket transport: the target ACCEPTS the connection and completes
+  // the handshake, then never answers the command (frozen app / dead adb forward).
+  // CallTargetSocket must raise ETargetNotResponding at ~(timeout + IoDeadlineGraceMs)
+  // via SO_RCVTIMEO — not block the single-threaded MCP server forever.
+  Listener := TFakeBridgeListener.Create('', True);   // wedge after reading the request
+  try
+    Listener.WaitUntilReady;
+
+    Req := TJSONObject.Create;
+    Req.AddPair('id', TJSONNumber.Create(1));
+    Req.AddPair('cmd', 'get_text');
+    RaisedRight := False;
+    T0 := GetTickCount64;
+    try
+      try
+        Resp := CallTargetSocket(Listener.Port, Req, 500);
+        FreeAndNil(Resp);   // must not be reached
+      except
+        on E: ETargetNotResponding do
+          RaisedRight := True;
+        // Any OTHER exception escapes on purpose — the test then errors with the real message.
+      end;
+    finally
+      FreeAndNil(Req);
+    end;
+    Elapsed := GetTickCount64 - T0;
+
+    Assert.IsTrue(RaisedRight, 'expected ETargetNotResponding from the wedged target');
+    Assert.IsTrue(Elapsed >= 2000, 'deadline fired too early (' + IntToStr(Elapsed) + ' ms) — grace not applied?');
+    Assert.IsTrue(Elapsed < 10000, 'deadline fired too late (' + IntToStr(Elapsed) + ' ms) — SO_RCVTIMEO not applied?');
+  finally
+    Listener.Free;
+  end;
 end;
 
 

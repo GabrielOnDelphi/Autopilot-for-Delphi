@@ -33,6 +33,7 @@ USES
   MCPServer.Registration      in '..\Source\McpServer\Mcp\MCPServer.Registration.pas',
   Autopilot.Mcp.JsonRpc      in '..\Source\McpServer\Mcp\Autopilot.Mcp.JsonRpc.pas',
   Autopilot.Mcp.SocketClient in '..\Source\Common\Autopilot.Mcp.SocketClient.pas',
+  Autopilot.Mcp.PipeClient   in '..\Source\Common\Autopilot.Mcp.PipeClient.pas',
   Bridge.TestClient           in 'Bridge.TestClient.pas',
   Bridge.Tests                in 'Bridge.Tests.pas',
   Tests.Bridge.Worker         in 'Tests.Bridge.Worker.pas',
@@ -41,6 +42,7 @@ USES
   Tests.Mcp.Serializer        in 'Tests.Mcp.Serializer.pas',
   Tests.Mcp.JsonRpc           in 'Tests.Mcp.JsonRpc.pas',
   Tests.Mcp.SocketClient      in 'Tests.Mcp.SocketClient.pas',
+  Tests.Mcp.PipeClient        in 'Tests.Mcp.PipeClient.pas',
   Tests.LeakSuppressor        in 'Tests.LeakSuppressor.pas';
 
 VAR
