@@ -6,11 +6,7 @@ Day-to-day operational commands, split out of `HANDOVER.md` (which now tracks on
 
 ## Re-run the test suite
 
-```cmd
-cd "C:\Projects\Projects AI\Autopilot for Delphi\Tests"
-BuildTests.cmd
-Tests.exe
-```
+Build `Tests\Tests.dproj` via the light-compiler agent, then run `Tests\Tests.exe`.
 
 Expected: **105 pass, 0 ignored, 0 leaked** (last verified 2026-06-25 PM). `Tests.LeakSuppressor.pas` swallows the 3rd-party `EInOutError` + companion FMessage leak.
 
@@ -18,9 +14,7 @@ Expected: **105 pass, 0 ignored, 0 leaked** (last verified 2026-06-25 PM). `Test
 
 ## Rebuild the MCP server
 
-```cmd
-cmd /c "C:\Projects\Projects AI\Autopilot for Delphi\Source\McpServer\Build.cmd"
-```
+Build `Source\McpServer\Autopilot.Mcp.dproj` via the light-compiler agent.
 
 **Kill the running instance first** (`Stop-Process -Name Autopilot.Mcp -Force`) — the registered MCP server locks `Autopilot.Mcp.exe` for the whole Claude Code session, so an in-session rebuild silently leaves the old EXE on disk (HANDOVER Footguns). After rebuilding, Claude Code needs a restart to pick up the new EXE. Confirm the new build by checking the EXE timestamp.
 
