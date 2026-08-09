@@ -10,6 +10,13 @@ The assistant runs the whole open-click-check-fix-recompile loop on its own — 
 For full overview, demos, tool reference & quick start see **[www.GabrielMoraru.com/autopilot](https://www.GabrielMoraru.com/autopilot)**
 
 
+## License
+Dual-licensed:
+- **Noncommercial use — free**, under the [PolyForm Noncommercial License 1.0.0](LICENSE) (personal, study, research, hobby, charity, school, government).
+- **Commercial use — paid**, $25 per developer, one-time. See [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md).
+
+Source-available, not open source.
+
 ## Future plans  
 Support for Mac.
 
