@@ -1,0 +1,72 @@
+﻿<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+    <PropertyGroup>
+        <ProjectGuid>{03293C8B-DA6A-4F8B-8FAD-C014907361D0}</ProjectGuid>
+    </PropertyGroup>
+    <ItemGroup>
+        <Projects Include="Source\McpServer\Autopilot.Mcp.dproj">
+            <Dependencies/>
+        </Projects>
+        <Projects Include="Tools\DcuBuild\BuildDcu.dproj">
+            <Dependencies/>
+        </Projects>
+        <Projects Include="Tools\DcuBuild\BuildDcuVcl.dproj">
+            <Dependencies/>
+        </Projects>
+        <Projects Include="Tools\DcuBuild\BuildDcuFmx.dproj">
+            <Dependencies/>
+        </Projects>
+    </ItemGroup>
+    <ProjectExtensions>
+        <Borland.Personality>Default.Personality.12</Borland.Personality>
+        <Borland.ProjectType/>
+        <BorlandProject>
+            <Default.Personality/>
+        </BorlandProject>
+    </ProjectExtensions>
+    <Target Name="Autopilot_Mcp">
+        <MSBuild Projects="Source\McpServer\Autopilot.Mcp.dproj"/>
+    </Target>
+    <Target Name="Autopilot_Mcp:Clean">
+        <MSBuild Projects="Source\McpServer\Autopilot.Mcp.dproj" Targets="Clean"/>
+    </Target>
+    <Target Name="Autopilot_Mcp:Make">
+        <MSBuild Projects="Source\McpServer\Autopilot.Mcp.dproj" Targets="Make"/>
+    </Target>
+    <Target Name="BuildDcu">
+        <MSBuild Projects="Tools\DcuBuild\BuildDcu.dproj"/>
+    </Target>
+    <Target Name="BuildDcu:Clean">
+        <MSBuild Projects="Tools\DcuBuild\BuildDcu.dproj" Targets="Clean"/>
+    </Target>
+    <Target Name="BuildDcu:Make">
+        <MSBuild Projects="Tools\DcuBuild\BuildDcu.dproj" Targets="Make"/>
+    </Target>
+    <Target Name="BuildDcuVcl">
+        <MSBuild Projects="Tools\DcuBuild\BuildDcuVcl.dproj"/>
+    </Target>
+    <Target Name="BuildDcuVcl:Clean">
+        <MSBuild Projects="Tools\DcuBuild\BuildDcuVcl.dproj" Targets="Clean"/>
+    </Target>
+    <Target Name="BuildDcuVcl:Make">
+        <MSBuild Projects="Tools\DcuBuild\BuildDcuVcl.dproj" Targets="Make"/>
+    </Target>
+    <Target Name="BuildDcuFmx">
+        <MSBuild Projects="Tools\DcuBuild\BuildDcuFmx.dproj"/>
+    </Target>
+    <Target Name="BuildDcuFmx:Clean">
+        <MSBuild Projects="Tools\DcuBuild\BuildDcuFmx.dproj" Targets="Clean"/>
+    </Target>
+    <Target Name="BuildDcuFmx:Make">
+        <MSBuild Projects="Tools\DcuBuild\BuildDcuFmx.dproj" Targets="Make"/>
+    </Target>
+    <Target Name="Build">
+        <CallTarget Targets="Autopilot_Mcp;BuildDcu;BuildDcuVcl;BuildDcuFmx"/>
+    </Target>
+    <Target Name="Clean">
+        <CallTarget Targets="Autopilot_Mcp:Clean;BuildDcu:Clean;BuildDcuVcl:Clean;BuildDcuFmx:Clean"/>
+    </Target>
+    <Target Name="Make">
+        <CallTarget Targets="Autopilot_Mcp:Make;BuildDcu:Make;BuildDcuVcl:Make;BuildDcuFmx:Make"/>
+    </Target>
+    <Import Project="$(BDS)\Bin\CodeGear.Group.Targets" Condition="Exists('$(BDS)\Bin\CodeGear.Group.Targets')"/>
+</Project>

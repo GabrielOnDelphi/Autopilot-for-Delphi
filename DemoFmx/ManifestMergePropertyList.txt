@@ -1,0 +1,3 @@
+JavaFile=C:\Program Files\Eclipse Adoptium\jdk-21.0.7.6-hotspot\bin\java.exe
+ManifestMergerFile=c:\delphi\delphi 13\bin\Android\manifestmerger-31.10.1.jar
+CompressLibFiles=1
