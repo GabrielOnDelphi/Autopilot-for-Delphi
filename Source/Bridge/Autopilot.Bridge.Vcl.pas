@@ -56,6 +56,13 @@ uses
 
 {$IFDEF AUTOPILOT}
 
+// Licence reminder in the Messages pane, AUTOPILOT builds only. Fires when this unit is
+// actually compiled — i.e. for whoever builds the bridge from source, which is exactly the
+// audience that has not paid. A customer linking the shipped DCUs never recompiles it and
+// never sees it, which is correct: they already bought. A HINT, not a WARN, so it cannot
+// dirty a project that treats warnings as errors.
+{$MESSAGE HINT 'Autopilot for Delphi: free for noncommercial use. Commercial or government use needs a licence - https://www.GabrielMoraru.com/autopilot'}
+
 var
   GWorker: TBridgeWorker = NIL;
   GLock  : TCriticalSection = NIL;

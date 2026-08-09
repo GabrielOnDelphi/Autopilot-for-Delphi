@@ -46,6 +46,10 @@ uses
 
 {$IFDEF AUTOPILOT}
 
+// Licence reminder in the Messages pane, AUTOPILOT builds only. See the twin comment in
+// Autopilot.Bridge.Vcl.pas for why this is a HINT and why DCU customers never see it.
+{$MESSAGE HINT 'Autopilot for Delphi: free for noncommercial use. Commercial or government use needs a licence - https://www.GabrielMoraru.com/autopilot'}
+
 var
   GWorker: TBridgeWorker = NIL;
   GLock  : TCriticalSection = NIL;

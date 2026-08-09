@@ -4,10 +4,9 @@ unit Autopilot.Mcp.UsageCounter;
    2026.06
    www.GabrielMoraru.com
 --------------------------------------------------------------------------------------------------------------
-   - One-time Book 5 cross-promotion for engaged users.
-   - Counts MCP-server launches across sessions in %APPDATA%\Autopilot\usage.ini.
-   - Once the user has run Autopilot more than five times, a single clickable link to Book 5 of
-     "Delphi in All Its Glory" is written to Autopilot's log, then a flag prevents it appearing again.
+   - Cross-session nudges, both one-shot, both flagged in %APPDATA%\Autopilot\usage.ini:
+       1. the licence notice, on the very first tool call ever (ClaimLicenseNotice)
+       2. a Book 5 cross-promotion once the user has run Autopilot more than five times
    - Deliberately NOT a dialog and NOT a browser launch: the MCP server is headless (stdout is the
      JSON-RPC channel) and the operator is often away during an unattended AI run.
    - Stdlib only (System.IniFiles), so the MCP server stays dependency-clean.
@@ -19,6 +18,14 @@ interface
 /// threshold, log the Book 5 link once. Call once per MCP-server startup.
 /// Never raises: a promo counter must not take down the server.
 procedure TrackUsageAndMaybePromoteBook;
+
+/// TRUE exactly once per installation — the first call that finds the flag unset
+/// sets it and returns TRUE; every later call returns FALSE. The caller then attaches
+/// Autopilot.Bridge.Core.LicenseNoticeText to a tool response, which is the only place
+/// the driving AI reliably reads (the startup log line is written where nobody looks).
+/// Never raises: on any INI failure it returns FALSE, so a broken counter costs a
+/// reminder rather than a tool call.
+function ClaimLicenseNotice: Boolean;
 
 
 implementation
@@ -43,6 +50,31 @@ begin
   if not TDirectory.Exists(Folder)
   then TDirectory.CreateDirectory(Folder);
   Result := TPath.Combine(Folder, 'usage.ini');
+end;
+
+
+function ClaimLicenseNotice: Boolean;
+var
+  Ini: TMemIniFile;
+begin
+  Result := FALSE;
+  try
+    Ini := TMemIniFile.Create(UsageIniPath);
+    try
+      if Ini.ReadBool('Usage', 'LicenseNoticeShown', FALSE) then EXIT(FALSE);
+
+      Ini.WriteBool('Usage', 'LicenseNoticeShown', TRUE);
+      Ini.UpdateFile;                       // persist BEFORE claiming, so a crash cannot repeat the notice
+      Result := TRUE;
+    finally
+      FreeAndNil(Ini);
+    end;
+  except
+    // Same contract as TrackUsageAndMaybePromoteBook: a cosmetic nudge must never
+    // break a tool call. Staying FALSE simply drops the reminder.
+    on E: Exception do
+      BridgeLogWarn('license', 'notice skipped: ' + E.ClassName + ': ' + E.Message);
+  end;
 end;
 
 
