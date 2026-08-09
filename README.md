@@ -12,8 +12,8 @@ For full overview, demos, tool reference & quick start see **[www.GabrielMoraru.
 
 ## License
 Dual-licensed:
-- **Noncommercial use — free**, under the [PolyForm Noncommercial License 1.0.0](LICENSE) (personal, study, research, hobby, charity, school, government).
-- **Commercial use — paid**, $25 per developer, one-time. See [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md).
+- **Noncommercial use — free**, under the [SciVance Noncommercial License 1.0](LICENSE) (personal, study, research, hobby, charity, school, public research / health / safety).
+- **Commercial or government use — paid**, $25 per developer, one-time. See [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md).
 
 Source-available, not open source.
 

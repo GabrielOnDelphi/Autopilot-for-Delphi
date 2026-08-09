@@ -5,14 +5,14 @@ This software is DUAL-LICENSED. Your use falls under exactly one of these:
 
   1. NONCOMMERCIAL USE - FREE.
      Personal use, study, research, hobby projects, and use by charities,
-     schools, public research / health / safety organizations, and government
-     are free of charge under the PolyForm Noncommercial License 1.0.0, the
-     full text of which is reproduced below.
+     schools, and public research / health / safety organizations are free of
+     charge under the SciVance Noncommercial License 1.0, the full text of
+     which is reproduced below.
 
-  2. COMMERCIAL USE - PAID.
-     Any use by or for a business, or any use with an anticipated commercial
-     application, is NOT granted by the license below and requires a separate
-     paid commercial license.
+  2. COMMERCIAL USE - PAID, and GOVERNMENT USE - PAID.
+     Any use by or for a business, any use with an anticipated commercial
+     application, and any use by or for a government institution, is NOT
+     granted by the license below and requires a separate paid license.
      Contact: i@gabrielmoraru.com   (see COMMERCIAL-LICENSE.md)
 
 This makes the software SOURCE-AVAILABLE, not open source: the license below
@@ -22,9 +22,9 @@ Required Notice: Copyright Gabriel Moraru (https://gabrielmoraru.com)
 
 ======================================================================
 
-# PolyForm Noncommercial License 1.0.0
+# SciVance Noncommercial License 1.0
 
-<https://polyformproject.org/licenses/noncommercial/1.0.0>
+<https://github.com/GabrielOnDelphi/Autopilot-for-Delphi/blob/main/LICENSE>
 
 ## Acceptance
 
@@ -54,7 +54,11 @@ The licensor grants you a patent license for the software that covers patent cla
 
 ## Noncommercial Purposes
 
-Any noncommercial purpose is a permitted purpose.
+Any noncommercial purpose is a permitted purpose, except as limited by [Government Institutions](#government-institutions).
+
+## Government Institutions
+
+Use by or for a government institution is **not** a permitted purpose, whether or not that use would otherwise be noncommercial. A government institution must obtain a separate paid license from the licensor.
 
 ## Personal Uses
 
@@ -62,7 +66,7 @@ Personal use for research, experiment, and testing for the benefit of public kno
 
 ## Noncommercial Organizations
 
-Use by any charitable organization, educational institution, public research organization, public safety or health organization, environmental protection organization, or government institution is use for a permitted purpose regardless of the source of funding or obligations resulting from the funding.
+Use by any charitable organization, educational institution, public research organization, public safety or health organization, or environmental protection organization is use for a permitted purpose regardless of the source of funding or obligations resulting from the funding.  This holds even where such an organization is publicly funded, publicly run, or otherwise part of a government institution.
 
 ## Fair Use
 
@@ -91,6 +95,8 @@ The **licensor** is the individual or entity offering these terms, and the **sof
 **You** refers to the individual or entity agreeing to these terms.
 
 **Your company** is any legal entity, sole proprietorship, or other kind of organization that you work for, plus all organizations that have control over, are under the control of, or are under common control with that organization.  **Control** means ownership of substantially all the assets of an entity, or the power to direct its management and policies by vote, contract, or otherwise.  Control can be direct or indirect.
+
+**A government institution** is any national, federal, state, regional, provincial, municipal, or local government, and any agency, department, ministry, authority, court, armed force, public administration, or state-owned enterprise of such a government, as well as any intergovernmental or supranational organization.  An organization covered by [Noncommercial Organizations](#noncommercial-organizations) is not a government institution for the purpose of these terms, even when it is publicly funded or publicly run.
 
 **Your licenses** are all the licenses granted to you for the software under these terms.
 
