@@ -79,15 +79,21 @@ __recovery/
 
 # Boss dependency manager vendor folder https://github.com/HashLoad/boss
 modules/
-/ Plans
+# Internal docs — never publish. See CLAUDE.md "Folder layout".
+/_Old
 /_Release Package
 /Issues
 /_Competition
 /DemoVCL-Video
-ToDo-Video demo.md
-HANDOVER.md
 CLAUDE.md
-Source/McpServer/Autopilot.Mcp.res
-ReviewHistory.md
-DemoVCL/Autopilot.Demo.res
+HandOver.md
 Footguns.md
+ReviewHistory.md
+Plans - design archive.md
+Commands - build, test, drive.md
+Headless Android Build.md
+Video demo script.md
+Landing page plan.md
+
+Source/McpServer/Autopilot.Mcp.res
+DemoVCL/Autopilot.Demo.res

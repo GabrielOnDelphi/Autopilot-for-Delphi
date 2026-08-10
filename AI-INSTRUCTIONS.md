@@ -60,7 +60,7 @@ The first node is the form itself (with the form's path equal to its name). Subs
 
 `click(path, count?, mode?, timeoutMs?, pid?)`
 
-Default behavior: invokes the control's `Click` (`TButton.Click` for buttons, `TWinControlClass(Ctrl).Click` cast for other TWinControl descendants, falling back to `OnClick(Self)` for non-TWinControl visuals like TLabel/TImage with handlers).
+Default behavior: invokes the control's `Click` (`TButton.Click` for buttons, `TWinControlClass(Ctrl).Click` cast for other TWinControl descendants, falling back to `OnClick(Self)` for non-TWinControl visuals like TLabel/TImage with `OnClick` handlers).
 
 - `count` (1..1000, default 1) — fires N clicks in one round-trip. Bridge resolves the dispatch path once, re-checks `Enabled` between iterations, stops early with `stoppedReason='disabled'` if the control becomes disabled mid-loop.
 - `timeoutMs` — overrides the bridge's main-thread wait for this call, in milliseconds. Default 5000 for a single click, 5000 + (count-1)*100 for batched clicks. Pass a short value (e.g. 500) when the click will open a modal dialog — expect `-32004 main_thread_blocked`, then call `dismiss_dialog`.
@@ -68,7 +68,7 @@ Default behavior: invokes the control's `Click` (`TButton.Click` for buttons, `T
 
 Return shape: `{dispatchedVia: 'click' | 'onclick' | 'message', clicksDispatched: N, stoppedReason?: 'disabled'}` — `'click'` = the control's `Click` method ran (buttons and other windowed controls), `'onclick'` = the `OnClick` handler was invoked directly (non-windowed visuals like `TLabel`), `'message'` = a `BM_CLICK` was posted (async). With `mode='message'` + `count`, all posted clicks run after the response returns, so the between-iterations `Enabled` re-check cannot see those clicks' own effects.
 
-**Click the control, not the `TAction` — or use `execute_action`.** A `TAction` / `TBasicAction` has no `OnClick` — it carries `OnExecute` — so `click(path='Form.actFileExit')` fails with `-32005 unsupported_action` ("has no OnClick"). Two ways out:
+**Click the control, not the `TAction` — or use `execute_action`.** A `TAction` / `TBasicAction` has no `OnClick` (it carries `OnExecute`), so `click(path='Form.actFileExit')` fails with `-32005 unsupported_action` ("has no OnClick"). Two ways out:
 - **`execute_action(path='Form.actFileExit')`** — fires the action's `OnExecute` directly. Use this for shortcut-only actions (no menu item or button), and for actions shared by several controls when you don't want to pick one. See `### execute_action` below.
 - **`click(path='Form.btnExit')`** — click the control bound to the action. Runs the action's `OnExecute` through the normal action dispatch. Use this when you want to verify the *control's* binding, not just the action.
 
@@ -97,7 +97,7 @@ Errors: `-32001 not_found`, `-32003 control_disabled`, `-32005 unsupported_actio
 
 Reads `Caption` / `Text` / `Lines.Text` via RTTI. Returns the exact string (including embedded `#10` newlines — that's why the wire framing is length-prefixed instead of newline-delimited).
 
-Use this — NOT `screenshot` — to verify that a click produced the expected state. It is ~1000× cheaper.
+Use this (NOT `screenshot`) to verify that a click produced the expected state. It is ~1000× cheaper.
 
 ### `set_text`
 
@@ -136,7 +136,7 @@ Writes `Text` (or `Caption` for label-class controls) via RTTI. `OnChange` fires
 
 Comparison is type-aware: string identity, integer/int64 equality (TAlphaColor/TColor as 32-bit), boolean equality, enum/set ordinal equality (so `[fcRed,fcBlue]` elides against `[fcBlue,fcRed]`), float exact-bits (no epsilon). This means you can resend the same value harmlessly and the host app won't see a phantom `OnChange`.
 
-**Parent-inheritance auto-flip (VCL only):** when a write to `Font.*`, `Color`, `BiDiMode`, `ShowHint`, `DoubleBuffered`, `CustomHint`, or `Ctl3D` SUCCEEDS — including an elided resend — the bridge sets the matching `Parent<X>:=FALSE`, so the state is always "the control owns this property". (The VCL only does that flip itself on a *value-changing* write, which an elided resend never reaches.) Success-only since 2026-07-07: a REJECTED value (bad coercion, read-only inner) leaves `Parent<X>` untouched instead of detaching inheritance as a side effect of a failed call. Silent (no response field). To restore inheritance, write `ParentFont:=true` (or the matching `Parent<X>`) afterward. FMX has no equivalent and does not flip.
+**Parent-inheritance auto-flip (VCL only):** when a write to `Font.*`, `Color`, `BiDiMode`, `ShowHint`, `DoubleBuffered`, `CustomHint`, or `Ctl3D` SUCCEEDS (including an elided resend), the bridge sets the matching `Parent<X>:=FALSE`, so the state is always "the control owns this property". (The VCL only does that flip itself on a *value-changing* write, which an elided resend never reaches.) Success-only since 2026-07-07: a REJECTED value (bad coercion, read-only inner) leaves `Parent<X>` untouched instead of detaching inheritance as a side effect of a failed call. Silent (no response field). To restore inheritance, write `ParentFont:=true` (or the matching `Parent<X>`) afterward. FMX has no equivalent and does not flip.
 
 ### `read_property`
 
@@ -167,7 +167,7 @@ Comparison is type-aware: string identity, integer/int64 equality (TAlphaColor/T
 
 Polls the control's `Text`/`Caption` every `pollIntervalMs` (default 100) until it equals `expectedText` exactly, or `timeoutMs` (default 10000) expires. Use after kicking off asynchronous work (a `TTask`, a database query, a Win32 timer). Text/Caption only — other properties (`Checked`, `Enabled`) are not pollable yet; read them with `read_property`.
 
-Returns `{matched, currentValue, expectedValue, pollCount}`. A timeout is `matched: false` carrying the last observed value — a reportable state, not an error — so branch on the field.
+Returns `{matched, currentValue, expectedValue, pollCount}`. A timeout is `matched: false` carrying the last observed value (a reportable state, not an error), so branch on the field.
 
 ### `screenshot`
 
@@ -277,11 +277,11 @@ All bridge errors use JSON-RPC error envelopes with custom codes:
 - **No `SendInput` / synthetic mouse-keyboard.** This bridge acts directly on Delphi objects. Bugs that only reproduce through the real Windows input pipeline are not testable: focus-driven validation (`OnExit`, `EN_KILLFOCUS`), IME composition, keyboard accelerators routed via `WM_KEYDOWN` / `IsDialogMessage`, hover (`CM_MOUSEENTER`), real drag-drop initiated from a mouse-down + mouse-move. If your test relies on those, this is the wrong layer — use `SendInput`-based tools (AutoIt, TestComplete, Ranorex). `mode='message'` on `click` bridges the gap for buttons (uses `BM_CLICK`).
 - **No workflow engine / test-recorder.** You write the scenarios in conversation or in your test harness. The bridge gives you the primitives.
 - **No source modification of the target.** The integration cost is one `uses` clause and one `StartBridge` call.
-- **No propagation of exceptions raised inside an event handler — the bridge is an exception firewall.** `click` dispatches inside `try..except` (`Source\Bridge\Autopilot.Bridge.Fmx.pas:1155-1166`, and the same shape in `.Vcl`): it catches anything the handler raises, returns `stoppedReason: "exception:<ClassName>"`, and lets the session continue. That is deliberate — one crashing click must not kill the automation run — but it means the exception **never reaches `Application.HandleException`**, so anything hanging off the global handler does not fire: madExcept, `Application.OnException`, `LightFmx.Common.CrashHandler`, a custom `TApplicationEvents.OnException`.
+- **No propagation of exceptions raised inside an event handler — the bridge is an exception firewall.** `click` dispatches inside `try..except` (`Source\Bridge\Autopilot.Bridge.Fmx.pas:1155-1166`, and the same shape in `.Vcl`): it catches anything the event handler raises, returns `stoppedReason: "exception:<ClassName>"`, and lets the session continue. That is deliberate (one crashing click must not kill the automation run), but it means the exception **never reaches `Application.HandleException`**, so anything hanging off the global handler does not fire: madExcept, `Application.OnException`, `LightFmx.Common.CrashHandler`, a custom `TApplicationEvents.OnException`.
 
   So **you cannot test a global error path by clicking a button that raises.** Measured 2026-08-07 in SciVance Tester against a binary verified armed with madExcept: the click returned `stoppedReason:"exception:Exception"`, no dialog appeared and no crash report was written — which looks exactly like "madExcept is broken" when in fact it was never invoked.
 
-  **Trigger the crash off the click instead.** A short `TTimer` armed by the handler works and is the smallest change: the tick runs from the normal message loop, outside the bridge's protected call, so the exception takes the same route it would from any real user action. A clean `clicksDispatched: 1` with **no** `stoppedReason` is the tell that the raise happened outside the dispatch. Same applies to `execute_action` and any other handler-invoking tool.
+  **Trigger the crash off the click instead.** A short `TTimer` armed by the event handler works and is the smallest change: the tick runs from the normal message loop, outside the bridge's protected call, so the exception takes the same route it would from any real user action. A clean `clicksDispatched: 1` with **no** `stoppedReason` is the tell that the raise happened outside the dispatch. Same applies to `execute_action` and any other handler-invoking tool.
 
 ---
 
@@ -305,13 +305,13 @@ Three checks, in order:
    
    If empty but the discovery file exists: bridge crashed or `StopBridge` was called.
 
-3. **Is the MCP server registered?** Tool names appear in your tool list as `mcp__autopilot__*`. If absent, the customer needs to re-register the MCP server with their host (`claude mcp add autopilot ...` on Claude Code). **Registering does NOT help the session you are in right now** — an MCP host reads its server list once at session start, so `mcp__autopilot__*` tools only appear in the *next* session. Confirm with `claude mcp list` that it shows `✓ Connected`, then either start a fresh session, or — if you need to act in the current one — drive the pipe directly (next subsection).
+3. **Is the MCP server registered?** Tool names appear in your tool list as `mcp__autopilot__*`. If absent, the customer needs to re-register the MCP server with their host (`claude mcp add autopilot ...` on Claude Code). **Registering does NOT help the session you are in right now** — an MCP host reads its server list once at session start, so `mcp__autopilot__*` tools only appear in the *next* session. Confirm with `claude mcp list` that it shows `✓ Connected`, then either start a fresh session, or, if you need to act in the current one, drive the pipe directly (next subsection).
 
 ---
 
 ## Driving the bridge without the MCP tools (raw named pipe)
 
-When the `mcp__autopilot__*` tools are not loaded — you just registered the server this session, you're on a host that hasn't picked it up, or you're scripting from a shell — you can talk to the bridge directly over its Windows named pipe. The protocol is small and stable.
+When the `mcp__autopilot__*` tools are not loaded (you just registered the server this session, you're on a host that hasn't picked it up, or you're scripting from a shell), you can talk to the bridge directly over its Windows named pipe. The protocol is small and stable.
 
 **Wire format** (from `Autopilot.Bridge.Core.pas`): every frame is a **4-byte little-endian length** followed by that many bytes of **UTF-8 JSON**.
 
