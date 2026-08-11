@@ -2359,6 +2359,7 @@ function BuildVclDialogExclude: TArray<NativeUInt>;
 var
   i, n: Integer;
 begin
+  Assert(GetCurrentThreadId = MainThreadID, 'BuildVclDialogExclude: VCL touched off the main thread');
   SetLength(Result, Screen.FormCount + 1);
   n := 0;
   for i := 0 to Screen.FormCount - 1 do
