@@ -62,7 +62,16 @@ var
 begin
   if APid = 0 then Exit(False);
   H := OpenProcess(SYNCHRONIZE, False, APid);
-  if H = 0 then Exit(False);
+  if H = 0 then
+    // Same "err on alive" principle as the wait below, applied to the open itself.
+    // ERROR_INVALID_PARAMETER (87) is the code Windows returns when no process has
+    // this pid — the only failure that genuinely means dead. Anything else (notably
+    // ERROR_ACCESS_DENIED, 5) means a process with that pid EXISTS but we may not
+    // open it, so reporting "dead" would delete a live target's discovery file, and
+    // StartBridge writes that file only once at startup — the target would stay
+    // undiscoverable for the rest of its run. Measured 2026-08-11: a free pid gives
+    // 87, a live SYSTEM-owned process gives 5.
+    EXIT(GetLastError <> ERROR_INVALID_PARAMETER);
   try
     // A zero-timeout wait is the unambiguous liveness probe: WAIT_TIMEOUT = still
     // running. The old GetExitCodeProcess check compared against STILL_ACTIVE (259),
