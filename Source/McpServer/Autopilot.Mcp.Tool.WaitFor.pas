@@ -78,26 +78,41 @@ begin
 end;
 
 
-// Pull "text" out of a successful get_text response, or '' on failure.
-function ExtractTextFromResponse(const AResponseJson: String): String;
+// Pull both fields we care about out of one poll response, in ONE parse.
+//
+// AText   — "text" of a successful get_text response; '' on any failure.
+// ANotice — the one-shot 'licenseNotice' that Autopilot.Mcp.ToolBase attaches to the
+//           FIRST successful transport round-trip of the installation. One of wait_for's
+//           internal get_text polls can BE that round-trip, and this tool discards the raw
+//           poll responses, so without lifting the field out here the notice would be
+//           burnt (UsageCounter persists the flag before returning TRUE) with nobody ever
+//           seeing it. Read before the ok test: the field rides a successful transport
+//           round-trip, not a successful command, so an ok:false poll carries it too.
+procedure ParsePollResponse(const AResponseJson: String; OUT AText, ANotice: String);
 var
   Root, Result_: TJSONValue;
   Obj: TJSONObject;
   V: TJSONValue;
 begin
-  Result := '';
+  AText   := '';
+  ANotice := '';
   Root := TJSONObject.ParseJSONValue(AResponseJson);
   if Root = nil then EXIT;
   try
     if not (Root is TJSONObject) then EXIT;
     Obj := TJSONObject(Root);
+
+    V := Obj.GetValue('licenseNotice');
+    if V is TJSONString
+    then ANotice := TJSONString(V).Value;
+
     V := Obj.GetValue('ok');
     if not (V is TJSONBool) or not TJSONBool(V).AsBoolean then EXIT;
     Result_ := Obj.GetValue('result');
     if not (Result_ is TJSONObject) then EXIT;
     V := TJSONObject(Result_).GetValue('text');
     if V is TJSONString
-    then Result := TJSONString(V).Value;
+    then AText := TJSONString(V).Value;
   finally
     FreeAndNil(Root);
   end;
@@ -113,6 +128,7 @@ var
   Current: String;
   Matched: Boolean;
   PollCount: Integer;
+  Notice, PollNotice: String;
 begin
   if Params.TimeoutMs > 0
   then OverallTimeout := Params.TimeoutMs
@@ -125,6 +141,7 @@ begin
   Matched   := FALSE;
   Current   := '';
   PollCount := 0;
+  Notice    := '';
 
   while TRUE do
   begin
@@ -132,7 +149,11 @@ begin
     Args.AddPair('path', Params.Path);
     Resp := RunCommandOnTarget(Cardinal(Params.Pid), BuildRequest(1, 'get_text', Args));
     Inc(PollCount);
-    Current := ExtractTextFromResponse(Resp);
+    ParsePollResponse(Resp, Current, PollNotice);
+    // Keep the FIRST notice seen: it can arrive on any poll, and a later poll must not
+    // overwrite it with the '' every other response carries.
+    if (Notice = '') and (PollNotice <> '')
+    then Notice := PollNotice;
     if Current = Params.ExpectedText
     then begin
       Matched := TRUE;
@@ -151,6 +172,8 @@ begin
     Wrap.AddPair('currentValue', Current);
     Wrap.AddPair('expectedValue', Params.ExpectedText);
     Wrap.AddPair('pollCount', TJSONNumber.Create(PollCount));
+    if Notice <> ''
+    then Wrap.AddPair('licenseNotice', Notice);
     Result := Wrap.ToJSON;
   finally
     FreeAndNil(Wrap);
