@@ -1,7 +1,7 @@
 ﻿unit Autopilot.Bridge.Vcl;
 
 {=============================================================================================================
-   2026.07.07
+   2026.08.19
    www.GabrielMoraru.com
 --------------------------------------------------------------------------------------------------------------
    - Public bridge interface for VCL target projects (Windows only)
@@ -416,6 +416,30 @@ begin
 end;
 
 
+// TRUE for the ByteBool / WordBool / LongBool family, INCLUDING a strong alias
+// (`type TFlag = type WordBool`): an alias gets its own typeinfo, so a plain handle
+// comparison misses it and the property stays unwritable. BaseType resolves the alias,
+// and it is a plain record field reached through GetTypeData (System.TypInfo.pas:575) —
+// present in every Delphi version, not a version-gated RTL routine of the
+// ColorToStringExt kind. The RTL discriminates Boolean exactly this way in GetPropValue
+// (System.TypInfo.pas:1360). A root enumeration's BaseType points at itself, so plain
+// WordBool matches here too (verified by Test_SetProperty_WordBoolWritesAllBitsSet, which
+// would fail if it did not), and Boolean answers FALSE (it keeps its own branch).
+// Deliberately NOT the RTL's `MinValue < 0` shortcut (System.TypInfo.pas:1616): a normal
+// enumeration may legally carry a negative ordinal — the RTL declares such types itself
+// (System.Internal.ICU.pas:216) — and that test would misread them as booleans.
+// Resolves ONE alias level, same as the RTL's own tests; an alias of an alias is not covered.
+function IsBoolFamilyType(ATypeInfo: PTypeInfo): Boolean;
+var
+  Base: PTypeInfo;
+begin
+  Result := FALSE;
+  if (ATypeInfo = NIL) or (ATypeInfo^.Kind <> tkEnumeration) then exit;
+  Base := GetTypeData(ATypeInfo)^.BaseType^;
+  Result := (Base = TypeInfo(ByteBool)) or (Base = TypeInfo(WordBool)) or (Base = TypeInfo(LongBool));
+end;
+
+
 // Read AProp's current value off AInstance and format it as a string set_property
 // would accept back. Returns FALSE on an unreadable property or a getter that
 // throws. Mirrors the kinds ListWritableProperties surfaces. AInstance is TObject
@@ -581,7 +605,12 @@ begin
               KindName := 'integer';
           tkInt64:                                    KindName := 'int64';
           tkEnumeration:
-            if Prop.PropertyType.Handle = TypeInfo(Boolean) then
+            // The ByteBool/WordBool/LongBool family reads back as 'True'/'False' through
+            // GetEnumName (System.TypInfo.pas:1616-1620) and set_property takes it as a
+            // boolean, so tag it 'boolean' — 'enum' would send the AI hunting for enum
+            // identifiers this family does not have.
+            if (Prop.PropertyType.Handle = TypeInfo(Boolean))
+            or IsBoolFamilyType(Prop.PropertyType.Handle) then
               KindName := 'boolean'
             else
               KindName := 'enum';
@@ -1045,10 +1074,59 @@ begin
           Prop.SetValue(AInstance, BoolVal);
           exit(TRUE);
         end
+        else if IsBoolFamilyType(Prop.PropertyType.Handle) then
+        begin
+          // ByteBool/WordBool/LongBool are tkEnumeration, and the generic enum path below
+          // cannot write TRUE to them: GetEnumValue answers 'True' with -1, which is also its
+          // not-found result, so the EnumOrd<0 fallback runs Val('True'), fails, and reports
+          // -32005; any other non-numeric string reaches a bare StrToInt inside GetEnumValue
+          // and raises EConvertError (System.TypInfo.pas:1802-1809, Delphi 13), escaping as
+          // -32603. Reachable on a shipped component: TADOCommand.Prepared is a published
+          // WordBool (Data.Win.ADODB.pas:478). It is also the read/write round trip -
+          // read_property renders this family through GetEnumName, which returns
+          // BooleanIdents[Value <> 0] = 'True'/'False' (System.TypInfo.pas:1616-1620).
+          // Matched by BaseType (see IsBoolFamilyType), which also catches a strong alias
+          // such as `type TFlag = type WordBool`, NOT by the RTL's own MinValue < 0 test:
+          // a normal enumeration may legally carry a negative ordinal (the RTL declares
+          // such types itself - System.Internal.ICU.pas:216), and catching those here would
+          // turn set_property(<that enum>, '1') into a silent write of -1.
+          Lower := LowerCase(AStrValue);
+          if (Lower = 'true') or (Lower = '1') or (Lower = '-1') then
+            BoolVal := TRUE
+          else if (Lower = 'false') or (Lower = '0') then
+            BoolVal := FALSE
+          else
+          begin
+            AErrCode := ErrUnsupportedAction;
+            AErrMsg := APropName + ' expects boolean (true/false); got "' + AStrValue + '"';
+            exit;
+          end;
+          if CanRead and ((CurVal.AsOrdinal <> 0) = BoolVal) then
+          begin
+            AElided := TRUE;
+            exit(TRUE);
+          end;
+          // TRUE is all-bits-set (-1) for this family, not 1 - the OLE VARIANT_BOOL
+          // convention the COM consumers of these properties compare against.
+          if BoolVal
+          then Prop.SetValue(AInstance, TValue.FromOrdinal(Prop.PropertyType.Handle, -1))
+          else Prop.SetValue(AInstance, TValue.FromOrdinal(Prop.PropertyType.Handle, 0));
+          exit(TRUE);
+        end
         else
         begin
           // Try identifier first (e.g. 'poDesigned'); fall back to ordinal.
-          EnumOrd := GetEnumValue(Prop.PropertyType.Handle, AStrValue);
+          // GetEnumValue is not exception-free: for an enumeration whose MinValue is
+          // negative it skips the name list and runs a bare StrToInt on the string
+          // (System.TypInfo.pas:1802-1809, Delphi 13), which raises EConvertError on any
+          // identifier. Treat that as "no such identifier" and let the ordinal fallback
+          // below decide, so the coercion lane answers -32005 instead of leaking -32603.
+          try
+            EnumOrd := GetEnumValue(Prop.PropertyType.Handle, AStrValue);
+          except
+            on EConvertError do
+              EnumOrd := -1;
+          end;
           if EnumOrd < 0 then
           begin
             Val(AStrValue, IntVal, Code);
@@ -2081,7 +2159,12 @@ begin
               KindName := 'integer';
           tkInt64:                                    KindName := 'int64';
           tkEnumeration:
-            if Prop.PropertyType.Handle = TypeInfo(Boolean) then
+            // The ByteBool/WordBool/LongBool family reads back as 'True'/'False' through
+            // GetEnumName (System.TypInfo.pas:1616-1620) and set_property takes it as a
+            // boolean, so tag it 'boolean' — 'enum' would send the AI hunting for enum
+            // identifiers this family does not have.
+            if (Prop.PropertyType.Handle = TypeInfo(Boolean))
+            or IsBoolFamilyType(Prop.PropertyType.Handle) then
               KindName := 'boolean'
             else
               KindName := 'enum';
@@ -2240,7 +2323,10 @@ begin
           AKind := 'integer';
       tkInt64:                                    AKind := 'int64';
       tkEnumeration:
-        if Prop.PropertyType.Handle = TypeInfo(Boolean) then
+        // Same bool-family rule as ListReadableProperties above — the two must agree,
+        // or the AI sees 'boolean' in availableProperties and 'enum' on the read.
+        if (Prop.PropertyType.Handle = TypeInfo(Boolean))
+        or IsBoolFamilyType(Prop.PropertyType.Handle) then
           AKind := 'boolean'
         else
           AKind := 'enum';
@@ -2386,7 +2472,7 @@ var
   Exclude: TArray<NativeUInt>;
   Wrap: TJSONObject;
   ClickedId: Integer;
-  ClickedCap, Reason: String;
+  ClickedCap, Reason, Via: String;
   HwndInt: Int64;
 begin
   Assert(GetCurrentThreadId = MainThreadID, 'HandleDismissDialog must run on the main thread');
@@ -2428,14 +2514,14 @@ begin
     Wrap.AddPair('platform', 'windows');
     if HasButton then
     begin
-      Clicked := ClickNativeDialogButton(Exclude, TargetDlg, Selector, ClickedId, ClickedCap, ResolvedDlg, Reason);
+      Clicked := ClickNativeDialogButton(Exclude, TargetDlg, Selector, ClickedId, ClickedCap, ResolvedDlg, Reason, Via);
       Wrap.AddPair('clicked', TJSONBool.Create(Clicked));
       if Clicked then
       begin
         Wrap.AddPair('clickedId', TJSONNumber.Create(ClickedId));
         Wrap.AddPair('clickedCaption', ClickedCap);
         Wrap.AddPair('dialogHwnd', TJSONNumber.Create(Int64(ResolvedDlg)));
-        Wrap.AddPair('via', 'WM_COMMAND');
+        Wrap.AddPair('via', Via);
       end
       else
         Wrap.AddPair('reason', Reason);
@@ -2488,6 +2574,24 @@ end;
 function Dispatch(const AReq: TBridgeRequest): TBridgeResponse;
 begin
   Assert(GetCurrentThreadId = MainThreadID, 'Dispatch must run on the main thread');
+  // Refuse to touch the VCL once the bridge is gone. A TThread.Queue entry posted with a
+  // NIL thread survives the worker's destruction — RemoveQueuedEvents(Self) in TThread.Destroy
+  // skips FThread=NIL entries (System.Classes.pas:17197) — so a request that timed out can
+  // still fire its queued proc after StopBridge, which at app shutdown means walking
+  // Screen.Forms[] while the forms are being torn down. FreeAndNil clears GWorker BEFORE
+  // running the destructor, and both StopBridge and this proc run on the main thread, so the
+  // test is race-free. It does NOT interfere with the documented short-timeoutMs recipe
+  // (fire a click, take -32004, then dismiss_dialog): the bridge is still running there, so
+  // the queued click fires as before. Only StopBridge closes this door.
+  if GWorker = NIL then
+  begin
+    Result := Default(TBridgeResponse);
+    Result.Id := AReq.Id;
+    Result.Ok := FALSE;
+    Result.ErrorCode := ErrInternalError;
+    Result.ErrorMessage := 'bridge stopped';
+    exit;
+  end;
   if SameText(AReq.Cmd, 'list_tree') then
     Result := HandleListTree(AReq)
   else if SameText(AReq.Cmd, 'click') then
