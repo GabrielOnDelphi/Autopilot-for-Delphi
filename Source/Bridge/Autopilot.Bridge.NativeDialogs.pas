@@ -1,7 +1,7 @@
 ﻿unit Autopilot.Bridge.NativeDialogs;
 
 {=============================================================================================================
-   2026.07.07
+   2026.08.19
    www.GabrielMoraru.com
 --------------------------------------------------------------------------------------------------------------
    - Native Win32 dialog escape hatch: reaches MessageBox / Task Dialog / common dialogs with no TComponent
@@ -31,10 +31,16 @@ function EnumerateNativeDialogs(const AExclude: array of NativeUInt): TJSONArray
 /// 'abort'/'ignore'/'close'/'tryagain'/'continue'/'help'), a caption (exact then
 /// substring, case-insensitive, '&' accelerator stripped), or a numeric control id.
 /// Returns TRUE and sets AClickedId / AClickedCaption / AResolvedDlg on a dispatched click.
-/// On FALSE, AReason is 'no_dialog' (nothing matched) or 'button_not_found'.
+/// On FALSE, AReason is 'no_dialog' (nothing matched), 'button_not_found', or
+/// 'send_failed' (the button was found but SendMessageTimeout did not complete).
+/// AVia names the dispatch path actually used: 'BM_CLICK' (we hold the button's own HWND —
+/// the button provably exists) or 'WM_COMMAND' (dispatched by control id to a dialog whose
+/// button is not enumerable as a child window, e.g. a Task Dialog). The WM_COMMAND path is
+/// UNVERIFIABLE: a dialog that has no such command silently ignores the message and the send
+/// still completes, so TRUE there means "sent", not "landed" — re-list the dialogs to confirm.
 function ClickNativeDialogButton(const AExclude: array of NativeUInt; ATargetDlg: NativeUInt;
   const ASelector: String; OUT AClickedId: Integer; OUT AClickedCaption: String;
-  OUT AResolvedDlg: NativeUInt; OUT AReason: String): Boolean;
+  OUT AResolvedDlg: NativeUInt; OUT AReason: String; OUT AVia: String): Boolean;
 
 
 implementation
@@ -342,7 +348,7 @@ end;
 
 function ClickNativeDialogButton(const AExclude: array of NativeUInt; ATargetDlg: NativeUInt;
   const ASelector: String; OUT AClickedId: Integer; OUT AClickedCaption: String;
-  OUT AResolvedDlg: NativeUInt; OUT AReason: String): Boolean;
+  OUT AResolvedDlg: NativeUInt; OUT AReason: String; OUT AVia: String): Boolean;
 var
   Ctx: TTopCtx;
   i: Integer;
@@ -351,10 +357,11 @@ var
   MatchId: Integer;
   MatchCap: String;
   Res: DWORD_PTR;
+  Sent: LRESULT;
   WParam: Winapi.Windows.WPARAM;
 begin
   Result := FALSE;
-  AClickedId := 0; AClickedCaption := ''; AResolvedDlg := 0; AReason := '';
+  AClickedId := 0; AClickedCaption := ''; AResolvedDlg := 0; AReason := ''; AVia := '';
 
   { # Pick the dialog }
   Dlg := 0;
@@ -410,11 +417,34 @@ begin
     // only resolved a standard id (Task Dialog common button with no enumerable child).
     Res := 0;
     if MatchBtn <> 0 then
-      SendMessageTimeout(MatchBtn, BM_CLICK, 0, 0, SMTO_ABORTIFHUNG, 4000, @Res)
+    begin
+      AVia := 'BM_CLICK';
+      Sent := SendMessageTimeout(MatchBtn, BM_CLICK, 0, 0, SMTO_ABORTIFHUNG, 4000, @Res);
+    end
     else
     begin
+      // Unverifiable path, reported as such through AVia. A dialog with no command for this
+      // id just ignores the message and the send still completes, so nothing in the return
+      // values can tell "dismissed" from "ignored". The dialog's own reply is not a signal
+      // either: DefDlgProc's return for an unhandled WM_COMMAND is not contractual (the
+      // DialogProc TRUE/FALSE convention is documented for dialog procedures YOU write, and
+      // the docs state the return is ignored for several messages), and we have not measured
+      // what MessageBoxW / the Task Dialog actually return - so it is not used.
+      AVia := 'WM_COMMAND';
       WParam := Winapi.Windows.WPARAM((MatchId and $FFFF) or (BN_CLICKED shl 16));
-      SendMessageTimeout(Dlg, WM_COMMAND, WParam, 0, SMTO_ABORTIFHUNG, 4000, @Res);
+      Sent := SendMessageTimeout(Dlg, WM_COMMAND, WParam, 0, SMTO_ABORTIFHUNG, 4000, @Res);
+    end;
+
+    // A zero return means the send never completed: the window died between our enumeration
+    // and the send, or a dialog owned by a non-main thread was hung and SMTO_ABORTIFHUNG
+    // bailed out. Only the cross-thread case can actually trip it (for a same-thread window
+    // the proc is called directly and the timeout is ignored), but answering clicked:true for
+    // a click the OS says never landed would send the driver on to its next step against a
+    // dialog that is still up. Res itself is NOT a success signal - BM_CLICK returns zero.
+    if Sent = 0 then
+    begin
+      AReason := 'send_failed';
+      exit;
     end;
 
     AClickedId := MatchId;
@@ -440,9 +470,9 @@ end;
 
 function ClickNativeDialogButton(const AExclude: array of NativeUInt; ATargetDlg: NativeUInt;
   const ASelector: String; OUT AClickedId: Integer; OUT AClickedCaption: String;
-  OUT AResolvedDlg: NativeUInt; OUT AReason: String): Boolean;
+  OUT AResolvedDlg: NativeUInt; OUT AReason: String; OUT AVia: String): Boolean;
 begin
-  AClickedId := 0; AClickedCaption := ''; AResolvedDlg := 0;
+  AClickedId := 0; AClickedCaption := ''; AResolvedDlg := 0; AVia := '';
   AReason := 'unsupported_platform';
   Result := FALSE;
 end;
