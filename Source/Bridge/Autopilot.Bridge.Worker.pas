@@ -1,7 +1,7 @@
 ﻿unit Autopilot.Bridge.Worker;
 
 {=============================================================================================================
-   2026.07.07
+   2026.08.19
    www.GabrielMoraru.com
 --------------------------------------------------------------------------------------------------------------
    - Shared bridge worker thread (all platforms): accept → handshake → serve requests → recycle
@@ -226,6 +226,7 @@ var
   Resp    : TBridgeResponse;
   Timeout : Cardinal;
   CapturedReq: TBridgeRequest;
+  CapturedDispatch: TBridgeDispatcher;
   Slot    : TDispatchSlot;
   T0      : UInt64;
   WaitRes : TWaitResult;
@@ -302,6 +303,19 @@ begin
 
         CapturedReq := Req;
         CapturedReq.Args := Slot.ArgsClone;   // weak ref into the slot-owned copy (NIL when no args)
+        // Capture the dispatcher REFERENCE, not Self: naming the FDispatch field inside the
+        // anonymous method would capture the worker object, and the NIL-queued proc can outlive
+        // it — RemoveQueuedEvents(Self) in TThread.Destroy skips FThread=NIL entries
+        // (System.Classes.pas:17197), and a main-thread WaitFor that finds this thread already
+        // dead returns WITHOUT a final CheckSynchronize (thread handle is index 0, the pending
+        // SyncEvent index 1; MsgWaitForMultipleObjects reports the smallest signaled index). A
+        // late run after StopBridge would then read FDispatch off a freed object. The method
+        // reference is refcounted, so this copy stays valid for as long as the proc needs it.
+        // The dispatcher itself refuses to run once the bridge is stopped (the GWorker = NIL
+        // guard at the top of Dispatch in Vcl.pas / Fmx.pas), so a late proc reaches a live
+        // method reference and immediately gets an error response back instead of walking a
+        // form tree that is being torn down.
+        CapturedDispatch := FDispatch;
         Slot.AddRef;                     // refcount = 2 (queued proc will drop its ref when done)
 
         TThread.Queue(NIL,
@@ -311,7 +325,7 @@ begin
           begin
             try
               try
-                LocalResp := FDispatch(CapturedReq);
+                LocalResp := CapturedDispatch(CapturedReq);
               except
                 on E: Exception do
                 begin
