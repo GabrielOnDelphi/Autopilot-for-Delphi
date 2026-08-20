@@ -1,4 +1,4 @@
-# Autopilot for Delphi — instructions for AI sessions
+﻿# Autopilot for Delphi — instructions for AI sessions
 
 > **This file is a briefing** for an AI coding assistant (Claude Code, Claude Desktop, Cursor, Cline, or any MCP-aware host) that has the `autopilot` MCP server registered and wants to drive a running Delphi VCL or FMX application. Read it once at the start of a session; you do not need to re-read.
 > 
@@ -194,7 +194,8 @@ Why it matters on Android: a backgrounded or screen-off app is frozen by the OS 
 Lists and dismisses native OS dialogs that the component tools cannot see. `Application.MessageBox`, a default `ShowMessage`/`MessageDlg` (a Vista Task Dialog), and the common file dialogs are raw Win32 windows with no `TComponent`, so `list_tree`/`click` return `-32001 not_found` against them. This tool reaches them through Win32 directly.
 
 - Call with **no `button`** to LIST the dialogs currently up. Response: `{dialogs:[{hwnd, class, caption, text, buttons:[{id, caption, enabled}]}], supported, platform}`.
-- Call with **`button`** to dismiss one. `button` is a role (`ok`/`cancel`/`yes`/`no`/`retry`/`abort`/`ignore`/`close`/`tryagain`/`continue`), a button caption (exact then substring, case-insensitive), or a numeric control id. `hwnd` targets a specific dialog when several are stacked; omit it for the topmost. Response adds `{clicked, clickedId, clickedCaption, reason?}`. `reason` is `no_dialog` or `button_not_found` when `clicked:false`.
+- Call with **`button`** to dismiss one. `button` is a role (`ok`/`cancel`/`yes`/`no`/`retry`/`abort`/`ignore`/`close`/`tryagain`/`continue`), a button caption (exact then substring, case-insensitive), or a numeric control id. `hwnd` targets a specific dialog when several are stacked; omit it for the topmost. Response adds `{clicked, clickedId, clickedCaption, dialogHwnd, via, reason?}`. `reason` is `no_dialog`, `button_not_found`, or `send_failed` (button found, but the OS reported the click was not delivered) when `clicked:false`.
+- **Check `via` before you trust `clicked:true`.** `via:'BM_CLICK'` means the button's own window was found and clicked — verified. `via:'WM_COMMAND'` means the button is not a separate window (a Task Dialog common button, or a role/id that dialog does not actually have) so the command was dispatched **by id, blind**: a dialog with no such command silently ignores it and the send still reports success. After a `WM_COMMAND` dismiss, call `dismiss_dialog` again with no `button` — an empty `dialogs` array is the only proof the dialog is gone.
 
 **The footgun this solves.** When you `click` a control whose `OnClick` opens a modal dialog, that click never returns — the main thread enters the dialog's modal loop. Two recipes:
 
