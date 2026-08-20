@@ -108,7 +108,7 @@ var
   Th: TMsgBoxThread;
   Dlg, Resolved: NativeUInt;
   BtnCount, ClickedId: Integer;
-  ClickedCap, Reason: String;
+  ClickedCap, Reason, Via: String;
   Deadline: UInt64;
   Clicked: Boolean;
   Junk: TArray<NativeUInt>;
@@ -128,9 +128,12 @@ begin
     Assert.IsTrue(BtnCount >= 3, 'expected at least Yes/No/Cancel buttons, got ' + IntToStr(BtnCount));
 
     { # Dismiss by role }
-    Clicked := ClickNativeDialogButton(Junk, Dlg, 'no', ClickedId, ClickedCap, Resolved, Reason);
+    Clicked := ClickNativeDialogButton(Junk, Dlg, 'no', ClickedId, ClickedCap, Resolved, Reason, Via);
     Assert.IsTrue(Clicked, 'ClickNativeDialogButton returned false (' + Reason + ')');
     Assert.AreEqual(IDNO, ClickedId, 'dispatched the wrong control id');
+    // This box HAS a real No button window, so the verified path must be the one used.
+    // The twin test below pins the opposite case.
+    Assert.AreEqual('BM_CLICK', Via, 'expected the verified button-HWND dispatch path');
 
     { # The box must have returned IDNO }
     Assert.IsTrue(Th.Done.WaitFor(3000) = wrSignaled, 'MessageBox did not close after dismiss');
@@ -140,7 +143,7 @@ begin
     // cannot hang the runner.
     if Th.Done.WaitFor(0) <> wrSignaled then
     begin
-      ClickNativeDialogButton(Junk, 0, 'cancel', ClickedId, ClickedCap, Resolved, Reason);
+      ClickNativeDialogButton(Junk, 0, 'cancel', ClickedId, ClickedCap, Resolved, Reason, Via);
       Th.Done.WaitFor(2000);
     end;
     // Th.Free -> TThread.Destroy does an UNTIMED Terminate+WaitFor; Execute is parked in a
@@ -167,7 +170,7 @@ var
   Th: TMsgBoxThread;
   Dlg, Resolved: NativeUInt;
   BtnCount, ClickedId: Integer;
-  ClickedCap, Reason: String;
+  ClickedCap, Reason, Via: String;
   Deadline: UInt64;
   Clicked: Boolean;
   Junk: TArray<NativeUInt>;
@@ -186,16 +189,20 @@ begin
     Assert.IsTrue(Dlg <> 0, 'native MessageBox was not found by EnumerateNativeDialogs');
 
     { # 'no' must resolve by role (IDNO), not by the 'Ig[no]re' substring (IDIGNORE) }
-    Clicked := ClickNativeDialogButton(Junk, Dlg, 'no', ClickedId, ClickedCap, Resolved, Reason);
+    Clicked := ClickNativeDialogButton(Junk, Dlg, 'no', ClickedId, ClickedCap, Resolved, Reason, Via);
     Assert.IsTrue(Clicked, 'ClickNativeDialogButton returned false (' + Reason + ')');
     Assert.AreEqual(IDNO, ClickedId, 'selector ''no'' resolved by caption substring (Ignore) instead of role IDNO');
+    // This box has NO No button, so the id was dispatched blind and the box is still up even
+    // though Clicked is TRUE (the finally block below dismisses it via a real button). That is
+    // the unverifiable WM_COMMAND-by-id path, and 'via' is the only thing that reports it.
+    Assert.AreEqual('WM_COMMAND', Via, 'expected the unverified dispatch-by-id path');
   finally
     // IDNO has no control on this box, so the resolve above left it up; dismiss it via a real
     // button (Abort). Under a regression the substring path already closed it via Ignore, so
     // Done is signalled and this block is a no-op. Done-gated Free avoids an untimed WaitFor hang.
     if Th.Done.WaitFor(0) <> wrSignaled then
     begin
-      ClickNativeDialogButton(Junk, 0, 'abort', ClickedId, ClickedCap, Resolved, Reason);   // 0 = topmost (our box is the only dialog up)
+      ClickNativeDialogButton(Junk, 0, 'abort', ClickedId, ClickedCap, Resolved, Reason, Via);   // 0 = topmost (our box is the only dialog up)
       Th.Done.WaitFor(2000);
     end;
     if Th.Done.WaitFor(0) = wrSignaled
@@ -208,13 +215,13 @@ end;
 procedure TNativeDialogTests.Test_NoDialogUp_ClickReturnsNoDialog;
 var
   ClickedId: Integer;
-  ClickedCap, Reason: String;
+  ClickedCap, Reason, Via: String;
   Resolved: NativeUInt;
   NoExclude: TArray<NativeUInt>;
 begin
   NoExclude := nil;
   // No native dialog is up in this fixture, so the topmost-dialog lookup finds nothing.
-  Assert.IsFalse(ClickNativeDialogButton(NoExclude, 0, 'ok', ClickedId, ClickedCap, Resolved, Reason),
+  Assert.IsFalse(ClickNativeDialogButton(NoExclude, 0, 'ok', ClickedId, ClickedCap, Resolved, Reason, Via),
                  'click should fail when no dialog is up');
   Assert.AreEqual('no_dialog', Reason, 'expected reason no_dialog');
 end;
