@@ -72,6 +72,9 @@ type
     [Test] procedure Test_SetProperty_WritesNestedClassMemberFontSize;
     [Test] procedure Test_SetProperty_DottedFontWriteFlipsParentFontFalse;
     [Test] procedure Test_SetProperty_FailedDottedWriteKeepsParentFontTrue;
+    [Test] procedure Test_SetProperty_WordBoolWritesAllBitsSet;
+    [Test] procedure Test_SetProperty_StrongBoolAliasWritesAllBitsSet;
+    [Test] procedure Test_ReadProperty_BoolFamilyReportsKindBoolean;
     [Test] procedure Test_SetProperty_DottedUnknownInnerListsInnerWritables;
     [Test] procedure Test_SetProperty_DottedOnNonClassOuterReturnsUnsupportedAction;
     [Test] procedure Test_SetProperty_DottedTwoLevelsReturnsUnsupportedAction;
@@ -123,6 +126,13 @@ type
   TFixtureColor = (fcRed, fcGreen, fcBlue, fcYellow);
   TFixtureColors = set of TFixtureColor;
 
+  // Strong alias of WordBool for the bool-family set_property/read_property tests.
+  // `type WordBool` (not a plain `= WordBool`) so the compiler emits SEPARATE type info:
+  // that is exactly the case a `Handle = TypeInfo(WordBool)` comparison misses, which is
+  // why the bridge resolves the family through BaseType instead. Unit scope so the RTTI
+  // is emitted at all.
+  TFixtureBool = type WordBool;
+
   // A test fixture form with known controls. Built programmatically so DFM-less tests work.
   TFixtureForm = class(TForm)
   private
@@ -134,6 +144,8 @@ type
     FMyLines  : TStrings;            // TStringList behind a TStrings published surface.
     FMyAlpha  : TAlphaColor;
     FMyColor  : TColor;
+    FMyWordBool : WordBool;
+    FMyAliasBool: TFixtureBool;
     procedure SetMyLines(AValue: TStrings);
   published
     property FloatProp:  Single         read FFloatProp write FFloatProp;
@@ -150,6 +162,14 @@ type
     // For TColor coercion tests (VCL only). TColor is BGR-stored, but the bridge
     // accepts 'clName', '#RRGGBB' (web RGB), '$00BBGGRR', or decimal.
     property MyColor:    TColor         read FMyColor  write FMyColor;
+    // The ByteBool/WordBool/LongBool family is tkEnumeration, not tkBoolean, and the
+    // generic enum path cannot write TRUE to it (GetEnumValue answers 'True' with -1,
+    // which is also its not-found result). Reachable on shipped components — e.g.
+    // TADOCommand.Prepared is a published WordBool (Data.Win.ADODB.pas:478).
+    property MyWordBool:  WordBool     read FMyWordBool  write FMyWordBool;
+    // Same family behind a strong alias: its own type info, so it is only reachable
+    // through BaseType. Pins the 2026-08-19 IsBoolFamilyType fix.
+    property MyAliasBool: TFixtureBool read FMyAliasBool write FMyAliasBool;
   public
     Btn             : TButton;
     BtnDisabled     : TButton;
@@ -505,6 +525,8 @@ begin
   GFixtureForm.Btn.Font.Size     := 8;
   GFixtureForm.MyAlpha           := TAlphaColor(0);
   GFixtureForm.MyColor           := TColor(0);
+  GFixtureForm.MyWordBool        := False;
+  GFixtureForm.MyAliasBool       := TFixtureBool(False);
   // Reset the OnChange counter AFTER priming Edt.Text — the assignment above
   // may itself fire OnChange (TEdit.SetText short-circuits on equal value, but
   // we shouldn't depend on that). Reset here so each test starts at 0.
@@ -2346,6 +2368,144 @@ begin
                 'a rejected write must not detach ParentFont (flip-on-success contract)');
   Assert.AreEqual(8, GFixtureForm.Btn.Font.Size,
                   'a rejected write must leave Font.Size unchanged');
+end;
+
+
+// The ByteBool/WordBool/LongBool family: set_property must accept 'true' AND write
+// all-bits-set (-1), not 1. -1 is the OLE VARIANT_BOOL convention the COM consumers of
+// these properties compare against; a stored 1 would read as "true" in Pascal but fail a
+// `= VARIANT_TRUE` test. Before the coercion existed this call answered -32005 (or leaked
+// -32603 through GetEnumValue's bare StrToInt).
+procedure TBridgeTests.Test_SetProperty_WordBoolWritesAllBitsSet;
+var
+  PipeName: String;
+  Ok: Boolean;
+  Bits: Integer;
+begin
+  PipeName := FPipeName;
+  Ok := False;
+  GFixtureForm.MyWordBool := False;
+  RunOnWorkerAndPump(
+    procedure
+    var
+      Client: TBridgeTestClient;
+      Args, Resp, R: TJSONObject;
+    begin
+      Client := TBridgeTestClient.Create;
+      try
+        Assert.IsTrue(Client.ConnectAndHandshake(PipeName, 2000), 'connect');
+        Args := TJSONObject.Create;
+        Args.AddPair('path', 'FixtureForm');
+        Args.AddPair('propName', 'MyWordBool');
+        Args.AddPair('value', 'true');
+        Resp := Client.Call(240, 'set_property', Args);
+        try
+          R := GetOkResult(Resp);
+          Ok := R <> nil;
+        finally
+          Resp.Free;
+        end;
+      finally
+        Client.Free;
+      end;
+    end, 5000);
+  Assert.IsTrue(Ok, 'set_property should return ok for a WordBool property');
+  // Integer(Self) is the RTL's own read of this family (TWordBoolHelper.ToInteger,
+  // System.SysUtils.pas:34389-34392). Asserted as "not 0 and not 1" rather than "= -1"
+  // so the test pins the contract (all bits set) without depending on how the compiler
+  // widens a 16-bit bool ordinal to Integer.
+  Bits := Integer(GFixtureForm.MyWordBool);
+  Assert.IsTrue(Bits <> 0, 'MyWordBool must be TRUE after the write');
+  Assert.IsTrue(Bits <> 1, 'WordBool TRUE must be stored all-bits-set, not 1');
+end;
+
+
+// Same family behind a strong alias (`TFixtureBool = type WordBool`), which the compiler
+// gives its OWN type info — so `Handle = TypeInfo(WordBool)` does not match it and the
+// property was unwritable (a clean -32005, but still unwritable). Pins the BaseType
+// resolution in IsBoolFamilyType.
+procedure TBridgeTests.Test_SetProperty_StrongBoolAliasWritesAllBitsSet;
+var
+  PipeName: String;
+  Ok: Boolean;
+  Bits: Integer;
+begin
+  PipeName := FPipeName;
+  Ok := False;
+  GFixtureForm.MyAliasBool := TFixtureBool(False);
+  RunOnWorkerAndPump(
+    procedure
+    var
+      Client: TBridgeTestClient;
+      Args, Resp, R: TJSONObject;
+    begin
+      Client := TBridgeTestClient.Create;
+      try
+        Assert.IsTrue(Client.ConnectAndHandshake(PipeName, 2000), 'connect');
+        Args := TJSONObject.Create;
+        Args.AddPair('path', 'FixtureForm');
+        Args.AddPair('propName', 'MyAliasBool');
+        Args.AddPair('value', 'true');
+        Resp := Client.Call(241, 'set_property', Args);
+        try
+          R := GetOkResult(Resp);
+          Ok := R <> nil;
+        finally
+          Resp.Free;
+        end;
+      finally
+        Client.Free;
+      end;
+    end, 5000);
+  Assert.IsTrue(Ok, 'set_property should return ok for a strong WordBool alias');
+  Bits := Integer(GFixtureForm.MyAliasBool);
+  Assert.IsTrue(Bits <> 0, 'MyAliasBool must be TRUE after the write');
+  Assert.IsTrue(Bits <> 1, 'a strong bool alias must take the bool-family path (all bits set), not the generic enum path');
+end;
+
+
+// read_property must tag the bool family 'boolean', not 'enum': the value it renders is
+// 'True'/'False' (GetEnumName, System.TypInfo.pas:1616-1620) and set_property takes it back
+// as a boolean, so 'enum' would send the AI hunting for enum identifiers that do not exist.
+procedure TBridgeTests.Test_ReadProperty_BoolFamilyReportsKindBoolean;
+var
+  PipeName: String;
+  Kind, Value: String;
+begin
+  PipeName := FPipeName;
+  Kind := '';
+  Value := '';
+  GFixtureForm.MyWordBool := True;
+  RunOnWorkerAndPump(
+    procedure
+    var
+      Client: TBridgeTestClient;
+      Args, Resp, R: TJSONObject;
+      KindVal, ValueVal: TJSONValue;
+    begin
+      Client := TBridgeTestClient.Create;
+      try
+        Assert.IsTrue(Client.ConnectAndHandshake(PipeName, 2000), 'connect');
+        Args := TJSONObject.Create;
+        Args.AddPair('path', 'FixtureForm');
+        Args.AddPair('propName', 'MyWordBool');
+        Resp := Client.Call(242, 'read_property', Args);
+        try
+          R := GetOkResult(Resp);
+          Assert.IsNotNull(R, 'read_property should return ok for a WordBool property');
+          KindVal := R.GetValue('kind');
+          if KindVal IS TJSONString then Kind := TJSONString(KindVal).Value;
+          ValueVal := R.GetValue('value');
+          if ValueVal IS TJSONString then Value := TJSONString(ValueVal).Value;
+        finally
+          Resp.Free;
+        end;
+      finally
+        Client.Free;
+      end;
+    end, 5000);
+  Assert.AreEqual('boolean', Kind, 'the bool family must be tagged boolean, not enum');
+  Assert.AreEqual('True', Value, 'the RTL renders this family through BooleanIdents');
 end;
 
 
