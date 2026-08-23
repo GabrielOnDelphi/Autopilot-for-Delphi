@@ -17,6 +17,8 @@
 7. **`set_property` skips writes that wouldn't change the value (write-side elision).** The response carries `elided: true|false` — `true` means `OnChange` did NOT fire. Use that to distinguish "I caused a change" from "the value was already correct".
 8. **Hand off scripted sequences of ≥ 5 sequential tool calls to a dedicated subagent.** Not relevant on hosts other than Claude Code; on Claude Code, see "Subagent dispatch" below.
 
+**Launching an app no longer steals the keyboard focus** — a LightSaber VCL app built with `AUTOPILOT` comes up visible but unfocused (`TLightForm` gates its startup windows with `WS_EX_NOACTIVATE`), so you can launch and drive it while the user keeps typing elsewhere; this does NOT apply to FMX, nor to an app that calls `SetForegroundWindow` / `Application.BringToFront` during startup — including an app with a `TCoolTrayIcon` whose `FocusFormOnShow` is still TRUE (that component grabs the foreground on every show of its owner form; clear the field in `FormCreate`, under an AUTOPILOT conditional) — see `Issues\No focus steal\`.
+
 ---
 
 ## The thirteen MCP tools — full reference
