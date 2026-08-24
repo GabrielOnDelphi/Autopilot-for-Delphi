@@ -1,4 +1,4 @@
-# Commercial license
+﻿# Commercial license
 
 Autopilot for Delphi is **free for noncommercial use** under the [SciVance Noncommercial License 1.0](LICENSE). Commercial use and government use need a separate paid license — this page explains who needs one and how to get it.
 
@@ -30,5 +30,3 @@ One-time payment — no subscription.
 - **Buy online ($25/developer):** <https://store.payproglobal.com/checkout?products[1][id]=134850>
 
 You receive an invoice after purchase..
-
-# 
