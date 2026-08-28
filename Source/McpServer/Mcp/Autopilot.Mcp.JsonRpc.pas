@@ -51,6 +51,36 @@ const
   ServerName = 'Autopilot.Mcp';
 
 const
+  /// Sent as the optional top-level "instructions" field of the initialize result. The MCP spec
+  /// defines it (https://modelcontextprotocol.io/specification/2025-06-18/basic/lifecycle — the
+  /// server response example carries "instructions": "Optional instructions for the client"), and
+  /// hosts place it in the model's system prompt.
+  /// It exists because the thirteen tool descriptions say how to DRIVE an app but nothing about how
+  /// to get the bridge INTO one: a customer who only ran `claude mcp add` otherwise gets
+  /// -32099 target_not_running with no idea what to do next. Keep it short — it is billed on every
+  /// turn of every session.
+  ServerInstructions =
+      'Autopilot drives a RUNNING Delphi VCL or FMX application: click controls, set and read text, '
+    + 'read and write published properties via RTTI, dismiss native dialogs, screenshot a form.' + sLineBreak
+    + sLineBreak
+    + 'The target app must be running right now AND must have been built with the bridge linked in. '
+    + 'Error -32099 target_not_running means it is closed, or was built without the bridge. Do not '
+    + 'retry the tool — wire the bridge in first:' + sLineBreak
+    + '  1. Put the Source\Bridge folder of the Autopilot repository on the project unit search path, '
+    + 'and add Autopilot.Bridge.Vcl (VCL apps) or Autopilot.Bridge.Fmx (FMX apps) to the .dpr uses clause.' + sLineBreak
+    + '  2. Call StartBridge in the .dpr, after the main form is created and before Application.Run.' + sLineBreak
+    + '  3. Add AUTOPILOT to the conditional defines of the DEBUG build configuration only. Without that '
+    + 'define StartBridge compiles to an empty procedure, so a Release build carries no automation at all.' + sLineBreak
+    + '  4. Rebuild, run the app, then retry the tool.' + sLineBreak
+    + sLineBreak
+    + 'Never ask the user for a path, a port or a process id: a target announces itself and the tools '
+    + 'attach on their own. Only when several targets run at once do you pass the pid you want.' + sLineBreak
+    + sLineBreak
+    + 'Control paths are dotted, FormName.ControlName (for example frmMain.btnSave). Call list_tree once '
+    + 'to learn them, then act — do not re-list before every action. To verify a result prefer get_text '
+    + 'over screenshot: it is faster and costs no image tokens.';
+
+const
   /// Versions we accept verbatim on initialize. Anything else negotiates down
   /// to MCP_PROTOCOL_VERSION. Order matters for readability only — lookup is linear.
   GSupportedVersions: array[0..3] of String = (
@@ -212,6 +242,7 @@ begin
   Result.AddPair('protocolVersion', NegotiateVersion(AParams));
   Result.AddPair('capabilities', Caps);
   Result.AddPair('serverInfo', ServerInfo);
+  Result.AddPair('instructions', ServerInstructions);
 end;
 
 
