@@ -22,6 +22,7 @@ type
     [Test] procedure Test_Initialize_EchoesSupportedVersion;
     [Test] procedure Test_Initialize_FallsBackForBogusVersion;
     [Test] procedure Test_Initialize_ReturnsServerInfo;
+    [Test] procedure Test_Initialize_ReturnsWiringInstructions;
     [Test] procedure Test_Ping_ReturnsEmptyObject;
     [Test] procedure Test_UnknownMethod_Returns32601;
     [Test] procedure Test_MalformedJson_Returns32700;
@@ -136,6 +137,34 @@ begin
     Assert.IsNotNull(Info, 'result.serverInfo missing');
     Assert.AreEqual('Autopilot.Mcp', Info.GetValue('name').Value);
     Assert.IsNotNull(Info.GetValue('version'), 'serverInfo.version missing');
+  finally
+    Root.Free;
+  end;
+end;
+
+
+/// The initialize result must carry the optional MCP "instructions" string, and that string must
+/// still contain the bridge-wiring recipe. It is the only channel that tells a customer's AI how to
+/// get the bridge INTO an app — the thirteen tool descriptions only say how to drive one. Losing it
+/// puts every new user back at -32099 target_not_running with no way forward.
+procedure TJsonRpcTests.Test_Initialize_ReturnsWiringInstructions;
+var
+  Resp, Instr: String;
+  Root, Result_: TJSONObject;
+begin
+  Resp := DispatchLine('{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}');
+  Root := Parse(Resp);
+  try
+    Result_ := Root.GetValue('result') AS TJSONObject;
+    Assert.IsNotNull(Result_, 'result missing');
+    Assert.IsNotNull(Result_.GetValue('instructions'), 'result.instructions missing');
+
+    Instr := Result_.GetValue('instructions').Value;
+    Assert.IsTrue(Instr.Contains('StartBridge'),           'instructions do not mention StartBridge');
+    Assert.IsTrue(Instr.Contains('AUTOPILOT'),             'instructions do not mention the AUTOPILOT define');
+    Assert.IsTrue(Instr.Contains('Autopilot.Bridge.Vcl'),  'instructions do not name the VCL bridge unit');
+    Assert.IsTrue(Instr.Contains('Autopilot.Bridge.Fmx'),  'instructions do not name the FMX bridge unit');
+    Assert.IsTrue(Instr.Contains('-32099'),                'instructions do not tie the recipe to target_not_running');
   finally
     Root.Free;
   end;
