@@ -46,7 +46,7 @@ function CallTarget(const APipeName: String; ARequestJson: TJSONObject; ATimeout
 implementation
 
 uses
-  System.IOUtils, System.Generics.Collections,
+  System.Types, System.IOUtils, System.Generics.Collections,
   Autopilot.Bridge.Log;
 
 
@@ -88,7 +88,7 @@ end;
 function ListTargets: TTargetList;
 var
   Folder: String;
-  Files: TArray<String>;
+  Files: TStringDynArray;   // exact return type of TDirectory.GetFiles. Older compilers (10.2) do not accept TArray<String> here
   i: Integer;
   Entry: TTargetEntry;
   PidStr, Line: String;
