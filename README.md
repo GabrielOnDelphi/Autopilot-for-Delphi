@@ -63,7 +63,7 @@ Then add `AUTOPILOT` to the conditional defines **of your Debug build configurat
 
 That define carries the whole safety story. The working code of the bridge sits inside `{$IFDEF AUTOPILOT}`. Without the define `StartBridge` compiles down to an empty procedure: your Release build opens no communication channel, starts no thread, and exposes nothing. There is nothing to remember to strip out before you ship.
 
-**You do not have to do step 4 by hand.** Once step 2 is done, ask your assistant: *"Wire Autopilot into this project — follow step 4 of the Autopilot README."* It edits the `.dpr` and sets the define for you.
+**You do not have to do step 4 by hand.** The server hands these steps to your assistant the moment it connects, so once step 2 is done you can simply say: *"Wire Autopilot into this project."* It edits the `.dpr` and sets the define for you.
 
 A working example of exactly the code above: `DemoVCL\Autopilot.Demo.dpr`.
 
