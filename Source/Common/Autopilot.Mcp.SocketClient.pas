@@ -1,7 +1,7 @@
 ﻿unit Autopilot.Mcp.SocketClient;
 
 {=============================================================================================================
-   2026.07.07
+   2026.09.01
    www.GabrielMoraru.com
 --------------------------------------------------------------------------------------------------------------
    - TCP loopback socket client for the MCP-server side of the bridge — reaches an Android target via `adb forward`.

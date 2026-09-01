@@ -1,7 +1,7 @@
 ﻿unit Autopilot.Bridge.Socket;
 
 (*============================================================================================================
-   2026.06
+   2026.09
    www.GabrielMoraru.com
 ------------------------------------------------------------------------------------------------------------
    - POSIX/Android-only IBridgeTransport implementation using an AF_UNIX abstract-namespace socket

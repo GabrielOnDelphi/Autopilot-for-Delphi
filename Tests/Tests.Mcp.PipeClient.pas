@@ -1,7 +1,7 @@
 unit Tests.Mcp.PipeClient;
 
 {=============================================================================================================
-   2026.07.07
+   2026.09.01
    www.GabrielMoraru.com
 --------------------------------------------------------------------------------------------------------------
    - DUnitX tests for Autopilot.Mcp.PipeClient: PC-side proof using a synthetic TFakePipeBridge that runs on

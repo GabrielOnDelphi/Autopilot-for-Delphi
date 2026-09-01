@@ -1,7 +1,7 @@
 ﻿unit Autopilot.Bridge.NativeDialogs;
 
 {=============================================================================================================
-   2026.08.19
+   2026.09.01
    www.GabrielMoraru.com
 --------------------------------------------------------------------------------------------------------------
    - Native Win32 dialog escape hatch: reaches MessageBox / Task Dialog / common dialogs with no TComponent

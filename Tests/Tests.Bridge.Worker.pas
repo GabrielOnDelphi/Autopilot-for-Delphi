@@ -1,7 +1,7 @@
 ﻿unit Tests.Bridge.Worker;
 
 {=============================================================================================================
-   2026.06
+   2026.09
    www.GabrielMoraru.com
 --------------------------------------------------------------------------------------------------------------
    - DUnitX tests for TBridgeWorker driven through a TFakeTransport (in-memory IBridgeTransport implementation — no pipe, no socket).

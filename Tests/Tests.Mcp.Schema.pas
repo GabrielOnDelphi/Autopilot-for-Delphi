@@ -1,7 +1,7 @@
 ﻿unit Tests.Mcp.Schema;
 
 {=============================================================================================================
-   2026.06
+   2026.09
    www.GabrielMoraru.com
 --------------------------------------------------------------------------------------------------------------
    - DUnitX tests for TMCPSchemaGenerator: verifies that a params class with mixed property types and [Optional]/[SchemaDescription] attributes produces correct JSON schema output.

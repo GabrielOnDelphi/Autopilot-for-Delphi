@@ -1,7 +1,7 @@
 ﻿unit Autopilot.Bridge.NamedPipe;
 
 {=============================================================================================================
-   2026.06
+   2026.09
    www.GabrielMoraru.com
 --------------------------------------------------------------------------------------------------------------
    - Windows-only IBridgeTransport implementation using Win32 named pipes with owner-only ACL

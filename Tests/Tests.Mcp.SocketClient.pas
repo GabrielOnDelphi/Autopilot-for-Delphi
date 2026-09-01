@@ -1,7 +1,7 @@
 ﻿unit Tests.Mcp.SocketClient;
 
 {=============================================================================================================
-   2026.07.07
+   2026.09.01
    www.GabrielMoraru.com
 --------------------------------------------------------------------------------------------------------------
    - DUnitX tests for Autopilot.Mcp.SocketClient: PC-side proof using a synthetic TFakeBridgeListener that runs on a background thread and speaks the wire protocol (hello frame, request/response round-trip).

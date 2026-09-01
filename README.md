@@ -99,8 +99,10 @@ Skip this and everything still works. The assistant just finds its way around mo
 ## License
 
 Dual-licensed:
-- **Noncommercial use — free**, under the [SciVance Noncommercial License 1.0](LICENSE) (personal, study, research, hobby, charity, school, public research / health / safety). Nothing to register, no key, no activation — just use it.
+- **Noncommercial use — free**, under the [SciVance Noncommercial License 2.0](LICENSE) (personal, study, research, hobby, charity, school, public research / health / safety). Nothing to register, no key, no activation — just use it.
 - **Commercial or government use — paid**, $25 per developer, one-time. See [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md).
+
+**No redistribution, under either tier.** Use it, change it for yourself, and ship your own compiled application with the Autopilot units built in — all free. Handing the code itself to anyone else is not allowed: not the source, not the `.dcu` files, not a changed copy, not folded into a library, component set, template or sample project. Exact wording: [LICENSE](LICENSE) → *Distribution*.
 
 Source-available, not open source.
 

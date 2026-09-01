@@ -6,7 +6,7 @@ This software is DUAL-LICENSED. Your use falls under exactly one of these:
   1. NONCOMMERCIAL USE - FREE.
      Personal use, study, research, hobby projects, and use by charities,
      schools, and public research / health / safety organizations are free of
-     charge under the SciVance Noncommercial License 1.0, the full text of
+     charge under the SciVance Noncommercial License (2.0), the full text of
      which is reproduced below.
 
   2. COMMERCIAL USE - PAID, and GOVERNMENT USE - PAID.
@@ -15,14 +15,24 @@ This software is DUAL-LICENSED. Your use falls under exactly one of these:
      granted by the license below and requires a separate paid license.
      Contact: i@gabrielmoraru.com   (see COMMERCIAL-LICENSE.md)
 
+NO REDISTRIBUTION. This applies to BOTH of the two above - the free tier and
+the paid tier alike. You may use the software and you may build it into your
+own application. You may NOT pass the software itself on to anyone else:
+not the source code, not the compiled .dcu files, not a changed copy, and not
+folded into a library, component set, template, sample project or software
+development kit. The one thing you may hand out freely is your own compiled
+application with the software built into it. The exact wording is the
+Distribution section below.
+
 This makes the software SOURCE-AVAILABLE, not open source: the license below
-restricts commercial use, which an OSI-approved open-source license cannot do.
+restricts commercial use and redistribution, and an OSI-approved open-source
+license cannot do either.
 
 Required Notice: Copyright Gabriel Moraru (https://gabrielmoraru.com)
 
 ======================================================================
 
-# SciVance Noncommercial License 1.0
+# SciVance Noncommercial License
 
 <https://github.com/GabrielOnDelphi/Autopilot-for-Delphi/blob/main/LICENSE>
 
@@ -32,21 +42,37 @@ In order to get any license under these terms, you must agree to them as both st
 
 ## Copyright License
 
-The licensor grants you a copyright license for the software to do everything you might do with the software that would otherwise infringe the licensor's copyright in it for any permitted purpose.  However, you may only distribute the software according to [Distribution License](#distribution-license) and make changes or new works based on the software according to [Changes and New Works License](#changes-and-new-works-license).
+The licensor grants you a copyright license for the software to do everything you might do with the software that would otherwise infringe the licensor's copyright in it for any permitted purpose.  However, you may only distribute the software according to [Distribution](#distribution) and make changes or new works based on the software according to [Changes and New Works License](#changes-and-new-works-license).
 
-## Distribution License
+## Distribution
 
-The licensor grants you an additional copyright license to distribute copies of the software.  Your license to distribute covers distributing the software with changes and new works permitted by [Changes and New Works License](#changes-and-new-works-license).
+**You may not give the software to anyone else.**  You have no license to distribute, publish, sell, lend, mirror, host, or otherwise make the software available to any other person, in any form.  This covers the source code, the compiled unit files (`.dcu`), packages, archives, copies of the repository, uploads to a package registry or file-sharing service, and inclusion in any library, component set, template, sample project, course material, training data set, or software development kit.  It covers a changed or derived version of the software exactly as it covers the original.
+
+Two narrow permissions, and nothing beyond them:
+
+### 1. Your own compiled application
+
+You may build the software into an application of your own and give that application to other people, including customers.  Conditions:
+
+  a. You distribute the application in compiled form - an executable, an installer, a mobile application package, or similar.
+  b. What you distribute does not contain the source code of the software, its `.dcu` files, or any other form from which a person could recover the software as a unit reusable in their own projects.
+  c. Your own use of the software is licensed - these free terms if your use is noncommercial, a paid license if it is commercial or governmental.
+
+You owe no credit, notice, or attribution inside your application for this permission.
+
+### 2. Other people inside your own organization
+
+You may give a copy of the software to another person in your company or organization when that person's own use is itself licensed - a paid seat if their use is commercial, these free terms if it is noncommercial.  That person is then bound by these terms exactly as you are.  This is not permission to move the software outside your organization.
 
 ## Notices
 
-You must ensure that anyone who gets a copy of any part of the software from you also gets a copy of these terms or the URL for them above, as well as copies of any plain-text lines beginning with `Required Notice:` that the licensor provided with the software.  For example:
+Where one of the two permissions above lets you pass on a copy of any part of the software, you must ensure that whoever gets that copy also gets a copy of these terms or the URL for them above, as well as copies of any plain-text lines beginning with `Required Notice:` that the licensor provided with the software.  For example:
 
 > Required Notice: Copyright Yoyodyne, Inc. (http://example.com)
 
 ## Changes and New Works License
 
-The licensor grants you an additional copyright license to make changes and new works based on the software for any permitted purpose.
+The licensor grants you an additional copyright license to make changes and new works based on the software for any permitted purpose.  **This is for your own use.**  [Distribution](#distribution) applies to anything you change or derive exactly as it applies to the original, so a changed version does not become yours to hand out.
 
 ## Patent License
 
@@ -90,7 +116,9 @@ The first time you are notified in writing that you have violated any of these t
 
 ## Definitions
 
-The **licensor** is the individual or entity offering these terms, and the **software** is the software the licensor makes available under these terms.
+The **licensor** is the individual or entity offering these terms.
+
+The **software** is the software the licensor makes available under these terms, in every form the licensor makes it available - source code, compiled unit files (`.dcu`), packages, and documentation - together with any changed or derived version of any part of it.
 
 **You** refers to the individual or entity agreeing to these terms.
 

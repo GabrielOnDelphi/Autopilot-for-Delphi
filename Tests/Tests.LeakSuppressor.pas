@@ -1,7 +1,7 @@
 ﻿unit Tests.LeakSuppressor;
 
 {=============================================================================================================
-   2026.06
+   2026.09
    www.GabrielMoraru.com
 --------------------------------------------------------------------------------------------------------------
    - Workaround for a 3rd-party DUnitX shutdown leak: installs a vectored exception handler that pre-registers EInOutError objects with FastMM via RegisterExpectedMemoryLeak.

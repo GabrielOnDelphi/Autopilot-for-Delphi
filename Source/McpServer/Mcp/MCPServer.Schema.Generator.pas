@@ -3,7 +3,7 @@ unit MCPServer.Schema.Generator;
 // Derived from GDK
 
 (*=============================================================================================================
-   2026.06
+   2026.09
    www.GabrielMoraru.com
 --------------------------------------------------------------------------------------------------------------
    JSON Schema generator from a Delphi class via RTTI. One public class method builds a

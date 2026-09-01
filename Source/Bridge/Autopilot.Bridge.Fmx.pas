@@ -1,7 +1,7 @@
 ﻿unit Autopilot.Bridge.Fmx;
 
 {=============================================================================================================
-   2026.08.19
+   2026.09.01
    www.GabrielMoraru.com
 --------------------------------------------------------------------------------------------------------------
    - Public bridge interface for FMX target projects (cross-platform: Windows pipe + POSIX AF_UNIX socket)

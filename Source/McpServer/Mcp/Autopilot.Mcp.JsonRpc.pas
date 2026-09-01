@@ -1,7 +1,7 @@
 unit Autopilot.Mcp.JsonRpc;
 
 {=============================================================================================================
-   2026.06
+   2026.09
    www.GabrielMoraru.com
 --------------------------------------------------------------------------------------------------------------
    Single-line JSON-RPC 2.0 dispatcher for the Autopilot MCP server. Implements the minimum MCP

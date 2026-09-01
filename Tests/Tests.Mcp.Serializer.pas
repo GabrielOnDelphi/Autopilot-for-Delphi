@@ -1,7 +1,7 @@
 ﻿unit Tests.Mcp.Serializer;
 
 {=============================================================================================================
-   2026.06
+   2026.09
    www.GabrielMoraru.com
 --------------------------------------------------------------------------------------------------------------
    - DUnitX tests for TMCPSerializer.Deserialize<T>: case-insensitive key lookup, unknown-key error path, basic type coercion (string, integer, numeric-string-to-integer).

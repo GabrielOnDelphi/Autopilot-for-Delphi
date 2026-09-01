@@ -1,7 +1,7 @@
 ﻿unit Autopilot.Mcp.AdbForward;
 
 {=============================================================================================================
-   2026.07.07
+   2026.09.01
    www.GabrielMoraru.com
 --------------------------------------------------------------------------------------------------------------
    - Thin wrapper around the `adb forward` command: tunnels a host loopback TCP port over USB to a listener on the Android device.

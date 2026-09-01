@@ -1,7 +1,7 @@
 ﻿unit Bridge.Tests;
 
 {=============================================================================================================
-   2026.07.07
+   2026.09.01
    www.GabrielMoraru.com
 --------------------------------------------------------------------------------------------------------------
    - DUnitX tests for the Autopilot VCL bridge: handshake, list_tree, click, get_text, set_text, set_checked, set_property, and dismiss_dialog.

@@ -1,7 +1,7 @@
 ﻿unit Tests.Mcp.JsonRpc;
 
 {=============================================================================================================
-   2026.06
+   2026.09
    www.GabrielMoraru.com
 --------------------------------------------------------------------------------------------------------------
    - DUnitX tests for the MCP JSON-RPC dispatcher: initialize negotiation, ping, error codes (-32601/-32700), id-type preservation (numeric/string/null), notification handling.

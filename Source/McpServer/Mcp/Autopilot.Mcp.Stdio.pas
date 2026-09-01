@@ -1,7 +1,7 @@
 unit Autopilot.Mcp.Stdio;
 
 {=============================================================================================================
-   2026.06
+   2026.09
    www.GabrielMoraru.com
 --------------------------------------------------------------------------------------------------------------
    The MCP server's stdio main loop. Reads one JSON-RPC line at a time from stdin, dispatches it,

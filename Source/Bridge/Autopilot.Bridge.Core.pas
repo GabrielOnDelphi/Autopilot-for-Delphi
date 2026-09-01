@@ -1,7 +1,7 @@
 ﻿unit Autopilot.Bridge.Core;
 
 {=============================================================================================================
-   2026.07.07
+   2026.09.01
    www.GabrielMoraru.com
 --------------------------------------------------------------------------------------------------------------
    - Shared protocol types and wire-framing helpers for the Autopilot bridge (all platforms)

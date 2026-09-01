@@ -1,7 +1,7 @@
 ﻿unit Autopilot.Mcp.TargetMode;
 
 {=============================================================================================================
-   2026.06
+   2026.09
    www.GabrielMoraru.com
 --------------------------------------------------------------------------------------------------------------
    - Holds the MCP server's target transport mode, parsed once from the command line at startup.

@@ -1,7 +1,7 @@
 ﻿unit Bridge.TestClient;
 
 {=============================================================================================================
-   2026.06
+   2026.09
    www.GabrielMoraru.com
 --------------------------------------------------------------------------------------------------------------
    - Minimal named-pipe test client used by the DUnitX suite — exercises the wire protocol directly, not internal calls.

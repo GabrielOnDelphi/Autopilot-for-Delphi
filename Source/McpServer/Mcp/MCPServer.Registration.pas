@@ -1,7 +1,7 @@
 unit MCPServer.Registration;
 
 {=============================================================================================================
-   2026.06
+   2026.09
    www.GabrielMoraru.com
 --------------------------------------------------------------------------------------------------------------
    Name -> factory map for tool registration. Each Autopilot.Mcp.Tool.* unit registers a factory

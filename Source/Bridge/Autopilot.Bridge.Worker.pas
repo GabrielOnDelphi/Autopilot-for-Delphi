@@ -1,7 +1,7 @@
 ﻿unit Autopilot.Bridge.Worker;
 
 {=============================================================================================================
-   2026.08.19
+   2026.09.01
    www.GabrielMoraru.com
 --------------------------------------------------------------------------------------------------------------
    - Shared bridge worker thread (all platforms): accept → handshake → serve requests → recycle
