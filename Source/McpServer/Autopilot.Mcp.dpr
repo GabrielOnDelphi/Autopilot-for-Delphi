@@ -32,6 +32,11 @@
 {$APPTYPE CONSOLE}
 
 USES
+  {$IFDEF madshi}
+  madExcept,                     // Must stay first: its initialization installs the unhandled-exception hook.
+  madLinkDisAsm,                 // Disassembles the faulting frames into the report.
+  madListModules,                // Lists loaded modules in the report.
+  {$ENDIF}
   System.SysUtils,
   Winapi.Windows,
   MCPServer.Types               in 'Mcp\MCPServer.Types.pas',
@@ -68,6 +73,20 @@ begin
   ReportMemoryLeaksOnShutdown := TRUE;
   IsMultiThread := TRUE;
 
+  {$IFDEF madshi}
+  { # Crash reporting }
+  // madExcept defaults RequireAuthenticSsl to FALSE (madExcept.pas:1858), which sets
+  // SECURITY_FLAG_IGNORE_UNKNOWN_CA / _CERT_CN_INVALID / _CERT_DATE_INVALID (:8886-8889):
+  // the upload would be encrypted but not authenticated.
+  RequireAuthenticSsl:= TRUE;
+
+  // The crash-report endpoint keeps a server-side allowlist and refuses any product missing
+  // from it. These two fields are the key. AdditionalFields is NOT encrypted (madExcept.pas:4095),
+  // unlike the password settings, so nothing secret may ever go here.
+  MESettings.AdditionalFields['Product']:= 'Autopilot';
+  MESettings.AdditionalFields['Version']:= BridgeVersion;
+  {$ENDIF}
+
   BridgeLogInfo('mcp', 'server starting (stdio) v' + BridgeVersion);
   BridgeLogInfo('license', CommercialLicenseHint);
   TrackUsageAndMaybePromoteBook;
@@ -87,7 +106,16 @@ begin
     RunStdioServer;
   EXCEPT
     ON E: Exception DO
-      BridgeLogError('mcp', 'fatal: ' + E.ClassName + ': ' + E.Message);
+      begin
+        BridgeLogError('mcp', 'fatal: ' + E.ClassName + ': ' + E.Message);
+        // Log and RE-RAISE, never swallow. madExcept hooks only UNHANDLED exceptions, so
+        // catching one here would make the whole crash-reporting chain dead code - a build
+        // that passes every check and reports nothing, forever.
+        // RunStdioServer already handles everything survivable inside its own loop (a failed
+        // Readln, a dispatcher that escaped, a failed Writeln), so anything arriving here is
+        // fatal by construction and there is nothing to continue to.
+        RAISE;
+      end;
   END;
   BridgeLogInfo('mcp', 'server stopped');
 end.
