@@ -79,25 +79,19 @@ __recovery/
 
 # Boss dependency manager vendor folder https://github.com/HashLoad/boss
 modules/
-# Internal docs — never publish. See CLAUDE.md "Folder layout".
-/_Old
+# Never published. Everything internal now lives in one folder — see CLAUDE.md "Folder layout".
+/_Local info/
+
+# Not internal notes, but still not published: the shippable package and the video demo project.
 /_Release Package
-/Issues
-/_Competition
 /DemoVCL-Video
+
+# Stay at the project root by necessity, never published:
+#   CLAUDE.md   - Claude Code loads it from the project root
+#   HandOver.md - the /light-md-HandOver skill looks for it beside CLAUDE.md
 CLAUDE.md
 HandOver.md
-Footguns.md
-ReviewHistory.md
-Plans - design archive.md
-Commands - build, test, drive.md
-Headless Android Build.md
-Video demo script.md
-Landing page plan.md
-Plan - MCP server goes binary.md
-/LOCAL INFO
 
 Source/McpServer/Autopilot.Mcp.res
 DemoVCL/Autopilot.Demo.res
-COMMERCIAL-LICENSE backup.md
-LICENSE backup
+Source/McpServer/Autopilot.Mcp.mes
