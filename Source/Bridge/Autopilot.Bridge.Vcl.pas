@@ -332,6 +332,73 @@ begin
 end;
 
 
+// Data-aware controls (TDBEdit, TDBMemo, TDBCheckBox, TDBComboBox, ...) route a
+// user edit through their TFieldDataLink: KeyPress/Toggle call DataLink.Edit
+// (dataset enters dsEdit; TDBEdit even keeps the Windows edit read-only until
+// then), and CMExit calls DataLink.UpdateRecord (value reaches the field
+// buffer). A plain RTTI write skips both, so the dataset never leaves dsBrowse
+// and the text is silently discarded on the next scroll. The two helpers below
+// replay that chain around a bridge write.
+//
+// Resolved purely via RTTI (DataField -> DataSource -> DataSet -> Edit), so the
+// bridge stays free of Data.DB and apps without a database link nothing extra.
+
+// TRUE when AComp is bound to a field (published DataField <> '' and a
+// DataSource with a DataSet). Calls DataSet.Edit when the dataset is modifiable;
+// Edit is a no-op if it is already in dsEdit/dsInsert.
+function TryDataBoundEdit(AComp: TComponent): Boolean;
+var
+  Ctx: TRttiContext;
+  RT: TRttiType;
+  Prop: TRttiProperty;
+  M: TRttiMethod;
+  DataSource, DataSet: TObject;
+begin
+  Assert(GetCurrentThreadId = MainThreadID, 'TryDataBoundEdit: VCL touched off the main thread');
+  Result := FALSE;
+  Ctx := TRttiContext.Create;
+  try
+    RT := Ctx.GetType(AComp.ClassType);
+    if RT = NIL then exit;
+    Prop := RT.GetProperty('DataField');
+    if (Prop = NIL) or not Prop.IsReadable or (Prop.GetValue(AComp).AsString = '') then exit;
+    Prop := RT.GetProperty('DataSource');
+    if (Prop = NIL) or not Prop.IsReadable or not Prop.PropertyType.IsInstance then exit;
+    DataSource := Prop.GetValue(AComp).AsObject;
+    if DataSource = NIL then exit;
+
+    RT := Ctx.GetType(DataSource.ClassType);
+    if RT = NIL then exit;
+    Prop := RT.GetProperty('DataSet');
+    if (Prop = NIL) or not Prop.IsReadable or not Prop.PropertyType.IsInstance then exit;
+    DataSet := Prop.GetValue(DataSource).AsObject;
+    if DataSet = NIL then exit;
+    Result := TRUE;
+
+    RT := Ctx.GetType(DataSet.ClassType);
+    if RT = NIL then exit;
+    Prop := RT.GetProperty('CanModify');
+    if (Prop <> NIL) and Prop.IsReadable and not Prop.GetValue(DataSet).AsBoolean then exit;
+    M := RT.GetMethod('Edit');
+    if (M = NIL) or (Length(M.GetParameters) <> 0) then exit;
+    M.Invoke(DataSet, []);
+  finally
+    Ctx.Free;
+  end;
+end;
+
+
+// Same message the VCL sends on focus loss. The data-aware CMExit handlers call
+// DataLink.UpdateRecord and then run the regular OnExit chain, exactly what a
+// user gets when tabbing away from the control.
+procedure DataBoundExit(AComp: TComponent);
+begin
+  Assert(GetCurrentThreadId = MainThreadID, 'DataBoundExit: VCL touched off the main thread');
+  if AComp is TWinControl then
+    TWinControl(AComp).Perform(CM_EXIT, 0, 0);
+end;
+
+
 // Set a published string-style property via RTTI. Tries Text first then Caption.
 // Returns FALSE if no writable matching property exists; AErrCode tells the caller
 // whether the property is genuinely missing or simply read-only.
@@ -1264,6 +1331,30 @@ begin
 end;
 
 
+// Read the published Checked property. FALSE when the component has none.
+function TryGetCheckedProperty(AComp: TComponent; OUT AValue: Boolean): Boolean;
+var
+  Ctx: TRttiContext;
+  RT: TRttiType;
+  Prop: TRttiProperty;
+begin
+  Assert(GetCurrentThreadId = MainThreadID, 'TryGetCheckedProperty: VCL touched off the main thread');
+  Result := FALSE;
+  AValue := FALSE;
+  Ctx := TRttiContext.Create;
+  try
+    RT := Ctx.GetType(AComp.ClassType);
+    if RT = NIL then exit;
+    Prop := RT.GetProperty('Checked');
+    if (Prop = NIL) or not Prop.IsReadable then exit;
+    AValue := Prop.GetValue(AComp).AsBoolean;
+    Result := TRUE;
+  finally
+    Ctx.Free;
+  end;
+end;
+
+
 // Leaf name for a path segment: real Name when present, else synthetic '@TButton#N'.
 function LeafNameFor(AComp: TComponent): String;
 begin
@@ -1772,6 +1863,7 @@ var
   Enabled: Boolean;
   ErrCode: Integer;
   Wrap: TJSONObject;
+  DataBound: Boolean;
 begin
   Assert(GetCurrentThreadId = MainThreadID, 'HandleSetText must run on the main thread');
   Result := Default(TBridgeResponse);
@@ -1819,6 +1911,10 @@ begin
     exit;
   end;
 
+  // Edit BEFORE the write: entering dsEdit fires DataChange, which reloads the
+  // control from the field and would overwrite a value written earlier.
+  DataBound := TryDataBoundEdit(Comp);
+
   if not TrySetTextProperty(Comp, Text, ErrCode) then
   begin
     Result.Ok := FALSE;
@@ -1830,8 +1926,12 @@ begin
     exit;
   end;
 
+  if DataBound then
+    DataBoundExit(Comp);
+
   Wrap := TJSONObject.Create;
   Wrap.AddPair('path', Path);
+  Wrap.AddPair('dataBound', TJSONBool.Create(DataBound));
   Result.Ok := TRUE;
   Result.ResultJson := Wrap;
 end;
@@ -1846,6 +1946,7 @@ var
   Enabled: Boolean;
   ErrCode: Integer;
   Wrap: TJSONObject;
+  DataBound, Current: Boolean;
 begin
   Assert(GetCurrentThreadId = MainThreadID, 'HandleSetChecked must run on the main thread');
   Result := Default(TBridgeResponse);
@@ -1893,7 +1994,19 @@ begin
     exit;
   end;
 
-  if not TrySetCheckedProperty(Comp, Checked, ErrCode) then
+  DataBound := TryDataBoundEdit(Comp);
+  if DataBound and (Comp is TWinControl) and TWinControl(Comp).HandleAllocated
+     and TryGetCheckedProperty(Comp, Current) then
+  begin
+    // TDBCheckBox writes to its DataLink only from Toggle (protected), which the
+    // VCL reaches via BN_CLICKED. A direct Checked write would never mark the
+    // link modified and CMExit would then skip the field update. So toggle through
+    // BM_CLICK (Perform = synchronous) when the state has to change, then exit.
+    if Current <> Checked then
+      TWinControl(Comp).Perform(BM_CLICK, 0, 0);
+    DataBoundExit(Comp);
+  end
+  else if not TrySetCheckedProperty(Comp, Checked, ErrCode) then
   begin
     Result.Ok := FALSE;
     Result.ErrorCode := ErrCode;
@@ -1907,6 +2020,7 @@ begin
   Wrap := TJSONObject.Create;
   Wrap.AddPair('path', Path);
   Wrap.AddPair('checked', TJSONBool.Create(Checked));
+  Wrap.AddPair('dataBound', TJSONBool.Create(DataBound));
   Result.Ok := TRUE;
   Result.ResultJson := Wrap;
 end;

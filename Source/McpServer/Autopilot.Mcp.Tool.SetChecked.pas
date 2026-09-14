@@ -54,7 +54,9 @@ constructor TSetCheckedTool.Create;
 begin
   inherited;
   FName := 'set_checked';
-  FDescription := 'Set the Checked property of a TCheckBox / TRadioButton / similar.';
+  FDescription := 'Set the Checked property of a TCheckBox / TRadioButton / similar. ' +
+                  'A VCL data-aware TDBCheckBox is toggled through BM_CLICK (DataSet.Edit + DataLink.Modified) ' +
+                  'and then gets CM_EXIT (DataLink.UpdateRecord); the result then carries dataBound=true.';
 end;
 
 

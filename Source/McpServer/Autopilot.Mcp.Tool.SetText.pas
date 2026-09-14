@@ -54,7 +54,10 @@ constructor TSetTextTool.Create;
 begin
   inherited;
   FName := 'set_text';
-  FDescription := 'Set the Text (preferred) or Caption of a control on a running target form.';
+  FDescription := 'Set the Text (preferred) or Caption of a control on a running target form. ' +
+                  'VCL data-aware controls (TDBEdit, TDBMemo, ...) get the full user chain: DataSet.Edit before ' +
+                  'the write and CM_EXIT (DataLink.UpdateRecord) after it, so the value lands in the field buffer; ' +
+                  'the result then carries dataBound=true.';
 end;
 
 

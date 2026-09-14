@@ -107,11 +107,15 @@ Use this (NOT `screenshot`) to verify that a click produced the expected state. 
 
 Writes `Text` (or `Caption` for label-class controls) via RTTI. `OnChange` fires synchronously as a side effect of the RTL setter chain. There is no `mode='message'` opt-in yet — file a feature request if you hit a fidelity gap.
 
+**Data-aware VCL controls** (`TDBEdit`, `TDBMemo`, `TDBComboBox`, … — anything with a published `DataField` and a `DataSource` whose `DataSet` is assigned) get the same chain a typing user triggers: `DataSet.Edit` BEFORE the write (the dataset enters `dsEdit`; `TDBEdit` even keeps its Windows edit read-only until then) and `CM_EXIT` AFTER it (the control's `CMExit` runs `DataLink.UpdateRecord`, then the regular `OnExit`). Without that a plain RTTI write only changes the window text and the dataset discards it on the next scroll. The response carries `dataBound: true` when the chain ran. The value sits in the field buffer afterwards — it is persisted by whatever the form does next (`Post`, a Save button, …), exactly as for a user. Resolved via RTTI only, so apps without `Data.DB` link nothing extra. FMX is unchanged.
+
 ### `set_checked`
 
 `set_checked(path, checked, pid?)`
 
 `checked: true | false`. Flips `Checked` (VCL) / `IsChecked` (FMX) and fires `OnChange` / `OnClick`.
+
+A data-aware VCL `TDBCheckBox` writes to its `DataLink` only from the protected `Toggle`, which the VCL reaches via `BN_CLICKED`. So when the state has to change the bridge sends `BM_CLICK` (synchronous `Perform`, runs `DataSet.Edit` + `DataLink.Modified`) instead of writing `Checked`, then `CM_EXIT` (`DataLink.UpdateRecord`). Response carries `dataBound: true`.
 
 ### `set_property`
 
