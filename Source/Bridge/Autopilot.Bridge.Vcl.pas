@@ -332,59 +332,175 @@ begin
 end;
 
 
-// Data-aware controls (TDBEdit, TDBMemo, TDBCheckBox, TDBComboBox, ...) route a
-// user edit through their TFieldDataLink: KeyPress/Toggle call DataLink.Edit
-// (dataset enters dsEdit; TDBEdit even keeps the Windows edit read-only until
-// then), and CMExit calls DataLink.UpdateRecord (value reaches the field
-// buffer). A plain RTTI write skips both, so the dataset never leaves dsBrowse
-// and the text is silently discarded on the next scroll. The two helpers below
-// replay that chain around a bridge write.
+// Data-aware controls (TDBEdit, TDBMemo, TDBCheckBox, ...) route a user edit
+// through their TFieldDataLink: KeyPress/Toggle call DataLink.Edit (dataset
+// enters dsEdit; TDBEdit even keeps the Windows edit read-only until then), and
+// CMExit calls DataLink.UpdateRecord (value reaches the field buffer). A plain
+// RTTI write skips both, so the dataset never leaves dsBrowse and the text is
+// silently discarded on the next scroll. The helpers below replay that chain
+// around a bridge write.
 //
-// Resolved purely via RTTI (DataField -> DataSource -> DataSet -> Edit), so the
-// bridge stays free of Data.DB and apps without a database link nothing extra.
+// Resolved purely via RTTI (DataField -> DataSource -> DataSet), so the bridge
+// stays free of Data.DB and apps without a database link nothing extra.
 
-// TRUE when AComp is bound to a field (published DataField <> '' and a
-// DataSource with a DataSet). Calls DataSet.Edit when the dataset is modifiable;
-// Edit is a no-op if it is already in dsEdit/dsInsert.
-function TryDataBoundEdit(AComp: TComponent): Boolean;
+// Read a published property by name; FALSE when the object has no such readable property.
+function TryReadProp(AObj: TObject; const AName: String; OUT AValue: TValue): Boolean;
 var
   Ctx: TRttiContext;
   RT: TRttiType;
   Prop: TRttiProperty;
-  M: TRttiMethod;
-  DataSource, DataSet: TObject;
 begin
-  Assert(GetCurrentThreadId = MainThreadID, 'TryDataBoundEdit: VCL touched off the main thread');
   Result := FALSE;
+  if AObj = NIL then exit;
   Ctx := TRttiContext.Create;
   try
-    RT := Ctx.GetType(AComp.ClassType);
+    RT := Ctx.GetType(AObj.ClassType);
     if RT = NIL then exit;
-    Prop := RT.GetProperty('DataField');
-    if (Prop = NIL) or not Prop.IsReadable or (Prop.GetValue(AComp).AsString = '') then exit;
-    Prop := RT.GetProperty('DataSource');
-    if (Prop = NIL) or not Prop.IsReadable or not Prop.PropertyType.IsInstance then exit;
-    DataSource := Prop.GetValue(AComp).AsObject;
-    if DataSource = NIL then exit;
-
-    RT := Ctx.GetType(DataSource.ClassType);
-    if RT = NIL then exit;
-    Prop := RT.GetProperty('DataSet');
-    if (Prop = NIL) or not Prop.IsReadable or not Prop.PropertyType.IsInstance then exit;
-    DataSet := Prop.GetValue(DataSource).AsObject;
-    if DataSet = NIL then exit;
+    Prop := RT.GetProperty(AName);
+    if (Prop = NIL) or not Prop.IsReadable then exit;
+    AValue := Prop.GetValue(AObj);
     Result := TRUE;
-
-    RT := Ctx.GetType(DataSet.ClassType);
-    if RT = NIL then exit;
-    Prop := RT.GetProperty('CanModify');
-    if (Prop <> NIL) and Prop.IsReadable and not Prop.GetValue(DataSet).AsBoolean then exit;
-    M := RT.GetMethod('Edit');
-    if (M = NIL) or (Length(M.GetParameters) <> 0) then exit;
-    M.Invoke(DataSet, []);
   finally
     Ctx.Free;
   end;
+end;
+
+
+function HasWritableProperty(AObj: TObject; const AName: String): Boolean;
+var
+  Ctx: TRttiContext;
+  RT: TRttiType;
+  Prop: TRttiProperty;
+begin
+  Result := FALSE;
+  if AObj = NIL then exit;
+  Ctx := TRttiContext.Create;
+  try
+    RT := Ctx.GetType(AObj.ClassType);
+    if RT = NIL then exit;
+    Prop := RT.GetProperty(AName);
+    Result := (Prop <> NIL) and Prop.IsWritable;
+  finally
+    Ctx.Free;
+  end;
+end;
+
+
+// TRUE when AComp is bound to a field: published DataField <> '' and a
+// DataSource whose DataSet is assigned. AField is the TField (NIL when the
+// dataset is closed or the name does not resolve), looked up via
+// TDataSet.FindField so the bridge stays free of Data.DB.
+function TryResolveDataBinding(AComp: TComponent; OUT ADataSet, AField: TObject): Boolean;
+var
+  Ctx: TRttiContext;
+  RT: TRttiType;
+  M: TRttiMethod;
+  V: TValue;
+  FieldName: String;
+  DataSource: TObject;
+begin
+  Assert(GetCurrentThreadId = MainThreadID, 'TryResolveDataBinding: VCL touched off the main thread');
+  Result := FALSE;
+  ADataSet := NIL;
+  AField := NIL;
+  if not TryReadProp(AComp, 'DataField', V) or (V.Kind <> tkUString) then exit;
+  FieldName := V.AsString;
+  if FieldName = '' then exit;
+  if not TryReadProp(AComp, 'DataSource', V) or not V.IsObject then exit;
+  DataSource := V.AsObject;
+  if not TryReadProp(DataSource, 'DataSet', V) or not V.IsObject or (V.AsObject = NIL) then exit;
+  ADataSet := V.AsObject;
+  Result := TRUE;
+
+  Ctx := TRttiContext.Create;
+  try
+    RT := Ctx.GetType(ADataSet.ClassType);
+    if RT = NIL then exit;
+    M := RT.GetMethod('FindField');
+    if (M = NIL) or (Length(M.GetParameters) <> 1) then exit;
+    V := M.Invoke(ADataSet, [FieldName]);
+    if V.IsObject then AField := V.AsObject;
+  finally
+    Ctx.Free;
+  end;
+end;
+
+
+// Bring the dataset behind a bound control into dsEdit the way the control's
+// own DataLink.Edit would: refuse when the control is ReadOnly, the field cannot
+// be modified (calculated/lookup/ReadOnly), or the DataSource does not allow
+// AutoEdit. A dataset that is already in dsEdit/dsInsert needs nothing (that is
+// how an app that calls Edit itself lets the user type). Goes through
+// DataSource.Edit, which honours Enabled/AutoEdit and calls DataSet.Edit.
+// Returns FALSE with a message for the caller when editing is not possible.
+function TryDataBoundEdit(AComp: TComponent; ADataSet, AField: TObject; OUT AError: String): Boolean;
+
+  function StateIsEditing: Boolean;
+  var
+    S: TValue;
+  begin
+    Result := TryReadProp(ADataSet, 'State', S) and (S.Kind = tkEnumeration)
+              and ((S.ToString = 'dsEdit') or (S.ToString = 'dsInsert'));
+  end;
+
+var
+  Ctx: TRttiContext;
+  RT: TRttiType;
+  M: TRttiMethod;
+  V: TValue;
+  DataSource: TObject;
+begin
+  Assert(GetCurrentThreadId = MainThreadID, 'TryDataBoundEdit: VCL touched off the main thread');
+  Result := FALSE;
+  AError := '';
+  if TryReadProp(AComp, 'ReadOnly', V) and (V.Kind = tkEnumeration) and V.AsBoolean then
+  begin
+    AError := AComp.ClassName + '.ReadOnly is TRUE';
+    exit;
+  end;
+  if (AField <> NIL) and TryReadProp(AField, 'CanModify', V) and not V.AsBoolean then
+  begin
+    AError := 'field cannot be modified (ReadOnly, calculated or lookup field)';
+    exit;
+  end;
+  if StateIsEditing then exit(TRUE);
+
+  if TryReadProp(ADataSet, 'CanModify', V) and not V.AsBoolean then
+  begin
+    AError := 'dataset is read-only (CanModify = FALSE)';
+    exit;
+  end;
+  if not TryReadProp(AComp, 'DataSource', V) then exit;
+  DataSource := V.AsObject;
+  if TryReadProp(DataSource, 'AutoEdit', V) and not V.AsBoolean then
+  begin
+    AError := 'DataSource.AutoEdit is FALSE and the dataset is not in edit mode';
+    exit;
+  end;
+
+  Ctx := TRttiContext.Create;
+  try
+    RT := Ctx.GetType(DataSource.ClassType);
+    if RT = NIL then exit;
+    M := RT.GetMethod('Edit');
+    if (M = NIL) or (Length(M.GetParameters) <> 0) then exit;
+    try
+      M.Invoke(DataSource, []);
+    except
+      on E: Exception do
+      begin
+        // OnBeforeEdit may Abort, a provider may refuse: report instead of a bare internal error.
+        AError := 'DataSet.Edit failed: ' + E.ClassName + ': ' + E.Message;
+        BridgeLogWarn('bridge', 'TryDataBoundEdit: ' + AError);
+        exit;
+      end;
+    end;
+  finally
+    Ctx.Free;
+  end;
+  Result := StateIsEditing;
+  if not Result then
+    AError := 'dataset did not enter edit mode';
 end;
 
 
@@ -1864,6 +1980,8 @@ var
   ErrCode: Integer;
   Wrap: TJSONObject;
   DataBound: Boolean;
+  DataSet, Field: TObject;
+  ErrMsg: String;
 begin
   Assert(GetCurrentThreadId = MainThreadID, 'HandleSetText must run on the main thread');
   Result := Default(TBridgeResponse);
@@ -1911,9 +2029,29 @@ begin
     exit;
   end;
 
-  // Edit BEFORE the write: entering dsEdit fires DataChange, which reloads the
-  // control from the field and would overwrite a value written earlier.
-  DataBound := TryDataBoundEdit(Comp);
+  DataBound := TryResolveDataBinding(Comp, DataSet, Field);
+  if DataBound then
+  begin
+    // Only a writable Text reaches the field: TDBLookupComboBox has a read-only
+    // Text, TDBRadioGroup none at all, and the Caption fallback would just
+    // relabel the control while the dataset sits in dsEdit.
+    if not HasWritableProperty(Comp, 'Text') then
+    begin
+      Result.Ok := FALSE;
+      Result.ErrorCode := ErrUnsupportedAction;
+      Result.ErrorMessage := Comp.ClassName + ' is data-aware but has no writable Text; use click or set_property';
+      exit;
+    end;
+    // Edit BEFORE the write: entering dsEdit fires DataChange, which reloads the
+    // control from the field and would overwrite a value written earlier.
+    if not TryDataBoundEdit(Comp, DataSet, Field, ErrMsg) then
+    begin
+      Result.Ok := FALSE;
+      Result.ErrorCode := ErrUnsupportedAction;
+      Result.ErrorMessage := Comp.Name + ': ' + ErrMsg;
+      exit;
+    end;
+  end;
 
   if not TrySetTextProperty(Comp, Text, ErrCode) then
   begin
@@ -1947,6 +2085,8 @@ var
   ErrCode: Integer;
   Wrap: TJSONObject;
   DataBound, Current: Boolean;
+  DataSet, Field: TObject;
+  Attempts: Integer;
 begin
   Assert(GetCurrentThreadId = MainThreadID, 'HandleSetChecked must run on the main thread');
   Result := Default(TBridgeResponse);
@@ -1994,16 +2134,38 @@ begin
     exit;
   end;
 
-  DataBound := TryDataBoundEdit(Comp);
-  if DataBound and (Comp is TWinControl) and TWinControl(Comp).HandleAllocated
-     and TryGetCheckedProperty(Comp, Current) then
+  DataBound := TryResolveDataBinding(Comp, DataSet, Field);
+  if DataBound then
   begin
     // TDBCheckBox writes to its DataLink only from Toggle (protected), which the
     // VCL reaches via BN_CLICKED. A direct Checked write would never mark the
     // link modified and CMExit would then skip the field update. So toggle through
-    // BM_CLICK (Perform = synchronous) when the state has to change, then exit.
-    if Current <> Checked then
+    // BM_CLICK (Perform = synchronous); Toggle runs DataLink.Edit itself, so no
+    // Edit up front. Then re-read: Toggle is a no-op when the link refuses Edit
+    // (ReadOnly, AutoEdit = FALSE), and with AllowGrayed a NULL field needs a
+    // second step (unchecked -> grayed -> checked).
+    if not (Comp is TWinControl) or not TryGetCheckedProperty(Comp, Current) then
+    begin
+      Result.Ok := FALSE;
+      Result.ErrorCode := ErrUnsupportedAction;
+      Result.ErrorMessage := Comp.ClassName + ' is data-aware but not a windowed control with Checked';
+      exit;
+    end;
+    TWinControl(Comp).HandleNeeded;
+    Attempts := 0;
+    while (Current <> Checked) and (Attempts < 2) do
+    begin
       TWinControl(Comp).Perform(BM_CLICK, 0, 0);
+      TryGetCheckedProperty(Comp, Current);
+      Inc(Attempts);
+    end;
+    if Current <> Checked then
+    begin
+      Result.Ok := FALSE;
+      Result.ErrorCode := ErrUnsupportedAction;
+      Result.ErrorMessage := Comp.Name + ': Checked did not change (data link refused Edit: ReadOnly field/control or DataSource.AutoEdit = FALSE)';
+      exit;
+    end;
     DataBoundExit(Comp);
   end
   else if not TrySetCheckedProperty(Comp, Checked, ErrCode) then

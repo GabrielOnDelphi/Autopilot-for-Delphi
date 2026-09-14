@@ -55,9 +55,10 @@ begin
   inherited;
   FName := 'set_text';
   FDescription := 'Set the Text (preferred) or Caption of a control on a running target form. ' +
-                  'VCL data-aware controls (TDBEdit, TDBMemo, ...) get the full user chain: DataSet.Edit before ' +
+                  'VCL data-aware controls (TDBEdit, TDBMemo) get the full user chain: DataSource.Edit before ' +
                   'the write and CM_EXIT (DataLink.UpdateRecord) after it, so the value lands in the field buffer; ' +
-                  'the result then carries dataBound=true.';
+                  'the result then carries dataBound=true. Read-only control/field/dataset or AutoEdit=false ' +
+                  'is refused with -32005 and the reason, like the VCL refuses a typing user.';
 end;
 
 

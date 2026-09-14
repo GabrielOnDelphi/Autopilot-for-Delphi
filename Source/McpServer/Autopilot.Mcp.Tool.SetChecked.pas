@@ -55,8 +55,9 @@ begin
   inherited;
   FName := 'set_checked';
   FDescription := 'Set the Checked property of a TCheckBox / TRadioButton / similar. ' +
-                  'A VCL data-aware TDBCheckBox is toggled through BM_CLICK (DataSet.Edit + DataLink.Modified) ' +
-                  'and then gets CM_EXIT (DataLink.UpdateRecord); the result then carries dataBound=true.';
+                  'A VCL data-aware TDBCheckBox is toggled through BM_CLICK (DataLink.Edit + Modified) ' +
+                  'and then gets CM_EXIT (DataLink.UpdateRecord); the state is re-read and a refused toggle ' +
+                  '(read-only link) fails with -32005. The result then carries dataBound=true.';
 end;
 
 
