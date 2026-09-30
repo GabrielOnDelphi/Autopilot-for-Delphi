@@ -1,0 +1,78 @@
+object frmFmxMain: TfrmFmxMain
+  Left = 0
+  Top = 0
+  Caption = 'Autopilot FMX Demo'
+  ClientHeight = 300
+  ClientWidth = 480
+  FormFactor.Width = 320
+  FormFactor.Height = 480
+  FormFactor.Devices = [Desktop]
+  DesignerMasterStyle = 0
+  object lblHeader: TLabel
+    Position.X = 16.000000000000000000
+    Position.Y = 12.000000000000000000
+    Size.Width = 448.000000000000000000
+    Size.Height = 20.000000000000000000
+    Size.PlatformDefault = False
+    TextSettings.WordWrap = False
+    Text = 'Autopilot FMX demo - target app for end-to-end testing.'
+    TabOrder = 3
+  end
+  object lblCounter: TLabel
+    Position.X = 280.000000000000000000
+    Position.Y = 56.000000000000000000
+    Size.Width = 80.000000000000000000
+    Size.Height = 24.000000000000000000
+    Size.PlatformDefault = False
+    Text = '0'
+    TabOrder = 4
+  end
+  object lblNameEcho: TLabel
+    Position.X = 280.000000000000000000
+    Position.Y = 120.000000000000000000
+    Size.Width = 180.000000000000000000
+    Size.Height = 24.000000000000000000
+    Size.PlatformDefault = False
+    Text = ' '
+    TabOrder = 5
+  end
+  object lblFlag: TLabel
+    Position.X = 280.000000000000000000
+    Position.Y = 184.000000000000000000
+    Size.Width = 80.000000000000000000
+    Size.Height = 24.000000000000000000
+    Size.PlatformDefault = False
+    Text = 'off'
+    TabOrder = 6
+  end
+  object btnIncrement: TButton
+    Position.X = 16.000000000000000000
+    Position.Y = 48.000000000000000000
+    Size.Width = 200.000000000000000000
+    Size.Height = 32.000000000000000000
+    Size.PlatformDefault = False
+    TabOrder = 0
+    Text = 'Increment'
+    OnClick = btnIncrementClick
+  end
+  object edtName: TEdit
+    Touch.InteractiveGestures = [LongTap, DoubleTap]
+    TabOrder = 1
+    Position.X = 16.000000000000000000
+    Position.Y = 116.000000000000000000
+    Size.Width = 240.000000000000000000
+    Size.Height = 24.000000000000000000
+    Size.PlatformDefault = False
+    OnChangeTracking = edtNameChangeTracking
+  end
+  object cbxFlag: TCheckBox
+    Position.X = 16.000000000000000000
+    Position.Y = 184.000000000000000000
+    Size.Width = 200.000000000000000000
+    Size.Height = 24.000000000000000000
+    Size.PlatformDefault = False
+    TabOrder = 2
+    Text = 'Toggle flag'
+    OnChange = cbxFlagChange
+  end
+end
