@@ -24,7 +24,8 @@ REM NOTE TO CLAUDE! Do NOT translate this script into bash or PowerShell. Keep i
 call "c:\Delphi\Delphi 13\bin\rsvars.bat"
 
 set "MSBuild=c:\Windows\Microsoft.NET\Framework64\v4.0.30319\MSBuild.exe"
-set "LogFile=c:\AI\Claude Code\Temp\Autopilot_DemoFmx_AndroidDeploy.log"
+set "LogFile=c:\Projects\Projects AI\Autopilot for Delphi\Temp\Autopilot_DemoFmx_AndroidDeploy.log"
+if not exist "c:\Projects\Projects AI\Autopilot for Delphi\Temp\" mkdir "c:\Projects\Projects AI\Autopilot for Delphi\Temp"
 set "ProjectDir=c:\Projects\Projects AI\Autopilot for Delphi\DemoFmx"
 set "DelphiProjectName=!ProjectDir!\Autopilot.DemoFmx.dproj"
 set "DeployProj=!ProjectDir!\Autopilot.DemoFmx.deployproj"
