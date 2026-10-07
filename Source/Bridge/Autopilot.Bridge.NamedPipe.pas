@@ -304,9 +304,9 @@ begin
   end;
 
   // Quirk #3: WakeAndStop self-connects via CreateFileW to unblock us — that produces
-  // a successful "connection" that must not be handshaken with (raising EReadError on
-  // this thread while the main thread concurrently frees handles races the RTL's
-  // exception machinery — was AVing in @HandleAnyException, Plans/04). Swallow it.
+  // a successful "connection" that must not be handshaken with (the handshake used to
+  // raise EReadError on it, on this thread while the main thread concurrently frees handles,
+  // racing the RTL's exception machinery — was AVing in @HandleAnyException, Plans/04). Swallow it.
   if FStopping then
   begin
     DisconnectNamedPipe(FPipeHandle);
