@@ -1,12 +1,13 @@
 ﻿unit Autopilot.Bridge.Worker;
 
 {=============================================================================================================
-   2026.09.01
+   2026.10.07
    www.GabrielMoraru.com
 --------------------------------------------------------------------------------------------------------------
    - Shared bridge worker thread (all platforms): accept → handshake → serve requests → recycle
    - Drives one IBridgeTransport (injected); never touches Win32 or POSIX I/O directly
    - Marshals each dispatcher call onto the main thread via TThread.Queue + TEvent timeout
+   - A client that left is detected from return values (TryWriteFrame / TryReadFrame), never by raising
 =============================================================================================================}
 
 interface
@@ -25,7 +26,7 @@ type
     FDispatch  : TBridgeDispatcher;
     FExeName   : String;
 
-    procedure HandshakeOrFail;
+    function  TryHandshake: Boolean;     // returns FALSE when the client left during the handshake → caller recycles
     function  ServeOneRequest: Boolean;  // returns FALSE on connection failure → caller recycles
   protected
     procedure Execute; override;
@@ -56,6 +57,16 @@ begin
   {$ELSE}
   Result := Cardinal(getpid);
   {$ENDIF}
+end;
+
+
+// Writes one answer frame. FALSE, with one log line, when the client already closed the connection.
+// AWhat names the request in that line.
+function TryWriteAnswer(AStream: TStream; const AFrame, AWhat: String): Boolean;
+begin
+  Result := TBridgeWire.TryWriteFrame(AStream, AFrame);
+  if not Result then
+    BridgeLogWarn('bridge', 'out ' + AWhat + ': client closed the connection before the answer was written; recycling');
 end;
 
 
@@ -169,7 +180,10 @@ begin
 end;
 
 
-procedure TBridgeWorker.HandshakeOrFail;
+// A client that is gone (it gave up waiting, e.g. while the app sat at a breakpoint) is found from the return
+// values of TryWriteFrame / TryReadFrame, never from a raise: even a caught raise stops a debugger that halts on
+// language exceptions, and with it the whole app. A protocol violation still raises EParserError.
+function TBridgeWorker.TryHandshake: Boolean;
 var
   HelloRoot : TJSONObject;
   HelloText : String;
@@ -178,6 +192,7 @@ var
   AckRoot   : TJSONValue;
   AckPV     : TJSONValue;
 begin
+  Result := FALSE;
   HelloRoot := BuildHelloJson(FExeName, CurrentPid);
   try
     HelloText := HelloRoot.ToJSON;
@@ -189,10 +204,17 @@ begin
   // not close the underlying handle/fd. We own the stream object.
   Stream := FTransport.ConnectionStream;
   try
-    TBridgeWire.WriteFrame(Stream, HelloText);
+    if not TBridgeWire.TryWriteFrame(Stream, HelloText) then
+    begin
+      BridgeLogWarn('bridge', 'handshake: client closed the connection before the hello was written; recycling');
+      exit;
+    end;
 
     if not TBridgeWire.TryReadFrame(Stream, Ack) then
-      raise EReadError.Create('Bridge: handshake read failed');
+    begin
+      BridgeLogWarn('bridge', 'handshake: client closed the connection before its helloAck; recycling');
+      exit;
+    end;
 
     AckRoot := TJSONObject.ParseJSONValue(Ack);
     try
@@ -211,6 +233,7 @@ begin
     finally
       FreeAndNil(AckRoot);
     end;
+    Result := TRUE;
   finally
     FreeAndNil(Stream);
   end;
@@ -240,16 +263,16 @@ begin
     Root := TJSONObject.ParseJSONValue(FrameIn);
     if not (Root is TJSONObject) then
     begin
-      // Free the non-object parse (e.g. a bare array/number) BEFORE the write:
-      // WriteFrame raises on a broken pipe and would otherwise leak it.
+      // Free the non-object parse (e.g. a bare array/number) here: this branch exits before the try-finally
+      // that frees Root below.
       FreeAndNil(Root);
       Resp := Default(TBridgeResponse);
       Resp.Id := 0;
       Resp.Ok := FALSE;
       Resp.ErrorCode := ErrInvalidRequest;
       Resp.ErrorMessage := 'request is not a JSON object';
-      TBridgeWire.WriteFrame(Stream, SerializeResponse(Resp));
-      Result := TRUE;   // wire is fine, just a bad frame; keep serving
+      // A bad frame keeps the session; a client that is gone ends it (Result stays FALSE → caller recycles).
+      Result := TryWriteAnswer(Stream, SerializeResponse(Resp), 'id=0 (request is not a JSON object)');
       exit;
     end;
     try
@@ -259,8 +282,7 @@ begin
         Resp.Ok := FALSE;
         Resp.ErrorCode := ErrInvalidRequest;
         Resp.ErrorMessage := 'request missing id or cmd';
-        TBridgeWire.WriteFrame(Stream, SerializeResponse(Resp));
-        Result := TRUE;
+        Result := TryWriteAnswer(Stream, SerializeResponse(Resp), 'id=0 (request missing id or cmd)');
         exit;
       end;
 
@@ -428,8 +450,9 @@ begin
         BridgeLogWarn('bridge', 'out id=' + IntToStr(Resp.Id) + ' cmd=' + Req.Cmd +
                                 ' err=' + IntToStr(Resp.ErrorCode) + ' "' + Resp.ErrorMessage + '"' +
                                 ' elapsedMs=' + IntToStr(TThread.GetTickCount64 - T0));
-      TBridgeWire.WriteFrame(Stream, SerializeResponse(Resp));
-      Result := TRUE;
+      // FALSE when the client already gave up (e.g. it timed out while the app sat at a breakpoint):
+      // the caller then recycles the connection.
+      Result := TryWriteAnswer(Stream, SerializeResponse(Resp), 'id=' + IntToStr(Req.Id) + ' cmd=' + Req.Cmd);
     finally
       FreeAndNil(Root);
     end;
@@ -485,10 +508,10 @@ begin
 
       BridgeLogInfo('bridge', 'client connected');
       try
-        HandshakeOrFail;
-        // Serve requests until the connection breaks.
-        while (not Terminated) and ServeOneRequest do
-          ; // loop
+        if TryHandshake then
+          // Serve requests until the connection breaks.
+          while (not Terminated) and ServeOneRequest do
+            ; // loop
       except
         on E: Exception do
           BridgeLogWarn('bridge', 'session ended with ' + E.ClassName + ': ' + E.Message);
