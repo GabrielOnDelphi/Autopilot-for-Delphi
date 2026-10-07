@@ -1,7 +1,7 @@
 ﻿unit Autopilot.Bridge.Core;
 
 {=============================================================================================================
-   2026.09.01
+   2026.10.07
    www.GabrielMoraru.com
 --------------------------------------------------------------------------------------------------------------
    - Shared protocol types and wire-framing helpers for the Autopilot bridge (all platforms)
@@ -16,7 +16,7 @@ uses
 
 const
   ProtocolVersion = 1;
-  BridgeVersion   = '1.0.0';
+  BridgeVersion   = '1.1.0';
 
   // Free for noncommercial use, paid for commercial AND government use (see repo
   // LICENSE + COMMERCIAL-LICENSE.md). The bridge exists only in AUTOPILOT (debug)
@@ -64,6 +64,8 @@ type
   /// I/O deadline expires AFTER a connection was established: the target accepted the
   /// connection but stopped servicing the wire (typical case: the whole target is
   /// frozen on an IDE breakpoint, so even its worker thread is suspended).
+  /// Also raised BEFORE any connection, when the target's pipe stays busy
+  /// (ERROR_PIPE_BUSY, 231) for the whole connect retry window (PipeClient's open loop).
   /// Autopilot.Mcp.ToolBase catches this and emits the ErrTargetNotResponding envelope.
   ETargetNotResponding = class(Exception);
 
@@ -106,6 +108,11 @@ type
 
     /// Write one length-prefixed UTF-8 frame to the stream. Raises on I/O failure.
     class procedure WriteFrame(AStream: TStream; const S: String); static;
+
+    /// Same frame as WriteFrame, but returns FALSE instead of raising when the stream accepts no more bytes
+    /// (the client closed the connection). The bridge worker uses this: a raise there, even a caught one,
+    /// stops a debugger that halts on language exceptions, and with it the whole app.
+    class function TryWriteFrame(AStream: TStream; const S: String): Boolean; static;
   end;
 
   /// Build a hello frame (target-side handshake). Caller owns the returned object.
@@ -195,6 +202,39 @@ begin
   AStream.WriteBuffer(Len, SizeOf(Len));
   if Len > 0 then
     AStream.WriteBuffer(Buf[0], Len);
+end;
+
+
+// Write exactly ACount bytes. Loops on short writes like TStream.WriteBuffer, but returns FALSE where WriteBuffer
+// calls WriteError: when Write returns <= 0. THandleStream.Write never raises: FileWrite failing (broken pipe,
+// closed socket) comes back as 0 bytes.
+function WriteFully(AStream: TStream; const Buf; ACount: Integer): Boolean;
+var
+  Total, Put: Integer;
+  P: PByte;
+begin
+  P := PByte(@Buf);
+  Total := 0;
+  while Total < ACount do
+  begin
+    Put := AStream.Write(P[Total], ACount - Total);
+    if Put <= 0 then exit(FALSE);
+    Inc(Total, Put);
+  end;
+  Result := TRUE;
+end;
+
+
+class function TBridgeWire.TryWriteFrame(AStream: TStream; const S: String): Boolean;
+var
+  Buf: TBytes;
+  Len: UInt32;
+begin
+  Buf := TEncoding.UTF8.GetBytes(S);
+  Len := Length(Buf);
+  Result := WriteFully(AStream, Len, SizeOf(Len));
+  if Result and (Len > 0) then
+    Result := WriteFully(AStream, Buf[0], Integer(Len));
 end;
 
 
