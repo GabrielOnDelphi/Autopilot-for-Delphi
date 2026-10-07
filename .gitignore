@@ -96,8 +96,11 @@ DemoVCL/Autopilot.Demo.res
 Source/McpServer/*
 !Source/McpServer/Autopilot.Mcp.exe
 
-# Temporary files. .claude/agents stays: AI-INSTRUCTIONS.md tells users to install delphi-driver.md from there.
+# Temporary files. .claude/agents stays: AI-INSTRUCTIONS.md tells users to install autopilot-script-runner.md from there.
 Temp/
 compact-summaries/
+NEXT PROMPT*
+DONE - EXECUTED*
+build_output.*
 /.claude/*
 !/.claude/agents/
