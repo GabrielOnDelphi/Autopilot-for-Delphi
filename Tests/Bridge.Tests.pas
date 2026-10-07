@@ -12,7 +12,13 @@
 interface
 
 uses
+  System.Classes,
   DUnitX.TestFramework;
+
+/// Runs AProc on a worker thread while this (main) thread pumps messages, so the bridge's
+/// TThread.Queue dispatch can run. Re-raises a worker-side assertion failure here.
+/// Shared with Tests.Bridge.PathsAndActions.
+procedure RunOnWorkerAndPump(AProc: TThreadProcedure; ATimeoutMs: Cardinal);
 
 type
   [TestFixture]
@@ -111,7 +117,7 @@ implementation
 
 uses
   Winapi.Windows,
-  System.SysUtils, System.Classes, System.SyncObjs, System.JSON,
+  System.SysUtils, System.SyncObjs, System.JSON,
   System.Generics.Collections, System.UITypes, System.UIConsts,
   Vcl.Forms, Vcl.Controls, Vcl.StdCtrls, Vcl.ExtCtrls, Vcl.Graphics,
   DUnitX.Exceptions,

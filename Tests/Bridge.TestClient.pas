@@ -50,6 +50,7 @@ implementation
 function TBridgeTestClient.ConnectAndHandshake(const APipeName: String; ATimeoutMs: Cardinal): Boolean;
 var
   Deadline: UInt64;
+  OpenError: DWORD;
   HelloFrame: String;
   HelloRoot: TJSONValue;
   AckObj: TJSONObject;
@@ -64,7 +65,9 @@ begin
     FPipe := CreateFileW(PWideChar(APipeName), GENERIC_READ or GENERIC_WRITE,
                          0, nil, OPEN_EXISTING, 0, 0);
     if FPipe <> INVALID_HANDLE_VALUE then Break;
-    if GetLastError <> ERROR_FILE_NOT_FOUND then Break;
+    // ERROR_PIPE_BUSY: a connect made right after the previous client disconnected can arrive before the bridge listens again.
+    OpenError := GetLastError;
+    if (OpenError <> ERROR_FILE_NOT_FOUND) and (OpenError <> ERROR_PIPE_BUSY) then Break;
     Sleep(25);
   end;
   if FPipe = INVALID_HANDLE_VALUE then Exit;

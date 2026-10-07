@@ -1,11 +1,12 @@
 ﻿unit Tests.Bridge.Worker;
 
 {=============================================================================================================
-   2026.09
+   2026.10.07
    www.GabrielMoraru.com
 --------------------------------------------------------------------------------------------------------------
    - DUnitX tests for TBridgeWorker driven through a TFakeTransport (in-memory IBridgeTransport implementation — no pipe, no socket).
    - Pins the transport contract: hello/helloAck handshake, request dispatch, and clean WakeAndStop from a blocked AcceptConnection.
+   - Pins that a client which left before its answer is recycled without any EWriteError raise (TRaiseCounter, Win32 only).
 =============================================================================================================}
 
 interface
@@ -19,6 +20,7 @@ type
   public
     [Test] procedure Test_WorkerServesHandshakeAndRequestThroughFakeTransport;
     [Test] procedure Test_WorkerShutsDownCleanlyFromBlockedAccept;
+    [Test] procedure Test_WorkerRecyclesWithoutRaiseWhenClientLeftBeforeAnswer;
   end;
 
 
@@ -26,7 +28,8 @@ implementation
 
 uses
   System.SysUtils, System.Classes, System.SyncObjs, System.JSON,
-  Autopilot.Bridge.Core, Autopilot.Bridge.Transport, Autopilot.Bridge.Worker;
+  Autopilot.Bridge.Core, Autopilot.Bridge.Transport, Autopilot.Bridge.Worker,
+  Tests.RaiseCounter;
 
 
 type
@@ -47,8 +50,8 @@ type
   end;
 
 
-  // In-memory IBridgeTransport. One scripted session: the first AcceptConnection
-  // returns True; every later call parks on an event until WakeAndStop — the same
+  // In-memory IBridgeTransport. Scripted sessions: the first SessionCount AcceptConnection
+  // calls return True; every later call parks on an event until WakeAndStop — the same
   // blocking shape as a real listener.
   TFakeTransport = class(TInterfacedObject, IBridgeTransport)
   strict private
@@ -61,15 +64,23 @@ type
     FAcceptCalls : Integer;     // worker thread only
     FBlockFirstAccept : Boolean;
     FWakeAndStopCalls : Integer;
+    FRecycleCalls     : Integer;
+    FLeaveAt          : Integer; // inbound position at which the client "closes" its end
+    FLeaveArmed       : Boolean;
   public
+    SessionCount: Integer;      // how many AcceptConnection calls return True (default 1); set before the worker starts
     constructor Create(ABlockFirstAccept: Boolean);
     destructor Destroy; override;
 
     /// Append one length-prefixed frame to the inbound script (call before the worker reads).
     procedure QueueInboundFrame(const AJson: String);
+    /// The client closes its end once the worker has read every frame queued so far: from then on every write
+    /// returns 0 bytes, as THandleStream.Write does on a broken pipe. The next accepted connection is a new client.
+    procedure ClientLeavesHere;
     /// Parse the captured outbound bytes into whole frames (thread-safe snapshot).
     function  OutboundFrames: TArray<String>;
     function  WakeAndStopCalls: Integer;
+    function  RecycleCalls: Integer;
 
     // Stream plumbing, called from TFakeConnStream.
     function  ReadInbound(var Buffer; Count: Longint): Longint;
@@ -118,6 +129,7 @@ begin
   FOutbound := TBytesStream.Create;
   FWake     := TEvent.Create(nil, True, False, '');
   FBlockFirstAccept := ABlockFirstAccept;
+  SessionCount := 1;
 end;
 
 destructor TFakeTransport.Destroy;
@@ -146,6 +158,17 @@ begin
     end;
   finally
     FreeAndNil(Tmp);
+  end;
+end;
+
+procedure TFakeTransport.ClientLeavesHere;
+begin
+  FLock.Enter;
+  try
+    FLeaveAt    := Length(FInbound);
+    FLeaveArmed := True;
+  finally
+    FLock.Leave;
   end;
 end;
 
@@ -186,6 +209,16 @@ begin
   end;
 end;
 
+function TFakeTransport.RecycleCalls: Integer;
+begin
+  FLock.Enter;
+  try
+    Result := FRecycleCalls;
+  finally
+    FLock.Leave;
+  end;
+end;
+
 function TFakeTransport.ReadInbound(var Buffer; Count: Longint): Longint;
 begin
   FLock.Enter;
@@ -209,6 +242,8 @@ function TFakeTransport.WriteOutbound(const Buffer; Count: Longint): Longint;
 begin
   FLock.Enter;
   try
+    if FLeaveArmed and (FInPos >= FLeaveAt) then
+      Exit(0);   // the client is gone: nothing is written
     FOutbound.WriteBuffer(Buffer, Count);
     Result := Count;
   finally
@@ -225,7 +260,17 @@ function TFakeTransport.AcceptConnection: Boolean;
 begin
   if FStopping then Exit(False);
   Inc(FAcceptCalls);
-  if (FAcceptCalls = 1) and not FBlockFirstAccept then Exit(True);
+  if (FAcceptCalls <= SessionCount) and not FBlockFirstAccept then
+  begin
+    FLock.Enter;
+    try
+      if FLeaveArmed and (FInPos >= FLeaveAt) then
+        FLeaveArmed := False;   // the client that left was the previous one; this is a new client
+    finally
+      FLock.Leave;
+    end;
+    Exit(True);
+  end;
   // Park like a real listener until WakeAndStop. Bounded so a broken contract
   // fails the test instead of hanging the suite.
   FWake.WaitFor(10000);
@@ -239,7 +284,13 @@ end;
 
 procedure TFakeTransport.RecycleConnection;
 begin
-  // Nothing to close in memory.
+  // Nothing to close in memory; only counted.
+  FLock.Enter;
+  try
+    Inc(FRecycleCalls);
+  finally
+    FLock.Leave;
+  end;
 end;
 
 procedure TFakeTransport.WakeAndStop(AWorkerThread: TThread);
@@ -376,6 +427,84 @@ begin
   Assert.IsTrue(Fake.WakeAndStopCalls >= 1, 'Destroy must wake the transport via WakeAndStop');
   Assert.AreEqual(0, Length(Fake.OutboundFrames), 'no client connected, so nothing may be written');
   Transport := nil;
+end;
+
+
+// The client gives up before the answer is written (it timed out while the app sat at a breakpoint). The worker
+// must find that out from the write's return value, never from a raise: even a caught EWriteError stops a debugger
+// that halts on language exceptions, and with it the whole app. Then it must recycle and serve the next client.
+procedure TBridgeWorkerTests.Test_WorkerRecyclesWithoutRaiseWhenClientLeftBeforeAnswer;
+var
+  Fake      : TFakeTransport;
+  Transport : IBridgeTransport;
+  Worker    : TBridgeWorker;
+  Frames    : TArray<String>;
+  Root      : TJSONValue;
+  DispatchCount, ProbeCount, WriteErrorCount: Integer;
+begin
+  Fake := TFakeTransport.Create(False);
+  Transport := Fake;
+  Fake.SessionCount := 2;
+  // Client 1: handshake, one request, then it leaves before the answer.
+  Fake.QueueInboundFrame('{"helloAck":{"protocolVersion":1}}');
+  Fake.QueueInboundFrame('{"id":1,"cmd":"ping"}');
+  Fake.ClientLeavesHere;
+  // Client 2: must be served normally.
+  Fake.QueueInboundFrame('{"helloAck":{"protocolVersion":1}}');
+  Fake.QueueInboundFrame('{"id":2,"cmd":"ping"}');
+
+  DispatchCount := 0;
+  Worker := NIL;
+  TRaiseCounter.Install(EWriteError);
+  try
+    // The probe must see a raise that is caught, or a zero below would prove nothing.
+    try
+      raise EWriteError.Create('probe');
+    except
+      on EWriteError do ;   // the probe raise; only the counter matters
+    end;
+    ProbeCount := TRaiseCounter.Count;
+    TRaiseCounter.Reset;
+
+    Worker := TBridgeWorker.Create(Transport, 'FakeExe.exe',
+      function(const Req: TBridgeRequest): TBridgeResponse
+      begin
+        Inc(DispatchCount);   // main thread (TThread.Queue, pumped below)
+        Result := Default(TBridgeResponse);
+        Result.Id := Req.Id;
+        Result.Ok := True;
+        Result.ResultJson := TJSONObject.Create;
+      end);
+
+    // hello 1 + hello 2 + the answer to id 2. The answer to id 1 has nowhere to go.
+    PumpUntilFrames(Fake, 3, 5000);
+    WriteErrorCount := TRaiseCounter.Count;
+  finally
+    TRaiseCounter.Uninstall;
+    FreeAndNil(Worker);
+  end;
+
+  try
+    Assert.AreEqual(1, ProbeCount, 'the raise counter must see a caught EWriteError');
+    Assert.AreEqual(0, WriteErrorCount, 'a client that left must be detected without raising EWriteError');
+    Assert.AreEqual(2, DispatchCount, 'both requests must reach the dispatcher');
+    Assert.IsTrue(Fake.RecycleCalls >= 1, 'the dead connection must be recycled');
+
+    Frames := Fake.OutboundFrames;
+    Assert.AreEqual(3, Length(Frames), 'expected hello 1, hello 2 and the answer to id 2');
+    Assert.Contains(Frames[0], '"hello"', 'frame 1 must be the first hello');
+    Assert.Contains(Frames[1], '"hello"', 'frame 2 must be the hello to the second client');
+    Root := TJSONObject.ParseJSONValue(Frames[2]);
+    try
+      Assert.IsNotNull(Root, 'answer frame must be JSON');
+      Assert.AreEqual<Int64>(2, (Root AS TJSONObject).GetValue<Int64>('id', -1), 'the answer must be for id 2');
+      Assert.IsTrue((Root AS TJSONObject).GetValue<Boolean>('ok', False), 'the answer to id 2 must be ok');
+    finally
+      FreeAndNil(Root);
+    end;
+  finally
+    Transport := nil;
+  end;
 end;
 
 

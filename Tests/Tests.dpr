@@ -30,6 +30,9 @@ USES
   Bridge.Tests                in 'Bridge.Tests.pas',
   Tests.Bridge.Worker         in 'Tests.Bridge.Worker.pas',
   Tests.Bridge.NativeDialogs  in 'Tests.Bridge.NativeDialogs.pas',
+  Tests.Bridge.PathsAndActions in 'Tests.Bridge.PathsAndActions.pas',
+  Tests.Bridge.PropertyTypes  in 'Tests.Bridge.PropertyTypes.pas',
+  Tests.RaiseCounter          in 'Tests.RaiseCounter.pas',
   Tests.LeakSuppressor        in 'Tests.LeakSuppressor.pas';
 
 VAR
