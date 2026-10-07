@@ -1,10 +1,11 @@
 ﻿unit Autopilot.Bridge.Vcl;
 
 {=============================================================================================================
-   2026.09.01
+   2026.10.06
    www.GabrielMoraru.com
 --------------------------------------------------------------------------------------------------------------
    - Public bridge interface for VCL target projects (Windows only)
+   - Paths resolve through the Owner tree first, then through the visual parent tree (re-parented controls)
    - StartBridge / StopBridge / IsBridgeRunning; real bodies only when AUTOPILOT is defined
    - Full VCL dispatcher: list_tree, click, get_text, set_text, set_checked, set_property, read_property,
      execute_action, screenshot, wait_for, dismiss_dialog (13 MCP tools total)
@@ -69,6 +70,7 @@ var
 
 type
   TWinControlClass = class(TWinControl);   // breaks protected scope for .Click
+  TControlAccess   = class(TControl);      // breaks protected scope for .Click and .ActionLink
 
 
 // Synthetic ID for an unnamed component: '@TButton#5' where 5 is the component's
@@ -172,6 +174,87 @@ begin
 end;
 
 
+{ Visual-parent fallback ------------------------------------------------- }
+{ The walks above follow the Owner tree (TComponent.Components). A control re-parented from another form or
+  frame changes its Parent but keeps its Owner, so a path through the form where it is SHOWN finds nothing
+  there. The helpers below follow the visual tree (TWinControl.Controls) instead. FindComponentByPath calls
+  them only after the owner walk found nothing, so every path the owner walk resolves stays as it was. }
+
+const
+  MaxVisualDepth = 256;   // stops the recursion on a corrupt Parent chain; real forms nest far less
+
+// Leaf match for a control met in the visual tree. A synthetic '@Class#N' id is owner-relative, so it is
+// checked against the control's own Owner.
+function MatchesVisualLeaf(AComp: TComponent; const ALeaf: String): Boolean;
+begin
+  if (ALeaf <> '') and (ALeaf[1] = '@') then
+    Result := (AComp.Owner <> NIL) and MatchesLeaf(AComp.Owner, AComp, ALeaf)
+  else
+    Result := (ALeaf <> '') and SameText(AComp.Name, ALeaf);
+end;
+
+
+procedure AddUnique(AList: TList; AComp: TComponent);
+begin
+  if AList.IndexOf(AComp) < 0 then
+    AList.Add(AComp);
+end;
+
+
+// Adds to AMatches every control in AParent's visual subtree (Controls[], recursively) that matches ALeaf.
+procedure CollectVisualDescendants(AParent: TComponent; const ALeaf: String; AMatches: TList; ADepth: Integer);
+var
+  j: Integer;
+  Child: TControl;
+begin
+  Assert(GetCurrentThreadId = MainThreadID, 'CollectVisualDescendants: VCL touched off the main thread');
+  if not (AParent is TWinControl) or (ADepth > MaxVisualDepth) then exit;
+  for j := 0 to TWinControl(AParent).ControlCount - 1 do
+  begin
+    Child := TWinControl(AParent).Controls[j];
+    if MatchesVisualLeaf(Child, ALeaf) then
+      AddUnique(AMatches, Child);
+    CollectVisualDescendants(Child, ALeaf, AMatches, ADepth + 1);
+  end;
+end;
+
+
+// Anchored walk in which a child of ACur is a component ACur owns OR a control placed directly on it.
+// Explores every branch, so AMatches ends up holding every component the whole path AParts[AIndex..] leads to.
+procedure CollectAnchoredMatches(ACur: TComponent; const AParts: TArray<String>; AIndex: Integer; AMatches: TList);
+var
+  Step: TList;
+  Owned: TComponent;
+  Child: TControl;
+  j: Integer;
+begin
+  Assert(GetCurrentThreadId = MainThreadID, 'CollectAnchoredMatches: VCL touched off the main thread');
+  if AIndex > High(AParts) then
+  begin
+    AddUnique(AMatches, ACur);
+    exit;
+  end;
+
+  Step := TList.Create;
+  try
+    Owned := FindChildOf(ACur, AParts[AIndex]);
+    if Owned <> NIL then
+      Step.Add(Owned);
+    if ACur is TWinControl then
+      for j := 0 to TWinControl(ACur).ControlCount - 1 do
+      begin
+        Child := TWinControl(ACur).Controls[j];
+        if MatchesVisualLeaf(Child, AParts[AIndex]) then
+          AddUnique(Step, Child);
+      end;
+    for j := 0 to Step.Count - 1 do
+      CollectAnchoredMatches(TComponent(Step[j]), AParts, AIndex + 1, AMatches);
+  finally
+    FreeAndNil(Step);
+  end;
+end;
+
+
 // Map a path to a TComponent. Returns NIL if no match.
 //   "Form"             — the named form itself (round-trips with list_tree's
 //                        emitted path for form nodes).
@@ -180,7 +263,11 @@ end;
 //   "Form.A.B.C"       — anchored walk: A is direct child of Form, B is direct
 //                        child of A, C is direct child of B.
 // Unnamed components are addressable via '@ClassName#Index' — see SyntheticIdFor.
-function FindComponentByPath(const APath: String): TComponent;
+// The owner walk runs first. Only when it finds nothing, the same path is tried through the visual tree:
+// "Form.Leaf" then means any control shown inside Form, "Form.A.B" lets each segment be owned by OR placed
+// directly on the previous one. One visual match resolves the path; with two or more, Result is NIL and
+// AMatches holds them all (the caller answers ambiguous_path).
+function FindComponentByPath(const APath: String; AMatches: TList): TComponent;
 var
   i, k: Integer;
   Form: TCustomForm;
@@ -190,6 +277,7 @@ var
   Visited: TList;
 begin
   Assert(GetCurrentThreadId = MainThreadID, 'FindComponentByPath: VCL touched off the main thread');
+  Assert(AMatches <> NIL, 'FindComponentByPath: AMatches is NIL');
   Result := NIL;
   if APath = '' then exit;
 
@@ -231,6 +319,52 @@ begin
       if Cur <> NIL then exit(Cur);
     end;
   end;
+
+  { # Visual-parent fallback }
+  if Length(Parts) < 2 then exit;
+  for i := 0 to Screen.FormCount - 1 do
+  begin
+    Form := Screen.Forms[i];
+    if (FormName <> '*') and not SameText(Form.Name, FormName) then Continue;
+    if Length(Parts) = 2
+    then CollectVisualDescendants(Form, Parts[1], AMatches, 0)
+    else CollectAnchoredMatches(Form, Parts, 1, AMatches);
+  end;
+  if AMatches.Count = 1 then
+    Result := TComponent(AMatches[0]);
+end;
+
+
+{ The type checks below run BEFORE a property is read or written, so that list_tree, get_text, set_text and
+  set_checked raise no exception on a property of an unexpected type. A read may sit inside a try..except, but a
+  debugger that halts on language exceptions still stops the whole app on every raise, once per such component, and
+  the AI client then times out (-32098). Measured with the DPT debugger for GitHub issue 2; the Delphi IDE halts the
+  same way when "Notify on Language Exceptions" is on. DevExpress bar items declare Visible as the enumeration
+  TdxBarItemVisible. A property of an unexpected type is treated as missing. }
+
+// TRUE when TValue.AsBoolean reads AProp without raising: Boolean, ByteBool, WordBool, LongBool or an alias of
+// them. System.Rtti.IsBoolType is the same test TValue's enumeration conversion (ConvEnum2Enum) makes.
+function IsReadableBooleanProp(AProp: TRttiProperty): Boolean;
+begin
+  Result := (AProp <> NIL) and AProp.IsReadable and (AProp.PropertyType <> NIL)
+        and IsBoolType(AProp.PropertyType.Handle);
+end;
+
+
+// TRUE when TValue.AsString reads AProp without raising: a string or character type.
+function IsReadableStringProp(AProp: TRttiProperty): Boolean;
+begin
+  Result := (AProp <> NIL) and AProp.IsReadable and (AProp.PropertyType <> NIL)
+        and (AProp.PropertyType.TypeKind in [tkString, tkLString, tkWString, tkUString, tkChar, tkWChar]);
+end;
+
+
+// TRUE when TRttiProperty.SetValue accepts AValue for AProp; AConverted is then the value to write. SetValue converts
+// with TValue.Cast, which raises EInvalidCast exactly where TValue.TryCast answers FALSE (System.Rtti.pas,
+// TRttiInstanceProperty.DoSetValue).
+function TryConvertForWrite(AProp: TRttiProperty; const AValue: TValue; OUT AConverted: TValue): Boolean;
+begin
+  Result := (AProp <> NIL) and (AProp.PropertyType <> NIL) and AValue.TryCast(AProp.PropertyType.Handle, AConverted);
 end;
 
 
@@ -248,11 +382,11 @@ begin
   try
     RT := Ctx.GetType(AComp.ClassType);
     if RT = NIL then exit;
-    // VCL: Text first, then Caption.
+    // VCL: Text first, then Caption. A Text or Caption that is not a string counts as missing.
     Prop := RT.GetProperty('Text');
-    if (Prop = NIL) or not Prop.IsReadable then
+    if not IsReadableStringProp(Prop) then
       Prop := RT.GetProperty('Caption');
-    if (Prop = NIL) or not Prop.IsReadable then exit;
+    if not IsReadableStringProp(Prop) then exit;
     // The Caption getter on TForm can trigger handle realization in some scenarios
     // and AV on an unrealized form. Swallow any read-side exception and report
     // "no readable text" rather than crashing the dispatcher.
@@ -283,7 +417,7 @@ begin
     RT := Ctx.GetType(AComp.ClassType);
     if RT = NIL then exit;
     Prop := RT.GetProperty('Enabled');
-    if (Prop = NIL) or not Prop.IsReadable then exit;
+    if not IsReadableBooleanProp(Prop) then exit;   // a non-Boolean Enabled is reported as unknown
     // Same guard pattern as TryGetTextProperty: a misbehaving published getter
     // must not propagate out and leak the in-flight TJSONArray/TJSONObject in
     // HandleListTree. Swallow and report "no readable Enabled".
@@ -314,7 +448,7 @@ begin
     RT := Ctx.GetType(AComp.ClassType);
     if RT = NIL then exit;
     Prop := RT.GetProperty('Visible');
-    if (Prop = NIL) or not Prop.IsReadable then exit;
+    if not IsReadableBooleanProp(Prop) then exit;   // a non-Boolean Visible (DevExpress TdxBarItemVisible) is reported as unknown
     // Same guard as TryGetEnabled. Prevents leaks in HandleListTree.
     try
       AVisible := Prop.GetValue(AComp).AsBoolean;
@@ -450,26 +584,28 @@ begin
   Assert(GetCurrentThreadId = MainThreadID, 'TryDataBoundEdit: VCL touched off the main thread');
   Result := FALSE;
   AError := '';
-  if TryReadProp(AComp, 'ReadOnly', V) and (V.Kind = tkEnumeration) and V.AsBoolean then
+  // A ReadOnly, CanModify or AutoEdit that is not a Boolean counts as missing: its check is skipped (IsBoolType
+  // first, so AsBoolean cannot raise).
+  if TryReadProp(AComp, 'ReadOnly', V) and IsBoolType(V.TypeInfo) and V.AsBoolean then
   begin
     AError := AComp.ClassName + '.ReadOnly is TRUE';
     exit;
   end;
-  if (AField <> NIL) and TryReadProp(AField, 'CanModify', V) and not V.AsBoolean then
+  if (AField <> NIL) and TryReadProp(AField, 'CanModify', V) and IsBoolType(V.TypeInfo) and not V.AsBoolean then
   begin
     AError := 'field cannot be modified (ReadOnly, calculated or lookup field)';
     exit;
   end;
   if StateIsEditing then exit(TRUE);
 
-  if TryReadProp(ADataSet, 'CanModify', V) and not V.AsBoolean then
+  if TryReadProp(ADataSet, 'CanModify', V) and IsBoolType(V.TypeInfo) and not V.AsBoolean then
   begin
     AError := 'dataset is read-only (CanModify = FALSE)';
     exit;
   end;
   if not TryReadProp(AComp, 'DataSource', V) then exit;
   DataSource := V.AsObject;
-  if TryReadProp(DataSource, 'AutoEdit', V) and not V.AsBoolean then
+  if TryReadProp(DataSource, 'AutoEdit', V) and IsBoolType(V.TypeInfo) and not V.AsBoolean then
   begin
     AError := 'DataSource.AutoEdit is FALSE and the dataset is not in edit mode';
     exit;
@@ -520,6 +656,7 @@ var
   Ctx: TRttiContext;
   RT: TRttiType;
   Prop: TRttiProperty;
+  NewValue, Converted: TValue;
 begin
   Assert(GetCurrentThreadId = MainThreadID, 'TrySetTextProperty: VCL touched off the main thread');
   Result := FALSE;
@@ -528,16 +665,18 @@ begin
   try
     RT := Ctx.GetType(AComp.ClassType);
     if RT = NIL then exit;
+    // A Text or Caption that cannot hold a string (an Integer Caption) counts as missing, as in TryGetTextProperty.
+    NewValue := AValue;
     Prop := RT.GetProperty('Text');
-    if Prop = NIL then
+    if not TryConvertForWrite(Prop, NewValue, Converted) then
       Prop := RT.GetProperty('Caption');
-    if Prop = NIL then exit;
+    if not TryConvertForWrite(Prop, NewValue, Converted) then exit;
     if not Prop.IsWritable then
     begin
       AErrCode := ErrUnsupportedAction;
       exit;
     end;
-    Prop.SetValue(AComp, AValue);
+    Prop.SetValue(AComp, Converted);
     Result := TRUE;
   finally
     Ctx.Free;
@@ -620,6 +759,17 @@ begin
 end;
 
 
+// TAlphaColor as the AI reads it: 'claRed' for a named color, '#AARRGGBB' otherwise. Not AlphaColorToString:
+// it strips the 'cla' prefix and returns 'Red' (System.UIConsts.pas, AlphaColorToString). AlphaColorToIdent
+// returns the full 'claName', or 'x' + 8 hex digits for an unnamed color. TryParseAlphaColor accepts both forms.
+function AlphaColorToText(AColor: TAlphaColor): String;
+begin
+  AlphaColorToIdent(Integer(AColor), Result);
+  if (Result <> '') and (Result[1] = 'x') then
+    Result := '#' + Copy(Result, 2, MaxInt);
+end;
+
+
 // Read AProp's current value off AInstance and format it as a string set_property
 // would accept back. Returns FALSE on an unreadable property or a getter that
 // throws. Mirrors the kinds ListWritableProperties surfaces. AInstance is TObject
@@ -654,12 +804,11 @@ begin
     tkInteger:
     begin
       // TAlphaColor short-circuit: emit '#AARRGGBB' (or 'claName' when named)
-      // instead of a raw 32-bit integer. AlphaColorToString returns the name
-      // for known colors and '#AARRGGBB' for everything else.
+      // instead of a raw 32-bit integer.
       if AProp.PropertyType.Handle = TypeInfo(TAlphaColor) then
       begin
         try
-          AlphaStr := AlphaColorToString(TAlphaColor(V.AsOrdinal));
+          AlphaStr := AlphaColorToText(TAlphaColor(V.AsOrdinal));
           AValue := AlphaStr;
           Result := TRUE;
         except
@@ -1421,6 +1570,7 @@ var
   Ctx: TRttiContext;
   RT: TRttiType;
   Prop: TRttiProperty;
+  NewValue, Converted: TValue;
 begin
   Assert(GetCurrentThreadId = MainThreadID, 'TrySetCheckedProperty: VCL touched off the main thread');
   Result := FALSE;
@@ -1429,14 +1579,15 @@ begin
   try
     RT := Ctx.GetType(AComp.ClassType);
     if RT = NIL then exit;
+    NewValue := AValue;
     Prop := RT.GetProperty('Checked');
-    if Prop = NIL then exit;
+    if not TryConvertForWrite(Prop, NewValue, Converted) then exit;   // a non-Boolean Checked counts as missing
     if not Prop.IsWritable then
     begin
       AErrCode := ErrUnsupportedAction;
       exit;
     end;
-    Prop.SetValue(AComp, AValue);
+    Prop.SetValue(AComp, Converted);
     Result := TRUE;
   finally
     Ctx.Free;
@@ -1444,7 +1595,7 @@ begin
 end;
 
 
-// Read the published Checked property. FALSE when the component has none.
+// Read the published Checked property. FALSE when the component has none, or one that is not a Boolean.
 function TryGetCheckedProperty(AComp: TComponent; OUT AValue: Boolean): Boolean;
 var
   Ctx: TRttiContext;
@@ -1459,7 +1610,7 @@ begin
     RT := Ctx.GetType(AComp.ClassType);
     if RT = NIL then exit;
     Prop := RT.GetProperty('Checked');
-    if (Prop = NIL) or not Prop.IsReadable then exit;
+    if not IsReadableBooleanProp(Prop) then exit;   // a non-Boolean Checked counts as missing
     AValue := Prop.GetValue(AComp).AsBoolean;
     Result := TRUE;
   finally
@@ -1476,6 +1627,110 @@ begin
     Result := SyntheticIdFor(AComp)
   else
     Result := AComp.Name;
+end;
+
+
+// The path list_tree gives AComp: the name of the nearest form in its owner chain, then the owner chain down to
+// AComp. '' when that chain reaches no form (owned by Application, by a data module, or by nobody).
+function OwnerPathFor(AComp: TComponent): String;
+var
+  Cur: TComponent;
+begin
+  Assert(GetCurrentThreadId = MainThreadID, 'OwnerPathFor: VCL touched off the main thread');
+  if AComp is TCustomForm then exit(AComp.Name);
+  Result := LeafNameFor(AComp);
+  Cur := AComp.Owner;
+  while Cur <> NIL do
+  begin
+    if Cur is TCustomForm then exit(Cur.Name + '.' + Result);
+    Result := LeafNameFor(Cur) + '.' + Result;
+    Cur := Cur.Owner;
+  end;
+  Result := '';
+end;
+
+
+// How the AI can name AComp: its owner path, or its bare name/class when no form owns it.
+function ReferenceFor(AComp: TComponent): String;
+begin
+  Result := OwnerPathFor(AComp);
+  if Result = '' then
+    if AComp.Name <> ''
+    then Result := AComp.Name
+    else Result := AComp.ClassName;
+end;
+
+
+// Resolves APath for a command handler. On a miss it fills AResp (Ok=FALSE) with -32001 not_found, or with
+// -32002 ambiguous_path when the visual-parent fallback of FindComponentByPath matched more than one control.
+function ResolvePathOrFail(const APath: String; var AResp: TBridgeResponse): TComponent;
+var
+  Matches: TList;
+  i: Integer;
+  Candidates: String;
+begin
+  Assert(GetCurrentThreadId = MainThreadID, 'ResolvePathOrFail: VCL touched off the main thread');
+  Matches := TList.Create;
+  try
+    Result := FindComponentByPath(APath, Matches);
+    if Result <> NIL then exit;
+
+    AResp.Ok := FALSE;
+    if Matches.Count < 2 then
+    begin
+      AResp.ErrorCode := ErrNotFound;
+      AResp.ErrorMessage := 'no component matches ' + APath;
+      exit;
+    end;
+
+    Candidates := '';
+    for i := 0 to Matches.Count - 1 do
+    begin
+      if Candidates <> '' then
+        Candidates := Candidates + ', ';
+      Candidates := Candidates + ReferenceFor(TComponent(Matches[i]));
+    end;
+    AResp.ErrorCode := ErrAmbiguousPath;
+    AResp.ErrorMessage := APath + ' is ambiguous: ' + IntToStr(Matches.Count) +
+                          ' controls shown there match it (' + Candidates + '). Use one of these paths instead.';
+  finally
+    FreeAndNil(Matches);
+  end;
+end;
+
+
+// TRUE when AComp is ARoot or sits anywhere in ARoot's owner tree.
+function IsInOwnerTree(AComp, ARoot: TComponent): Boolean;
+var
+  Cur: TComponent;
+begin
+  Cur := AComp;
+  while Cur <> NIL do
+  begin
+    if Cur = ARoot then exit(TRUE);
+    Cur := Cur.Owner;
+  end;
+  Result := FALSE;
+end;
+
+
+// list_tree 'parent' field, added only for a re-parented control: one whose visual parent lies outside the owner
+// tree of the node it is listed under (AListedUnder; NIL for a form node). Other nodes stay as they were, because
+// every extra field costs the AI tokens on every list_tree call. The value is the parent's own list_tree path; a
+// parent that no form owns has no such path, and then the field is left out.
+procedure AddReparentedField(ANode: TJSONObject; AComp, AListedUnder: TComponent);
+var
+  VisualParent: TWinControl;
+  ParentPath: String;
+begin
+  Assert(GetCurrentThreadId = MainThreadID, 'AddReparentedField: VCL touched off the main thread');
+  if not (AComp is TControl) then exit;
+  VisualParent := TControl(AComp).Parent;
+  if VisualParent = NIL then exit;
+  if (AListedUnder <> NIL) and IsInOwnerTree(VisualParent, AListedUnder) then exit;
+  ParentPath := OwnerPathFor(VisualParent);
+  if ParentPath <> '' then
+    ANode.AddPair('parent', ParentPath);
 end;
 
 
@@ -1520,6 +1775,7 @@ var
   j: Integer;
   Child: TComponent;
   ChildPath: String;
+  Node: TJSONObject;
 begin
   Assert(GetCurrentThreadId = MainThreadID, 'WalkComponents: VCL touched off the main thread');
   for j := 0 to AParent.ComponentCount - 1 do
@@ -1528,7 +1784,9 @@ begin
     if AVisited.IndexOf(Child) >= 0 then Continue;
     AVisited.Add(Child);
     ChildPath := AParentPath + '.' + LeafNameFor(Child);
-    AItems.AddElement(BuildComponentNode(AFormName, ChildPath, Child));
+    Node := BuildComponentNode(AFormName, ChildPath, Child);
+    AItems.AddElement(Node);   // AItems owns Node from here, so a raise below cannot leak it
+    AddReparentedField(Node, Child, AParent);
     // Recurse into containers (frames, panels with owned children, nested data modules).
     if Child.ComponentCount > 0 then
       WalkComponents(AFormName, ChildPath, Child, AItems, AVisited);
@@ -1539,7 +1797,7 @@ end;
 function HandleListTree(const AReq: TBridgeRequest): TBridgeResponse;
 var
   Items: TJSONArray;
-  Wrap: TJSONObject;
+  Wrap, FormNode: TJSONObject;
   Visited: TList;
   i: Integer;
   Form: TCustomForm;
@@ -1563,7 +1821,9 @@ begin
         // unrealized form — TryGetTextProperty swallows that and the node simply
         // lacks a `text` field. Then recurse owned components (including frames).
         Visited.Add(Form);
-        Items.AddElement(BuildComponentNode(Form.Name, Form.Name, Form));
+        FormNode := BuildComponentNode(Form.Name, Form.Name, Form);
+        Items.AddElement(FormNode);
+        AddReparentedField(FormNode, Form, NIL);   // a form embedded in another form's panel
         WalkComponents(Form.Name, Form.Name, Form, Items, Visited);
       finally
         FreeAndNil(Visited);
@@ -1611,14 +1871,8 @@ begin
   end;
   Path := TJSONString(PathVal).Value;
 
-  Comp := FindComponentByPath(Path);
-  if Comp = NIL then
-  begin
-    Result.Ok := FALSE;
-    Result.ErrorCode := ErrNotFound;
-    Result.ErrorMessage := 'no component matches ' + Path;
-    exit;
-  end;
+  Comp := ResolvePathOrFail(Path, Result);
+  if Comp = NIL then exit;
 
   if not TryGetTextProperty(Comp, Text) then
   begin
@@ -1650,7 +1904,7 @@ var
   RT: TRttiType;
   OnClickProp: TRttiProperty;
   Notify: TNotifyEvent;
-  HasNotify: Boolean;
+  HasNotify, UseControlClick: Boolean;
   RawValue: TValue;
   RequestedCount, ClicksDone: Integer;
 
@@ -1659,10 +1913,12 @@ var
   function ResolveDispatchPath: Boolean;
   begin
     HasNotify := FALSE;
+    UseControlClick := FALSE;
     // Preference order — see CLAUDE.md and Vcl.UIACtrlProvider.pas:299:
     //   1. TButton.Click (public, fires WM_COMMAND semantics)
     //   2. TWinControlClass(Ctrl).Click — protected-Click trick
-    //   3. OnClick(Self) via RTTI
+    //   3. TControlAccess(Ctrl).Click — a non-windowed control bound to an action
+    //   4. OnClick(Self) via RTTI
     if Comp is TButton then
     begin
       DispatchedVia := 'click';
@@ -1671,6 +1927,17 @@ var
     if Comp is TWinControl then
     begin
       DispatchedVia := 'click';
+      exit(TRUE);
+    end;
+    // A TGraphicControl bound to an action (TSpeedButton, TToolButton): TControl.Click (Vcl.Controls.pas)
+    // runs ActionLink.Execute, i.e. TCustomAction.Execute - Update, AutoCheck, TActionList.OnExecute, the
+    // targets of a standard action, and OnExecute with the action as Sender. Calling the OnClick that
+    // TControl.ActionChange copied from OnExecute skips all of that, and an action without OnExecute
+    // (TFileExit, TEditCopy) leaves OnClick NIL, so the click would fail with unsupported_action.
+    if (Comp is TControl) and (TControlAccess(Comp).ActionLink <> NIL) then
+    begin
+      DispatchedVia := 'click';
+      UseControlClick := TRUE;
       exit(TRUE);
     end;
     // Resolve OnClick once via RTTI.
@@ -1714,6 +1981,8 @@ var
       TButton(Comp).Click
     else if Comp is TWinControl then
       TWinControlClass(Comp).Click
+    else if UseControlClick then
+      TControlAccess(Comp).Click
     else if HasNotify then
       Notify(Comp);
   end;
@@ -1723,6 +1992,7 @@ begin
   Result := Default(TBridgeResponse);
   Result.Id := AReq.Id;
   DispatchedVia := '';
+  UseControlClick := FALSE;
   StoppedReason := '';
   ClicksDone := 0;
 
@@ -1806,14 +2076,8 @@ begin
     end;
   end;
 
-  Comp := FindComponentByPath(Path);
-  if Comp = NIL then
-  begin
-    Result.Ok := FALSE;
-    Result.ErrorCode := ErrNotFound;
-    Result.ErrorMessage := 'no component matches ' + Path;
-    exit;
-  end;
+  Comp := ResolvePathOrFail(Path, Result);
+  if Comp = NIL then exit;
 
   if TryGetEnabled(Comp, Enabled) and not Enabled then
   begin
@@ -1923,13 +2187,8 @@ begin
   end;
   Path := TJSONString(PathVal).Value;
 
-  Comp := FindComponentByPath(Path);
-  if Comp = NIL then
-  begin
-    Result.Ok := FALSE; Result.ErrorCode := ErrNotFound;
-    Result.ErrorMessage := 'no component matches ' + Path;
-    exit;
-  end;
+  Comp := ResolvePathOrFail(Path, Result);
+  if Comp = NIL then exit;
 
   if not (Comp is TBasicAction) then
   begin
@@ -2010,14 +2269,8 @@ begin
   Path := TJSONString(PathVal).Value;
   Text := TJSONString(TextVal).Value;
 
-  Comp := FindComponentByPath(Path);
-  if Comp = NIL then
-  begin
-    Result.Ok := FALSE;
-    Result.ErrorCode := ErrNotFound;
-    Result.ErrorMessage := 'no component matches ' + Path;
-    exit;
-  end;
+  Comp := ResolvePathOrFail(Path, Result);
+  if Comp = NIL then exit;
   if TryGetEnabled(Comp, Enabled) and not Enabled then
   begin
     Result.Ok := FALSE;
@@ -2115,14 +2368,8 @@ begin
   Path := TJSONString(PathVal).Value;
   Checked := TJSONBool(CheckedVal).AsBoolean;
 
-  Comp := FindComponentByPath(Path);
-  if Comp = NIL then
-  begin
-    Result.Ok := FALSE;
-    Result.ErrorCode := ErrNotFound;
-    Result.ErrorMessage := 'no component matches ' + Path;
-    exit;
-  end;
+  Comp := ResolvePathOrFail(Path, Result);
+  if Comp = NIL then exit;
   if TryGetEnabled(Comp, Enabled) and not Enabled then
   begin
     Result.Ok := FALSE;
@@ -2237,15 +2484,12 @@ begin
   PropName := TJSONString(NameVal).Value;
   StrValue := TJSONString(ValueVal).Value;
 
-  Comp := FindComponentByPath(Path);
-  if Comp = NIL then
-  begin
-    Result.Ok := FALSE;
-    Result.ErrorCode := ErrNotFound;
-    Result.ErrorMessage := 'no component matches ' + Path;
-    exit;
-  end;
-  if TryGetEnabled(Comp, Enabled) and not Enabled then
+  Comp := ResolvePathOrFail(Path, Result);
+  if Comp = NIL then exit;
+  // A disabled control refuses every property (-32003) except 'Enabled' itself (exact name, any case, no dotted
+  // path; TRUE and FALSE). Without that exception a control disabled through set_property could never be enabled
+  // again by any tool (Gabriel, 2026-10-07). click, set_text and set_checked keep their own disabled check.
+  if TryGetEnabled(Comp, Enabled) and not Enabled and not SameText(PropName, 'Enabled') then
   begin
     Result.Ok := FALSE;
     Result.ErrorCode := ErrControlDisabled;
@@ -2670,14 +2914,8 @@ begin
   Path := TJSONString(PathVal).Value;
   PropName := TJSONString(NameVal).Value;
 
-  Comp := FindComponentByPath(Path);
-  if Comp = NIL then
-  begin
-    Result.Ok := FALSE;
-    Result.ErrorCode := ErrNotFound;
-    Result.ErrorMessage := 'no component matches ' + Path;
-    exit;
-  end;
+  Comp := ResolvePathOrFail(Path, Result);
+  if Comp = NIL then exit;
   // No Enabled check — reading a disabled control is exactly the scenario
   // a debug-channel user needs (e.g. "why is btnSave disabled? what's its Tag?").
 
