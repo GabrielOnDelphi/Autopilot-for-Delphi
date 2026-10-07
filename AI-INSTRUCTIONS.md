@@ -46,29 +46,38 @@ Enumerates all forms and their controls. Returns a JSON array. Each node carries
 - `name` — component name, or a synthetic `@TButton#N` for unnamed components.
 - `path` — the dotted path you paste directly into `click`/`get_text`/`set_text` etc.
 - `class` — Delphi class name.
-- Optional `text` — `Caption`/`Text`/`Lines.Text` where readable. Missing on classes that have no text property OR where the getter threw.
-- Optional `enabled`, `visible` — boolean state where readable.
+- Optional `text` - `Caption`/`Text`/`Lines.Text` where readable. Missing on classes that have no text property, where `Text`/`Caption` is not a string (some third-party components), OR where the getter threw.
+- Optional `enabled`, `visible` - boolean state where readable. Missing where the property is not a Boolean (for example an enumeration `Visible` on some third-party components).
 - Optional `synthetic: true` — flag on synthetic names.
+- Optional `parent` - only on a re-parented control or embedded form: one that is shown inside a container outside the owner tree it is listed under. The value is the `list_tree` path of that container, e.g. `"parent":"MainForm.tabFixEnters"`. Left out when the container has no `list_tree` path. Every other node has no `parent` field.
 
-The first node is the form itself (with the form's path equal to its name). Subsequent nodes are children. The walk recurses into runtime-owned containers (frames, dynamic panels) — for design-time-placed frames, controls already appear at the form level because the Delphi streaming system reparents them at load time.
+The first node is the form itself (with the form's path equal to its name). Then come the components the form **owns** (`Components[]`), at any depth: a component that owns others (a frame, a panel created at run time with an owner) is followed by the components it owns, and `path` is that owner chain. So a control is listed under the form that owns it, not under the form where it is shown. Example: a panel created by `frmEnterFix` and re-parented onto a tab sheet of `MainForm` is listed as `frmEnterFix.Container`, with `"parent":"MainForm.tabFixEnters"`. A control owned by `Application` or by nobody is not listed.
 
-**Path forms accepted by every tool that takes `path`:**
+**Path forms accepted by every tool that takes `path`.** A path is resolved in two steps.
 
-- `Form` — the form itself (e.g. `frmMain`).
-- `Form.Leaf` — BFS shallow-first search for `Leaf` anywhere under `Form` (e.g. `frmMain.btnSave`). Convenient but ambiguous if `Leaf` appears in multiple branches.
-- `Form.A.B.C` — anchored. Each segment is a direct child of the previous (e.g. `frmMain.pnlToolbar.btnSave`). Unambiguous; use this for nested controls.
+Step 1, the owner path (the `path` that `list_tree` shows):
+
+- `Form` - the form itself (e.g. `frmMain`).
+- `Form.Leaf` - shallow-first search for `Leaf` among everything `Form` owns, at any depth (e.g. `frmMain.btnSave`). If `Leaf` exists in several branches, the shallowest wins with no error; use an anchored path to reach another one.
+- `Form.A.B.C` - anchored. Each segment is owned by the previous one (e.g. `frmMain.Frame1.btnSave` for a button inside a frame).
+
+Step 2, only when step 1 finds nothing: the same path is tried through the visual tree, where the controls are shown (VCL `Controls[]`, FMX `Children`; FMX also looks through `TTabItemContent` and `TScrollContent`, never into style objects):
+
+- `Form.Leaf` - any control shown anywhere inside `Form`, whoever owns it. Example: `MainForm.Container` finds the re-parented panel above.
+- `Form.A.B.C` - each segment is owned by the previous one OR placed directly on it. Examples: `MainForm.tabFixEnters.Container`, or `frmMain.pnlToolbar.btnSave` for a button placed on a panel (both owned by the form).
+- One match resolves the path. Two or more give `-32002 ambiguous_path`; the message names each candidate by its owner path - retry with one of those. Non-visual components (`TAction`, `TDataSet`, `TTimer`) are found only by their owner path.
 
 ### `click`
 
 `click(path, count?, mode?, timeoutMs?, pid?)`
 
-Default behavior: invokes the control's `Click` (`TButton.Click` for buttons, `TWinControlClass(Ctrl).Click` cast for other TWinControl descendants, falling back to `OnClick(Self)` for non-TWinControl visuals like TLabel/TImage with `OnClick` handlers).
+Default behavior: invokes the control's `Click` (`TButton.Click` for buttons, `TWinControlClass(Ctrl).Click` cast for other TWinControl descendants). **A control with an `Action` assigned** is clicked through `TControl.Click`, which runs the action as a mouse click does: `OnExecute` gets the action as `Sender`, `AutoCheck` toggles `Checked`, `TActionList.OnExecute` runs, and a standard action without `OnExecute` (`TFileExit`) works too. This covers VCL `TSpeedButton`/`TToolButton` and, on FMX, every action-bound control. Other controls fall back to `OnClick(Self)`: VCL non-windowed visuals like TLabel/TImage, and every FMX control without an action.
 
 - `count` (1..1000, default 1) — fires N clicks in one round-trip. Bridge resolves the dispatch path once, re-checks `Enabled` between iterations, stops early with `stoppedReason='disabled'` if the control becomes disabled mid-loop.
 - `timeoutMs` — overrides the bridge's main-thread wait for this call, in milliseconds. Default 5000 for a single click, 5000 + (count-1)*100 for batched clicks. Pass a short value (e.g. 500) when the click will open a modal dialog — expect `-32004 main_thread_blocked`, then call `dismiss_dialog`.
 - `mode='message'` (VCL-on-Windows only, implemented 2026-07-07) — posts `BM_CLICK` to the control and returns at once; the click runs when the app next pumps messages, AFTER this response. Only button-class controls handle `BM_CLICK` (`TButton`/`TBitBtn`/`TCheckBox`/`TRadioButton`) — any other class is rejected with `-32005` instead of silently no-opping. **The main use: a button whose `OnClick` opens a modal dialog** — `mode='message'` returns immediately (no `-32004`), then call `dismiss_dialog`. FMX targets reject the mode with `-32005` (use the `timeoutMs` recipe there). Windows caveat (documented BM_CLICK behavior): a button inside a native dialog box may ignore `BM_CLICK` when that dialog is not the active window — but for native dialogs you should be using `dismiss_dialog` anyway.
 
-Return shape: `{dispatchedVia: 'click' | 'onclick' | 'message', clicksDispatched: N, stoppedReason?: 'disabled'}` — `'click'` = the control's `Click` method ran (buttons and other windowed controls), `'onclick'` = the `OnClick` handler was invoked directly (non-windowed visuals like `TLabel`), `'message'` = a `BM_CLICK` was posted (async). With `mode='message'` + `count`, all posted clicks run after the response returns, so the between-iterations `Enabled` re-check cannot see those clicks' own effects.
+Return shape: `{dispatchedVia: 'click' | 'onclick' | 'message', clicksDispatched: N, stoppedReason?: 'disabled'}` - `'click'` = the control's `Click` method ran (buttons, other windowed controls, and every action-bound control), `'onclick'` = the `OnClick` handler was invoked directly (non-windowed visuals like `TLabel`, FMX controls without an action), `'message'` = a `BM_CLICK` was posted (async). With `mode='message'` + `count`, all posted clicks run after the response returns, so the between-iterations `Enabled` re-check cannot see those clicks' own effects.
 
 **Click the control, not the `TAction` — or use `execute_action`.** A `TAction` / `TBasicAction` has no `OnClick` (it carries `OnExecute`), so `click(path='Form.actFileExit')` fails with `-32005 unsupported_action` ("has no OnClick"). Two ways out:
 - **`execute_action(path='Form.actFileExit')`** — fires the action's `OnExecute` directly. Use this for shortcut-only actions (no menu item or button), and for actions shared by several controls when you don't want to pick one. See `### execute_action` below.
@@ -135,6 +144,8 @@ A data-aware VCL `TDBCheckBox` writes to its `DataLink` only from the protected 
 
 **Supported property kinds:** string (and L/W/U variants), integer, int64, boolean, other enumerations (by identifier `'poDesigned'` or ordinal `'1'`), set-of-enum (see above), float (Single / Double / TDateTime), TAlphaColor (FMX), TColor (VCL).
 
+**Disabled controls:** on a disabled control `set_property` answers `-32003 control_disabled`, with one exception: the property `Enabled` itself (that exact name in any letter case, no dotted path) may be set to `true` or `false`, so a control you disabled with `set_property` can be enabled again. `false` on a control that is already disabled answers `elided: true`. Every other property (for example `Caption`, or a dotted `Font.Size`) still answers `-32003`.
+
 **Discovery on unknown property name:** the failure response carries `error.data.availableProperties` — a JSON array of `{name, kind, currentValue?}` entries covering every writable published property. **Use this aggressively.** One failed `set_property` shows you the entire writable surface AND the live values — much cheaper than a chain of `get_text` calls or a `screenshot`. `kind:'class'` entries (Font, Lines, Brush, Fill, …) are candidates for one-level dotted writes.
 
 **Write-side elision** (this is important): before each write, the bridge reads the live value and skips `SetValue` if the coerced new value equals it. The response carries `elided: true|false`:
@@ -154,14 +165,15 @@ Comparison is type-aware: string identity, integer/int64 equality (TAlphaColor/T
 
 - Examples:
   - `read_property(path='frmMain.btnSave', propName='Tag')` → `{value: '42', kind: 'integer'}`
-  - `read_property(path='frmMain.lblStatus', propName='Color')` → `{value: 'clRed', kind: 'color'}` (VCL) or `{value: 'claRed', kind: 'alphacolor'}` (FMX)
+  - `read_property(path='frmMain.lblStatus', propName='Color')` → `{value: 'clRed', kind: 'color'}` (VCL `TColor`)
+  - `read_property(path='frmMain.rectBox', propName='Fill.Color')` → `{value: 'claRed', kind: 'alphacolor'}` (a named `TAlphaColor`, VCL and FMX); a color with no name reads as `'#AARRGGBB'`, e.g. `{value: '#FFFF8000', kind: 'alphacolor'}`
   - `read_property(path='frmMain.cmbItems', propName='ItemIndex')` → `{value: '2', kind: 'integer'}`
   - `read_property(path='frmMain.btnSave', propName='Font.Size')` → `{value: '14', kind: 'integer'}` (one-level dotted)
   - `read_property(path='frmMain.pnlToolbar', propName='BevelEdges')` → `{value: '[beLeft,beTop]', kind: 'set'}`
 
 **Use this instead of writing diagnostic files in the target.** A common anti-pattern: the AI patches the host source with `Diag := TStringList.Create; Diag.Add('X = ' + ...); Diag.SaveToFile(...)`, recompiles, runs, reads the file. If `X` is a published property on a discoverable component, `read_property` returns it in one round-trip with **no recompile**. (If `X` is a local variable or a function return — see "Debug channel selection" below.)
 
-**Does NOT enforce Enabled.** Reading state off a disabled control is a legitimate debug case ("why is btnSave greyed out? what's its Tag? what's its Action.Enabled?"). Contrast with `click` / `set_property`, which refuse to act on disabled controls.
+**Does NOT enforce Enabled.** Reading state off a disabled control is a legitimate debug case ("why is btnSave greyed out? what's its Tag? what's its Action.Enabled?"). Contrast with `click`, `set_text`, `set_checked` and `set_property`, which refuse to act on a disabled control with `-32003` (the one exception: `set_property` of `Enabled` itself, see `set_property`).
 
 **Discovery on unknown propName:** the `rtti_property_missing` response carries `error.data.availableProperties` — same shape as `set_property` but filtered by `IsReadable` instead of `IsWritable`. So write-only-then-removed properties on legacy components still show up.
 
@@ -175,13 +187,13 @@ Comparison is type-aware: string identity, integer/int64 equality (TAlphaColor/T
 
 Polls the control's `Text`/`Caption` every `pollIntervalMs` (default 100) until it equals `expectedText` exactly, or `timeoutMs` (default 10000) expires. Use after kicking off asynchronous work (a `TTask`, a database query, a Win32 timer). Text/Caption only — other properties (`Checked`, `Enabled`) are not pollable yet; read them with `read_property`.
 
-Returns `{matched, currentValue, expectedValue, pollCount}`. A timeout is `matched: false` carrying the last observed value (a reportable state, not an error), so branch on the field.
+Returns `{matched, currentValue, expectedValue, pollCount}`. `matched: false` means only that the deadline passed while the target kept answering; it carries the last observed value (a reportable state, not an error), so branch on the field. `-32098 target_not_responding` and `-32099 target_not_running` end the wait at once, with `isError: true`. Any other poll error (for example `-32001` for a control that does not exist yet) does not end the wait.
 
 ### `screenshot`
 
 `screenshot(form?, pid?)`
 
-Captures the named form (or the main form if `form` omitted) as a PNG. Returns a base64 string.
+Captures the named form (or the main form if `form` omitted) as a PNG. The result holds two content blocks: first an MCP image block (`type: image`, `mimeType: image/png`), so the picture reaches you as an image you can look at; then a text block with the rest of the answer: `form`, `width`, `height`, `format`, `encoding` (no image data). A failed screenshot is one text block with the error envelope, as for every other tool.
 
 **Use sparingly.** PNGs cost image tokens in the LLM context and the encode round-trip is the most expensive single bridge call (~30 ms for a typical form vs sub-ms for everything else). Justified for: layout bugs, color/theme issues, font rendering glitches, "the AI cannot tell whether the form is in the state it thinks it's in" tiebreakers.
 
@@ -245,9 +257,9 @@ Per-turn inference is ~1–8 s on Opus 4.7, ~0.3–1 s on Haiku 4.5 — the brid
 
 ## Subagent dispatch (Claude Code only)
 
-On Claude Code with the project-scoped `delphi-driver` agent installed (`.claude/agents/delphi-driver.md`), delegate **scripted sequences of ≥ 5 sequential tool calls** to it. It runs on Haiku 4.5 at `effort: low` — no extended thinking, pure tool dispatch, ~2.5 s/call.
+On Claude Code with the project-scoped `autopilot-script-runner` agent installed (`.claude/agents/autopilot-script-runner.md`), delegate **scripted sequences of ≥ 5 sequential tool calls** to it. It runs on Haiku 4.5 at `effort: low` - no extended thinking, pure tool dispatch, ~2.5 s/call.
 
-**When to delegate to `delphi-driver`:**
+**When to delegate to `autopilot-script-runner`:**
 
 - You have a known, linear script of UI actions with no need to react to intermediate results.
 - The script has at least 5 sequential tool calls (otherwise the ~14 s of subagent spin-up overhead doesn't pay back).
@@ -258,7 +270,7 @@ On Claude Code with the project-scoped `delphi-driver` agent installed (`.claude
 - The script has fewer than 5 sequential calls (just use parallel tool_use in the parent turn).
 - You need to write code, propose alternatives, or analyze results (subagent is locked down to MCP tool calls only).
 
-Invoke via the `Agent` tool with `subagent_type: delphi-driver`. The agent returns a compact `RESULT / STEPS / FINAL STATE / NOTES` report.
+Invoke via the `Agent` tool with `subagent_type: autopilot-script-runner`. The agent returns a compact `RESULT / STEPS / FINAL STATE / NOTES` report.
 
 ---
 
@@ -269,12 +281,12 @@ All bridge errors use JSON-RPC error envelopes with custom codes:
 | Code   | Name                    | Meaning                              | Common cause                                                                    |
 | ------ | ----------------------- | ------------------------------------ | ------------------------------------------------------------------------------- |
 | -32001 | `not_found`             | No component matches path            | Typo, control not yet created, form not visible                                 |
-| -32002 | `ambiguous_path`        | Multiple matches without form prefix | Use a `Form.Leaf` or `Form.A.B.C` anchored path                                 |
-| -32003 | `control_disabled`      | Found but `Enabled = False`          | The UI deliberately blocks this action                                          |
+| -32002 | `ambiguous_path`        | The path matched 2+ controls through the visual tree | The owner path found nothing and several shown controls fit. The message lists each by its owner path - retry with one of them |
+| -32003 | `control_disabled`      | Found but `Enabled = False`          | The UI deliberately blocks this action. `set_property` of `Enabled` itself is still allowed |
 | -32004 | `main_thread_blocked`   | Dispatch timed out                   | Target main thread is busy (long handler, modal with custom message loop)       |
 | -32005 | `unsupported_action`    | Class doesn't support the request    | e.g. clicking a `TPanel` with no `OnClick`, set_property on a non-writable kind |
 | -32006 | `rtti_property_missing` | Property not exposed via RTTI        | Property isn't `published`, or doesn't exist                                    |
-| -32098 | `target_not_responding` | I/O deadline expired after connect (MCP side) | Whole target frozen (IDE breakpoint, hang) — the call fails after per-call timeout + 2 s instead of hanging |
+| -32098 | `target_not_responding` | The target stopped answering (MCP side) | It accepted the connection but did not reply in time (the call fails after the per-call timeout + 2 s instead of hanging), or its pipe stayed busy for the whole per-call timeout. Typical: the whole app is stopped on an IDE breakpoint or hung |
 | -32099 | `target_not_running`    | No target to connect to (MCP side)   | App not running, unknown `pid`, or (Android) no `adb forward`. The message carries the steps to start the app or link the bridge in - follow them instead of retrying |
 
 `set_property` failures with code `rtti_property_missing` carry `error.data.availableProperties` — use it to self-correct.
@@ -286,7 +298,7 @@ All bridge errors use JSON-RPC error envelopes with custom codes:
 - **No `SendInput` / synthetic mouse-keyboard.** This bridge acts directly on Delphi objects. Bugs that only reproduce through the real Windows input pipeline are not testable: focus-driven validation (`OnExit`, `EN_KILLFOCUS`), IME composition, keyboard accelerators routed via `WM_KEYDOWN` / `IsDialogMessage`, hover (`CM_MOUSEENTER`), real drag-drop initiated from a mouse-down + mouse-move. If your test relies on those, this is the wrong layer — use `SendInput`-based tools (AutoIt, TestComplete, Ranorex). `mode='message'` on `click` bridges the gap for buttons (uses `BM_CLICK`).
 - **No workflow engine / test-recorder.** You write the scenarios in conversation or in your test harness. The bridge gives you the primitives.
 - **No source modification of the target.** The integration cost is one `uses` clause and one `StartBridge` call.
-- **No propagation of exceptions raised inside an event handler — the bridge is an exception firewall.** `click` dispatches inside `try..except` (`Source\Bridge\Autopilot.Bridge.Fmx.pas:1155-1166`, and the same shape in `.Vcl`): it catches anything the event handler raises, returns `stoppedReason: "exception:<ClassName>"`, and lets the session continue. That is deliberate (one crashing click must not kill the automation run), but it means the exception **never reaches `Application.HandleException`**, so anything hanging off the global handler does not fire: madExcept, `Application.OnException`, `LightFmx.Common.CrashHandler`, a custom `TApplicationEvents.OnException`.
+- **No propagation of exceptions raised inside an event handler - the bridge is an exception firewall.** `click` dispatches inside `try..except` (`HandleClick` in `Source\Bridge\Autopilot.Bridge.Fmx.pas`, and the same shape in `.Vcl`): it catches anything the event handler raises, returns `stoppedReason: "exception:<ClassName>"`, and lets the session continue. That is deliberate (one crashing click must not kill the automation run), but it means the exception **never reaches `Application.HandleException`**, so anything hanging off the global handler does not fire: madExcept, `Application.OnException`, `LightFmx.Common.CrashHandler`, a custom `TApplicationEvents.OnException`.
 
   So **you cannot test a global error path by clicking a button that raises.** Measured 2026-08-07 in SciVance Tester against a binary verified armed with madExcept: the click returned `stoppedReason:"exception:Exception"`, no dialog appeared and no crash report was written — which looks exactly like "madExcept is broken" when in fact it was never invoked.
 
@@ -364,4 +376,4 @@ This is a fallback, not the preferred path — the MCP tools handle framing, ret
 Stop-Process -Name OrinocoReaderFMX -Force -ErrorAction SilentlyContinue
 ```
 
-**Side effects of killing:** `FormPreRelease` doesn't run, so INI position/size (TLightForm) + AutoState GUI state are lost; the discovery file goes stale until the next MCP startup sweeps files >24 h old; the pipe breaks harmlessly. **Rule of thumb:** if the app can answer a `click`, use the bridge close path — same one turn, no lost state. Kill only when hung, when state is disposable, or when the close path doesn't work for this target.
+**Side effects of killing:** `FormPreRelease` doesn't run, so INI position/size (TLightForm) + AutoState GUI state are lost; the discovery file stays until the next tool call that lists targets finds its process gone and deletes it; the pipe breaks harmlessly. **Rule of thumb:** if the app can answer a `click`, use the bridge close path - same one turn, no lost state. Kill only when hung, when state is disposable, or when the close path doesn't work for this target.
