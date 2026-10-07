@@ -1,12 +1,14 @@
 ﻿unit Autopilot.Bridge.Fmx;
 
 {=============================================================================================================
-   2026.09.01
+   2026.10.06
    www.GabrielMoraru.com
 --------------------------------------------------------------------------------------------------------------
    - Public bridge interface for FMX target projects (cross-platform: Windows pipe + POSIX AF_UNIX socket)
    - StartBridge / StopBridge / IsBridgeRunning; real bodies only when AUTOPILOT is defined
-   - FMX dispatcher: same 13 tools as the VCL twin; click dispatches via OnClick RTTI (no protected trick)
+   - FMX dispatcher: same 13 tools as the VCL twin; click dispatches via OnClick RTTI, or via the protected
+     TControl.Click when the control is bound to an action
+   - Paths resolve through the Owner tree first, then through the visual parent tree (re-parented controls)
    - TAlphaColor coercion only (no TColor — FMX uses TAlphaColor throughout); keep-screen-on on Android
 =============================================================================================================}
 
@@ -55,6 +57,10 @@ var
 
 
 { Component-tree walk and RTTI helpers ---------------------------------- }
+
+type
+  TFmxControlAccess = class(TControl);   // breaks protected scope for .Click and .ActionLink
+
 
 // Synthetic ID for an unnamed component: '@TButton#5' where 5 is the component's
 // CURRENT position in its owner's Components list. The index is computed live and
@@ -135,9 +141,111 @@ begin
 end;
 
 
+{ Visual-parent fallback ------------------------------------------------- }
+{ Same rule as the VCL twin: the owner walk runs first; only when it finds nothing, the path is tried through
+  the visual tree, here TFmxObject.Children. Two FMX specifics:
+  - A style tree is skipped: StyleObject.Clone(nil) gives it no Owner, and ApplyStyleLookup sets Stored=FALSE.
+  - An internal content object (Stored=FALSE but owned, e.g. TTabItemContent, TScrollContent) is looked
+    through: FMX puts the controls placed on a TTabItem or a TScrollBox inside it. }
+
+const
+  MaxVisualDepth = 256;   // stops the recursion on a corrupt Parent chain; real forms nest far less
+
+function IsStyleTree(AObj: TFmxObject): Boolean;
+begin
+  Result := not AObj.Stored and (AObj.Owner = NIL);
+end;
+
+
+// Leaf match for an object met in the visual tree. A synthetic '@Class#N' id is owner-relative, so it is
+// checked against the object's own Owner.
+function MatchesVisualLeaf(AComp: TComponent; const ALeaf: String): Boolean;
+begin
+  if (ALeaf <> '') and (ALeaf[1] = '@') then
+    Result := (AComp.Owner <> NIL) and MatchesLeaf(AComp.Owner, AComp, ALeaf)
+  else
+    Result := (ALeaf <> '') and SameText(AComp.Name, ALeaf);
+end;
+
+
+procedure AddUnique(AList: TList; AComp: TComponent);
+begin
+  if AList.IndexOf(AComp) < 0 then
+    AList.Add(AComp);
+end;
+
+
+// Adds to AMatches every object in AParent's visual subtree (Children, recursively) that matches ALeaf.
+procedure CollectVisualDescendants(AParent: TComponent; const ALeaf: String; AMatches: TList; ADepth: Integer);
+var
+  j: Integer;
+  Child: TFmxObject;
+begin
+  Assert(TThread.CurrentThread.ThreadID = MainThreadID, 'CollectVisualDescendants: FMX touched off the main thread');
+  if not (AParent is TFmxObject) or (ADepth > MaxVisualDepth) then exit;
+  for j := 0 to TFmxObject(AParent).ChildrenCount - 1 do
+  begin
+    Child := TFmxObject(AParent).Children[j];
+    if IsStyleTree(Child) then Continue;
+    if MatchesVisualLeaf(Child, ALeaf) then
+      AddUnique(AMatches, Child);
+    CollectVisualDescendants(Child, ALeaf, AMatches, ADepth + 1);
+  end;
+end;
+
+
+// Adds to AStep the direct visual children of AParent that match ALeaf, looking through internal content objects.
+procedure CollectVisualChildren(AParent: TComponent; const ALeaf: String; AStep: TList; ADepth: Integer);
+var
+  j: Integer;
+  Child: TFmxObject;
+begin
+  Assert(TThread.CurrentThread.ThreadID = MainThreadID, 'CollectVisualChildren: FMX touched off the main thread');
+  if not (AParent is TFmxObject) or (ADepth > MaxVisualDepth) then exit;
+  for j := 0 to TFmxObject(AParent).ChildrenCount - 1 do
+  begin
+    Child := TFmxObject(AParent).Children[j];
+    if IsStyleTree(Child) then Continue;
+    if MatchesVisualLeaf(Child, ALeaf) then
+      AddUnique(AStep, Child);
+    if not Child.Stored then
+      CollectVisualChildren(Child, ALeaf, AStep, ADepth + 1);
+  end;
+end;
+
+
+// Anchored walk in which a child of ACur is a component ACur owns OR an object placed directly on it.
+// Explores every branch, so AMatches ends up holding every component the whole path AParts[AIndex..] leads to.
+procedure CollectAnchoredMatches(ACur: TComponent; const AParts: TArray<String>; AIndex: Integer; AMatches: TList);
+var
+  Step: TList;
+  Owned: TComponent;
+  j: Integer;
+begin
+  Assert(TThread.CurrentThread.ThreadID = MainThreadID, 'CollectAnchoredMatches: FMX touched off the main thread');
+  if AIndex > High(AParts) then
+  begin
+    AddUnique(AMatches, ACur);
+    exit;
+  end;
+
+  Step := TList.Create;
+  try
+    Owned := FindChildOf(ACur, AParts[AIndex]);
+    if Owned <> NIL then
+      Step.Add(Owned);
+    CollectVisualChildren(ACur, AParts[AIndex], Step, 0);
+    for j := 0 to Step.Count - 1 do
+      CollectAnchoredMatches(TComponent(Step[j]), AParts, AIndex + 1, AMatches);
+  finally
+    FreeAndNil(Step);
+  end;
+end;
+
+
 // See VCL twin for path-format spec, including the 1-part "Form alone" form
-// that round-trips with the form node emitted by list_tree.
-function FindComponentByPath(const APath: String): TComponent;
+// that round-trips with the form node emitted by list_tree, and for the visual-parent fallback.
+function FindComponentByPath(const APath: String; AMatches: TList): TComponent;
 var
   i, k: Integer;
   Form: TCommonCustomForm;
@@ -147,6 +255,7 @@ var
   Visited: TList;
 begin
   Assert(TThread.CurrentThread.ThreadID = MainThreadID, 'FindComponentByPath: FMX touched off the main thread');
+  Assert(AMatches <> NIL, 'FindComponentByPath: AMatches is NIL');
   Result := NIL;
   if APath = '' then exit;
   Parts := APath.Split(['.']);
@@ -179,6 +288,44 @@ begin
       if Cur <> NIL then exit(Cur);
     end;
   end;
+
+  { # Visual-parent fallback }
+  if Length(Parts) < 2 then exit;
+  for i := 0 to Screen.FormCount - 1 do
+  begin
+    Form := Screen.Forms[i];
+    if (FormName <> '*') and not SameText(Form.Name, FormName) then Continue;
+    if Length(Parts) = 2
+    then CollectVisualDescendants(Form, Parts[1], AMatches, 0)
+    else CollectAnchoredMatches(Form, Parts, 1, AMatches);
+  end;
+  if AMatches.Count = 1 then
+    Result := TComponent(AMatches[0]);
+end;
+
+
+// Mirror of the VCL twin's IsReadableBooleanProp / IsReadableStringProp: list_tree, get_text, set_text and set_checked
+// check the property type BEFORE the read or write, so they raise no exception that a debugger would halt the whole
+// app on (GitHub issue 2; the VCL twin has the full note).
+function IsReadableBooleanProp(AProp: TRttiProperty): Boolean;
+begin
+  Result := (AProp <> NIL) and AProp.IsReadable and (AProp.PropertyType <> NIL)
+        and IsBoolType(AProp.PropertyType.Handle);
+end;
+
+
+function IsReadableStringProp(AProp: TRttiProperty): Boolean;
+begin
+  Result := (AProp <> NIL) and AProp.IsReadable and (AProp.PropertyType <> NIL)
+        and (AProp.PropertyType.TypeKind in [tkString, tkLString, tkWString, tkUString, tkChar, tkWChar]);
+end;
+
+
+// Mirror of the VCL twin's TryConvertForWrite: TRUE when TRttiProperty.SetValue accepts AValue for AProp (SetValue
+// converts with TValue.Cast, which raises EInvalidCast exactly where TValue.TryCast answers FALSE).
+function TryConvertForWrite(AProp: TRttiProperty; const AValue: TValue; OUT AConverted: TValue): Boolean;
+begin
+  Result := (AProp <> NIL) and (AProp.PropertyType <> NIL) and AValue.TryCast(AProp.PropertyType.Handle, AConverted);
 end;
 
 
@@ -197,10 +344,11 @@ begin
     if RT = NIL then exit;
     // Mirror VCL: try Text first, then Caption. TCommonCustomForm exposes
     // Caption (not Text), so get_text("MyFmxForm") needs the fallback to work.
+    // A Text or Caption that is not a string counts as missing.
     Prop := RT.GetProperty('Text');
-    if (Prop = NIL) or not Prop.IsReadable then
+    if not IsReadableStringProp(Prop) then
       Prop := RT.GetProperty('Caption');
-    if (Prop = NIL) or not Prop.IsReadable then exit;
+    if not IsReadableStringProp(Prop) then exit;
     // Mirror the VCL guard: some FMX property getters can throw on
     // partially-initialized forms or controls. Swallow and report "no text".
     try
@@ -230,7 +378,7 @@ begin
     RT := Ctx.GetType(AComp.ClassType);
     if RT = NIL then exit;
     Prop := RT.GetProperty('Enabled');
-    if (Prop = NIL) or not Prop.IsReadable then exit;
+    if not IsReadableBooleanProp(Prop) then exit;   // a non-Boolean Enabled is reported as unknown
     // Mirror the VCL guard: a misbehaving FMX getter must not propagate out
     // and leak the in-flight TJSONArray/TJSONObject in HandleListTree.
     try
@@ -260,7 +408,7 @@ begin
     RT := Ctx.GetType(AComp.ClassType);
     if RT = NIL then exit;
     Prop := RT.GetProperty('Visible');
-    if (Prop = NIL) or not Prop.IsReadable then exit;
+    if not IsReadableBooleanProp(Prop) then exit;   // a non-Boolean Visible is reported as unknown
     try
       AVisible := Prop.GetValue(AComp).AsBoolean;
       Result := TRUE;
@@ -279,6 +427,7 @@ var
   Ctx: TRttiContext;
   RT: TRttiType;
   Prop: TRttiProperty;
+  NewValue, Converted: TValue;
 begin
   Assert(TThread.CurrentThread.ThreadID = MainThreadID, 'TrySetTextProperty: FMX touched off the main thread');
   Result := FALSE;
@@ -289,16 +438,18 @@ begin
     if RT = NIL then exit;
     // Mirror VCL: try Text first, then fall back to Caption. TCommonCustomForm
     // has only Caption (no published Text), so set_text on a form needs this.
+    // A Text or Caption that cannot hold a string counts as missing.
+    NewValue := AValue;
     Prop := RT.GetProperty('Text');
-    if Prop = NIL then
+    if not TryConvertForWrite(Prop, NewValue, Converted) then
       Prop := RT.GetProperty('Caption');
-    if Prop = NIL then exit;
+    if not TryConvertForWrite(Prop, NewValue, Converted) then exit;
     if not Prop.IsWritable then
     begin
       AErrCode := ErrUnsupportedAction;
       exit;
     end;
-    Prop.SetValue(AComp, AValue);
+    Prop.SetValue(AComp, Converted);
     Result := TRUE;
   finally
     Ctx.Free;
@@ -327,6 +478,17 @@ begin
   if (ATypeInfo = NIL) or (ATypeInfo^.Kind <> tkEnumeration) then exit;
   Base := GetTypeData(ATypeInfo)^.BaseType^;
   Result := (Base = TypeInfo(ByteBool)) or (Base = TypeInfo(WordBool)) or (Base = TypeInfo(LongBool));
+end;
+
+
+// TAlphaColor as the AI reads it: 'claRed' for a named color, '#AARRGGBB' otherwise. Not AlphaColorToString:
+// it strips the 'cla' prefix and returns 'Red' (System.UIConsts.pas, AlphaColorToString). AlphaColorToIdent
+// returns the full 'claName', or 'x' + 8 hex digits for an unnamed color. TryParseAlphaColor accepts both forms.
+function AlphaColorToText(AColor: TAlphaColor): String;
+begin
+  AlphaColorToIdent(Integer(AColor), Result);
+  if (Result <> '') and (Result[1] = 'x') then
+    Result := '#' + Copy(Result, 2, MaxInt);
 end;
 
 
@@ -363,12 +525,11 @@ begin
     tkInteger:
     begin
       // TAlphaColor short-circuit: emit '#AARRGGBB' (or 'claName' when named)
-      // instead of a raw 32-bit integer. AlphaColorToString returns the name
-      // for known colors and '#AARRGGBB' for everything else.
+      // instead of a raw 32-bit integer.
       if AProp.PropertyType.Handle = TypeInfo(TAlphaColor) then
       begin
         try
-          AlphaStr := AlphaColorToString(TAlphaColor(V.AsOrdinal));
+          AlphaStr := AlphaColorToText(TAlphaColor(V.AsOrdinal));
           AValue := AlphaStr;
           Result := TRUE;
         except
@@ -914,6 +1075,7 @@ var
   Ctx: TRttiContext;
   RT: TRttiType;
   Prop: TRttiProperty;
+  NewValue, Converted: TValue;
 begin
   Assert(TThread.CurrentThread.ThreadID = MainThreadID, 'TrySetCheckedProperty: FMX touched off the main thread');
   Result := FALSE;
@@ -922,16 +1084,18 @@ begin
   try
     RT := Ctx.GetType(AComp.ClassType);
     if RT = NIL then exit;
+    // An IsChecked or Checked that is not a Boolean counts as missing.
+    NewValue := AValue;
     Prop := RT.GetProperty('IsChecked');     // FMX TCheckBox.IsChecked, not Checked
-    if Prop = NIL then
+    if not TryConvertForWrite(Prop, NewValue, Converted) then
       Prop := RT.GetProperty('Checked');
-    if Prop = NIL then exit;
+    if not TryConvertForWrite(Prop, NewValue, Converted) then exit;
     if not Prop.IsWritable then
     begin
       AErrCode := ErrUnsupportedAction;
       exit;
     end;
-    Prop.SetValue(AComp, AValue);
+    Prop.SetValue(AComp, Converted);
     Result := TRUE;
   finally
     Ctx.Free;
@@ -946,6 +1110,108 @@ begin
     Result := SyntheticIdFor(AComp)
   else
     Result := AComp.Name;
+end;
+
+
+// The path list_tree gives AComp - see the VCL twin. '' when its owner chain reaches no form.
+function OwnerPathFor(AComp: TComponent): String;
+var
+  Cur: TComponent;
+begin
+  Assert(TThread.CurrentThread.ThreadID = MainThreadID, 'OwnerPathFor: FMX touched off the main thread');
+  if AComp is TCommonCustomForm then exit(AComp.Name);
+  Result := LeafNameFor(AComp);
+  Cur := AComp.Owner;
+  while Cur <> NIL do
+  begin
+    if Cur is TCommonCustomForm then exit(Cur.Name + '.' + Result);
+    Result := LeafNameFor(Cur) + '.' + Result;
+    Cur := Cur.Owner;
+  end;
+  Result := '';
+end;
+
+
+// How the AI can name AComp: its owner path, or its bare name/class when no form owns it.
+function ReferenceFor(AComp: TComponent): String;
+begin
+  Result := OwnerPathFor(AComp);
+  if Result = '' then
+    if AComp.Name <> ''
+    then Result := AComp.Name
+    else Result := AComp.ClassName;
+end;
+
+
+// See the VCL twin: -32001 not_found, or -32002 ambiguous_path when the visual-parent fallback matched 2+ objects.
+function ResolvePathOrFail(const APath: String; var AResp: TBridgeResponse): TComponent;
+var
+  Matches: TList;
+  i: Integer;
+  Candidates: String;
+begin
+  Assert(TThread.CurrentThread.ThreadID = MainThreadID, 'ResolvePathOrFail: FMX touched off the main thread');
+  Matches := TList.Create;
+  try
+    Result := FindComponentByPath(APath, Matches);
+    if Result <> NIL then exit;
+
+    AResp.Ok := FALSE;
+    if Matches.Count < 2 then
+    begin
+      AResp.ErrorCode := ErrNotFound;
+      AResp.ErrorMessage := 'no component matches ' + APath;
+      exit;
+    end;
+
+    Candidates := '';
+    for i := 0 to Matches.Count - 1 do
+    begin
+      if Candidates <> '' then
+        Candidates := Candidates + ', ';
+      Candidates := Candidates + ReferenceFor(TComponent(Matches[i]));
+    end;
+    AResp.ErrorCode := ErrAmbiguousPath;
+    AResp.ErrorMessage := APath + ' is ambiguous: ' + IntToStr(Matches.Count) +
+                          ' controls shown there match it (' + Candidates + '). Use one of these paths instead.';
+  finally
+    FreeAndNil(Matches);
+  end;
+end;
+
+
+function IsInOwnerTree(AComp, ARoot: TComponent): Boolean;
+var
+  Cur: TComponent;
+begin
+  Cur := AComp;
+  while Cur <> NIL do
+  begin
+    if Cur = ARoot then exit(TRUE);
+    Cur := Cur.Owner;
+  end;
+  Result := FALSE;
+end;
+
+
+// list_tree 'parent' field for a re-parented object only - see the VCL twin. An internal content object
+// (TTabItemContent) is reported as the control that holds it (the TTabItem), the name the AI can use in a path.
+// A parent with no owner path (an object inside a style tree) gets no field: the AI could not use it.
+procedure AddReparentedField(ANode: TJSONObject; AComp, AListedUnder: TComponent);
+var
+  VisualParent: TFmxObject;
+  ParentPath: String;
+begin
+  Assert(TThread.CurrentThread.ThreadID = MainThreadID, 'AddReparentedField: FMX touched off the main thread');
+  if not (AComp is TFmxObject) then exit;
+  VisualParent := TFmxObject(AComp).Parent;
+  if VisualParent = NIL then exit;
+  if (AListedUnder <> NIL) and IsInOwnerTree(VisualParent, AListedUnder) then exit;
+  while not VisualParent.Stored and (VisualParent.Parent <> NIL) do
+    VisualParent := VisualParent.Parent;
+  ParentPath := OwnerPathFor(VisualParent);
+  if ParentPath <> '' then
+    ANode.AddPair('parent', ParentPath);
 end;
 
 
@@ -983,6 +1249,7 @@ var
   j: Integer;
   Child: TComponent;
   ChildPath: String;
+  Node: TJSONObject;
 begin
   Assert(TThread.CurrentThread.ThreadID = MainThreadID, 'WalkComponents: FMX touched off the main thread');
   for j := 0 to AParent.ComponentCount - 1 do
@@ -991,7 +1258,9 @@ begin
     if AVisited.IndexOf(Child) >= 0 then Continue;
     AVisited.Add(Child);
     ChildPath := AParentPath + '.' + LeafNameFor(Child);
-    AItems.AddElement(BuildComponentNode(AFormName, ChildPath, Child));
+    Node := BuildComponentNode(AFormName, ChildPath, Child);
+    AItems.AddElement(Node);   // AItems owns Node from here, so a raise below cannot leak it
+    AddReparentedField(Node, Child, AParent);
     if Child.ComponentCount > 0 then
       WalkComponents(AFormName, ChildPath, Child, AItems, AVisited);
   end;
@@ -1001,7 +1270,7 @@ end;
 function HandleListTree(const AReq: TBridgeRequest): TBridgeResponse;
 var
   Items: TJSONArray;
-  Wrap: TJSONObject;
+  Wrap, FormNode: TJSONObject;
   Visited: TList;
   i: Integer;
   Form: TCommonCustomForm;
@@ -1022,7 +1291,9 @@ begin
         // unrealized form — TryGetTextProperty swallows that and the node simply
         // lacks a `text` field. Then recurse owned components (including frames).
         Visited.Add(Form);
-        Items.AddElement(BuildComponentNode(Form.Name, Form.Name, Form));
+        FormNode := BuildComponentNode(Form.Name, Form.Name, Form);
+        Items.AddElement(FormNode);
+        AddReparentedField(FormNode, Form, NIL);
         WalkComponents(Form.Name, Form.Name, Form, Items, Visited);
       finally
         FreeAndNil(Visited);
@@ -1063,13 +1334,8 @@ begin
     exit;
   end;
   Path := TJSONString(PathVal).Value;
-  Comp := FindComponentByPath(Path);
-  if Comp = NIL then
-  begin
-    Result.Ok := FALSE; Result.ErrorCode := ErrNotFound;
-    Result.ErrorMessage := 'no component matches ' + Path;
-    exit;
-  end;
+  Comp := ResolvePathOrFail(Path, Result);
+  if Comp = NIL then exit;
   if not TryGetTextProperty(Comp, Text) then
   begin
     Result.Ok := FALSE; Result.ErrorCode := ErrRttiPropertyMissing;
@@ -1098,13 +1364,15 @@ var
   Notify: TNotifyEvent;
   RawValue: TValue;
   RequestedCount, ClicksDone: Integer;
-  StoppedReason, Mode: String;
+  StoppedReason, Mode, DispatchedVia: String;
+  UseControlClick: Boolean;
 begin
   Assert(TThread.CurrentThread.ThreadID = MainThreadID, 'HandleClick must run on the main thread');
   Result := Default(TBridgeResponse);
   Result.Id := AReq.Id;
   StoppedReason := '';
   ClicksDone := 0;
+  Notify := NIL;
 
   if AReq.Args = NIL then
   begin
@@ -1174,13 +1442,8 @@ begin
     end;
   end;
 
-  Comp := FindComponentByPath(Path);
-  if Comp = NIL then
-  begin
-    Result.Ok := FALSE; Result.ErrorCode := ErrNotFound;
-    Result.ErrorMessage := 'no component matches ' + Path;
-    exit;
-  end;
+  Comp := ResolvePathOrFail(Path, Result);
+  if Comp = NIL then exit;
   if TryGetEnabled(Comp, Enabled) and not Enabled then
   begin
     Result.Ok := FALSE; Result.ErrorCode := ErrControlDisabled;
@@ -1188,40 +1451,50 @@ begin
     exit;
   end;
 
-  // FMX: there's no protected Click trick on a generic TControl base. Most clickable
-  // controls expose OnClick (TNotifyEvent) via RTTI. Read and invoke it.
-  Ctx := TRttiContext.Create;
-  try
-    RT := Ctx.GetType(Comp.ClassType);
-    if RT = NIL then
-    begin
-      Result.Ok := FALSE; Result.ErrorCode := ErrUnsupportedAction;
-      Result.ErrorMessage := Comp.ClassName + ' has no RTTI';
-      exit;
+  // A control bound to an action: TControl.Click (FMX.Controls.pas) runs ActionLink.Execute, i.e.
+  // TCustomAction.Execute, with the action as Sender. Calling the OnClick that TControl.ActionChange copied
+  // from OnExecute skips that, and an action without OnExecute leaves OnClick NIL, so the click would fail.
+  UseControlClick := (Comp is TControl) and (TFmxControlAccess(Comp).ActionLink <> NIL);
+  if UseControlClick then
+    DispatchedVia := 'click'
+  else
+  begin
+    // FMX: no other protected Click trick on a generic TControl base. Most clickable
+    // controls expose OnClick (TNotifyEvent) via RTTI. Read and invoke it.
+    DispatchedVia := 'onclick';
+    Ctx := TRttiContext.Create;
+    try
+      RT := Ctx.GetType(Comp.ClassType);
+      if RT = NIL then
+      begin
+        Result.Ok := FALSE; Result.ErrorCode := ErrUnsupportedAction;
+        Result.ErrorMessage := Comp.ClassName + ' has no RTTI';
+        exit;
+      end;
+      OnClickProp := RT.GetProperty('OnClick');
+      if (OnClickProp = NIL) or not OnClickProp.IsReadable then
+      begin
+        Result.Ok := FALSE; Result.ErrorCode := ErrUnsupportedAction;
+        Result.ErrorMessage := Comp.ClassName + ' has no OnClick';
+        exit;
+      end;
+      RawValue := OnClickProp.GetValue(Comp);
+      if RawValue.IsEmpty or (RawValue.Kind <> tkMethod) then
+      begin
+        Result.Ok := FALSE; Result.ErrorCode := ErrUnsupportedAction;
+        Result.ErrorMessage := Comp.ClassName + '.OnClick is unset';
+        exit;
+      end;
+      TMethod(Notify) := PMethod(RawValue.GetReferenceToRawData)^;
+      if not Assigned(Notify) then
+      begin
+        Result.Ok := FALSE; Result.ErrorCode := ErrUnsupportedAction;
+        Result.ErrorMessage := Comp.ClassName + '.OnClick is unset';
+        exit;
+      end;
+    finally
+      Ctx.Free;
     end;
-    OnClickProp := RT.GetProperty('OnClick');
-    if (OnClickProp = NIL) or not OnClickProp.IsReadable then
-    begin
-      Result.Ok := FALSE; Result.ErrorCode := ErrUnsupportedAction;
-      Result.ErrorMessage := Comp.ClassName + ' has no OnClick';
-      exit;
-    end;
-    RawValue := OnClickProp.GetValue(Comp);
-    if RawValue.IsEmpty or (RawValue.Kind <> tkMethod) then
-    begin
-      Result.Ok := FALSE; Result.ErrorCode := ErrUnsupportedAction;
-      Result.ErrorMessage := Comp.ClassName + '.OnClick is unset';
-      exit;
-    end;
-    TMethod(Notify) := PMethod(RawValue.GetReferenceToRawData)^;
-    if not Assigned(Notify) then
-    begin
-      Result.Ok := FALSE; Result.ErrorCode := ErrUnsupportedAction;
-      Result.ErrorMessage := Comp.ClassName + '.OnClick is unset';
-      exit;
-    end;
-  finally
-    Ctx.Free;
   end;
 
   // Wrap dispatch in try/except so an OnClick that frees the control or raises
@@ -1234,7 +1507,9 @@ begin
       Break;
     end;
     try
-      Notify(Comp);
+      if UseControlClick
+      then TFmxControlAccess(Comp).Click
+      else Notify(Comp);
       Inc(ClicksDone);
     except
       on E: Exception do
@@ -1248,7 +1523,7 @@ begin
   end;
 
   Wrap := TJSONObject.Create;
-  Wrap.AddPair('dispatchedVia', 'onclick');
+  Wrap.AddPair('dispatchedVia', DispatchedVia);
   Wrap.AddPair('clicksDispatched', TJSONNumber.Create(ClicksDone));
   if StoppedReason <> '' then
     Wrap.AddPair('stoppedReason', StoppedReason);
@@ -1291,13 +1566,8 @@ begin
   end;
   Path := TJSONString(PathVal).Value;
 
-  Comp := FindComponentByPath(Path);
-  if Comp = NIL then
-  begin
-    Result.Ok := FALSE; Result.ErrorCode := ErrNotFound;
-    Result.ErrorMessage := 'no component matches ' + Path;
-    exit;
-  end;
+  Comp := ResolvePathOrFail(Path, Result);
+  if Comp = NIL then exit;
 
   if not (Comp is TBasicAction) then
   begin
@@ -1364,13 +1634,8 @@ begin
   end;
   Path := TJSONString(PathVal).Value;
   Text := TJSONString(TextVal).Value;
-  Comp := FindComponentByPath(Path);
-  if Comp = NIL then
-  begin
-    Result.Ok := FALSE; Result.ErrorCode := ErrNotFound;
-    Result.ErrorMessage := 'no component matches ' + Path;
-    exit;
-  end;
+  Comp := ResolvePathOrFail(Path, Result);
+  if Comp = NIL then exit;
   if TryGetEnabled(Comp, Enabled) and not Enabled then
   begin
     Result.Ok := FALSE; Result.ErrorCode := ErrControlDisabled;
@@ -1422,13 +1687,8 @@ begin
   end;
   Path := TJSONString(PathVal).Value;
   Checked := TJSONBool(CheckedVal).AsBoolean;
-  Comp := FindComponentByPath(Path);
-  if Comp = NIL then
-  begin
-    Result.Ok := FALSE; Result.ErrorCode := ErrNotFound;
-    Result.ErrorMessage := 'no component matches ' + Path;
-    exit;
-  end;
+  Comp := ResolvePathOrFail(Path, Result);
+  if Comp = NIL then exit;
   if TryGetEnabled(Comp, Enabled) and not Enabled then
   begin
     Result.Ok := FALSE; Result.ErrorCode := ErrControlDisabled;
@@ -1487,14 +1747,12 @@ begin
   PropName := TJSONString(NameVal).Value;
   StrValue := TJSONString(ValueVal).Value;
 
-  Comp := FindComponentByPath(Path);
-  if Comp = NIL then
-  begin
-    Result.Ok := FALSE; Result.ErrorCode := ErrNotFound;
-    Result.ErrorMessage := 'no component matches ' + Path;
-    exit;
-  end;
-  if TryGetEnabled(Comp, Enabled) and not Enabled then
+  Comp := ResolvePathOrFail(Path, Result);
+  if Comp = NIL then exit;
+  // A disabled control refuses every property (-32003) except 'Enabled' itself (exact name, any case, no dotted
+  // path; TRUE and FALSE). Without that exception a control disabled through set_property could never be enabled
+  // again by any tool (Gabriel, 2026-10-07). click, set_text and set_checked keep their own disabled check.
+  if TryGetEnabled(Comp, Enabled) and not Enabled and not SameText(PropName, 'Enabled') then
   begin
     Result.Ok := FALSE; Result.ErrorCode := ErrControlDisabled;
     Result.ErrorMessage := Comp.Name + ' is disabled';
@@ -1894,13 +2152,8 @@ begin
   Path := TJSONString(PathVal).Value;
   PropName := TJSONString(NameVal).Value;
 
-  Comp := FindComponentByPath(Path);
-  if Comp = NIL then
-  begin
-    Result.Ok := FALSE; Result.ErrorCode := ErrNotFound;
-    Result.ErrorMessage := 'no component matches ' + Path;
-    exit;
-  end;
+  Comp := ResolvePathOrFail(Path, Result);
+  if Comp = NIL then exit;
   // No Enabled check — reading a disabled control is exactly what a debug session needs.
 
   if not TryReadGenericProperty(Comp, PropName, Value, Kind, ErrCode, ErrMsg, FailedInstance) then
