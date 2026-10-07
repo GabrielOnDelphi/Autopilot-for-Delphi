@@ -2,7 +2,7 @@ object frmFmxMain: TfrmFmxMain
   Left = 0
   Top = 0
   Caption = 'Autopilot FMX Demo'
-  ClientHeight = 300
+  ClientHeight = 480
   ClientWidth = 480
   FormFactor.Width = 320
   FormFactor.Height = 480
@@ -74,5 +74,108 @@ object frmFmxMain: TfrmFmxMain
     TabOrder = 2
     Text = 'Toggle flag'
     OnChange = cbxFlagChange
+  end
+  object btnDialog: TButton
+    Hint = 'Test fixture: opens a native Windows message box through TDialogService.MessageDialog'
+    Position.X = 16.000000000000000000
+    Position.Y = 224.000000000000000000
+    Size.Width = 200.000000000000000000
+    Size.Height = 32.000000000000000000
+    Size.PlatformDefault = False
+    Text = 'Show Native Dialog'
+    OnClick = btnDialogClick
+  end
+  object lblDialogResult: TLabel
+    Hint = 'Test fixture: the native dialog writes its result here'
+    Position.X = 232.000000000000000000
+    Position.Y = 228.000000000000000000
+    Size.Width = 232.000000000000000000
+    Size.Height = 24.000000000000000000
+    Size.PlatformDefault = False
+    Text = '-'
+  end
+  object pnlFixture: TPanel
+    Hint = 'Test fixture: a panel with a label placed on it, for the path rule'
+    Position.X = 16.000000000000000000
+    Position.Y = 264.000000000000000000
+    Size.Width = 448.000000000000000000
+    Size.Height = 40.000000000000000000
+    Size.PlatformDefault = False
+    object lblInPanel: TLabel
+      Hint = 'Test fixture: owned by the form, placed on pnlFixture'
+      Position.X = 8.000000000000000000
+      Position.Y = 8.000000000000000000
+      Size.Width = 300.000000000000000000
+      Size.Height = 24.000000000000000000
+      Size.PlatformDefault = False
+      Text = 'Inside the panel'
+    end
+  end
+  object btnAction: TButton
+    Action = actFixture
+    Position.X = 16.000000000000000000
+    Position.Y = 312.000000000000000000
+    Size.Width = 200.000000000000000000
+    Size.Height = 32.000000000000000000
+    Size.PlatformDefault = False
+  end
+  object sbAction: TSpeedButton
+    Action = actFixture
+    Position.X = 232.000000000000000000
+    Position.Y = 312.000000000000000000
+    Size.Width = 200.000000000000000000
+    Size.Height = 32.000000000000000000
+    Size.PlatformDefault = False
+  end
+  object lblActionResult: TLabel
+    Hint = 'Test fixture: actFixture writes its run count and its Sender class here'
+    Position.X = 16.000000000000000000
+    Position.Y = 352.000000000000000000
+    Size.Width = 448.000000000000000000
+    Size.Height = 24.000000000000000000
+    Size.PlatformDefault = False
+    Text = '-'
+  end
+  object rectFixture: TRectangle
+    Hint = 'Test fixture: a TAlphaColor property (Fill.Color) for set_property and read_property'
+    Position.X = 16.000000000000000000
+    Position.Y = 384.000000000000000000
+    Size.Width = 200.000000000000000000
+    Size.Height = 32.000000000000000000
+    Size.PlatformDefault = False
+  end
+  object btnDelayed: TButton
+    Hint = 'Test fixture: starts tmrDelayed, which changes lblDelayed one second later'
+    Position.X = 16.000000000000000000
+    Position.Y = 428.000000000000000000
+    Size.Width = 200.000000000000000000
+    Size.Height = 32.000000000000000000
+    Size.PlatformDefault = False
+    Text = 'Delayed text'
+    OnClick = btnDelayedClick
+  end
+  object lblDelayed: TLabel
+    Hint = 'Test fixture: tmrDelayed writes here one second after btnDelayed is clicked'
+    Position.X = 232.000000000000000000
+    Position.Y = 432.000000000000000000
+    Size.Width = 232.000000000000000000
+    Size.Height = 24.000000000000000000
+    Size.PlatformDefault = False
+    Text = '-'
+  end
+  object tmrDelayed: TTimer
+    Enabled = False
+    OnTimer = tmrDelayedTimer
+    Left = 440
+    Top = 384
+  end
+  object actlFixture: TActionList
+    Left = 400
+    Top = 384
+    object actFixture: TAction
+      Text = 'Run action'
+      Hint = 'Test fixture: an action bound to btnAction and sbAction'
+      OnExecute = actFixtureExecute
+    end
   end
 end
