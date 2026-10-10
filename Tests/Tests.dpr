@@ -6,6 +6,9 @@ PROGRAM Tests;
 
    Console-mode DUnitX runner. No LightSaber dependency.
    The fixture form is created lazily in each test's Setup.
+   Letting an AI write and run DUnitX tests: the book "Delphi in All Its Glory" Part 5, "AI-Assisted Development
+   for Delphi", chapter "Common Workflows for Delphi Developers", section "Working with Tests (DUnitX)".
+   https://gabrielmoraru.com/the-delphi-in-all-its-glory-book-5-ai-assisted-development-for-delphi/
 =====================================================}
 
 {$APPTYPE CONSOLE}
