@@ -10,6 +10,10 @@ PROGRAM Autopilot.Demo;
 
    AUTOPILOT must be in the project's conditional defines — otherwise StartBridge
    is a no-op and the bridge units only contribute their (always-compiling) INTERFACE.
+
+   Step by step, with an AI driving this demo: the book "Delphi in All Its Glory" Part 5,
+   "AI-Assisted Development for Delphi", chapter "We Need a Hero - Enter Autopilot for Delphi".
+   https://gabrielmoraru.com/the-delphi-in-all-its-glory-book-5-ai-assisted-development-for-delphi/
 =====================================================*)
 
 USES
