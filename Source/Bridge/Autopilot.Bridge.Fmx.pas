@@ -1,4 +1,4 @@
-﻿unit Autopilot.Bridge.Fmx;
+unit Autopilot.Bridge.Fmx;
 
 {=============================================================================================================
    2026.10.06
@@ -10,6 +10,9 @@
      TControl.Click when the control is bound to an action
    - Paths resolve through the Owner tree first, then through the visual parent tree (re-parented controls)
    - TAlphaColor coercion only (no TColor — FMX uses TAlphaColor throughout); keep-screen-on on Android
+   - How Autopilot works and how to use it with an AI: the book "Delphi in All Its Glory" Part 5, "AI-Assisted Development for Delphi",
+     chapter "We Need a Hero - Enter Autopilot for Delphi".
+     https://gabrielmoraru.com/the-delphi-in-all-its-glory-book-5-ai-assisted-development-for-delphi/
 =============================================================================================================}
 
 interface
@@ -49,7 +52,7 @@ uses
 {$IFDEF AUTOPILOT}
 
 // Licence reminder in the Messages pane, AUTOPILOT builds only. See the twin comment in Autopilot.Bridge.Vcl.pas for why this is a HINT and who sees it.
-{$MESSAGE HINT 'Autopilot for Delphi: free for noncommercial use; commercial or government use needs a licence per developer. Already licensed? Thank you - nothing to do. https://www.GabrielMoraru.com/autopilot'}
+{$MESSAGE HINT 'Autopilot for Delphi: every developer needs a seat - free for noncommercial use after registering, paid for commercial or government use. Already have a seat? Thank you - nothing to do. https://www.GabrielMoraru.com/autopilot'}
 
 var
   GWorker: TBridgeWorker = NIL;
