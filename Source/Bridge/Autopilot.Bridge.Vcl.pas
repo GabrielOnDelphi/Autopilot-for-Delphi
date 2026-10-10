@@ -1,4 +1,4 @@
-﻿unit Autopilot.Bridge.Vcl;
+unit Autopilot.Bridge.Vcl;
 
 {=============================================================================================================
    2026.10.06
@@ -11,6 +11,9 @@
      execute_action, screenshot, wait_for, dismiss_dialog (13 MCP tools total)
    - TColor and TAlphaColor coercion, one-level dotted propName, parent-inheritance auto-flip (VCL-only),
      opt-in click mode='message' (async BM_CLICK post to button-class controls)
+   - How Autopilot works and how to use it with an AI: the book "Delphi in All Its Glory" Part 5, "AI-Assisted Development for Delphi",
+     chapter "We Need a Hero - Enter Autopilot for Delphi".
+     https://gabrielmoraru.com/the-delphi-in-all-its-glory-book-5-ai-assisted-development-for-delphi/
 =============================================================================================================}
 
 interface
@@ -59,7 +62,7 @@ uses
 
 // Licence reminder in the Messages pane, AUTOPILOT builds only. It fires whenever this unit is compiled. No DCUs ship since 2026-09-21, so every customer compiles the bridge and sees it, paying customers included - that is why the text thanks a licence holder instead of only asking for a licence.
 // A HINT, not a WARN, so it cannot dirty a project that treats warnings as errors.
-{$MESSAGE HINT 'Autopilot for Delphi: free for noncommercial use; commercial or government use needs a licence per developer. Already licensed? Thank you - nothing to do. https://www.GabrielMoraru.com/autopilot'}
+{$MESSAGE HINT 'Autopilot for Delphi: every developer needs a seat - free for noncommercial use after registering, paid for commercial or government use. Already have a seat? Thank you - nothing to do. https://www.GabrielMoraru.com/autopilot'}
 
 var
   GWorker: TBridgeWorker = NIL;
