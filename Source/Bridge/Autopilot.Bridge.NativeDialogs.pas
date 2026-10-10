@@ -1,4 +1,4 @@
-unit Autopilot.Bridge.NativeDialogs;
+﻿unit Autopilot.Bridge.NativeDialogs;
 
 {=============================================================================================================
    2026.09.01
