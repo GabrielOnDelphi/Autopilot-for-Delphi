@@ -1,6 +1,6 @@
 ﻿# Commercial license
 
-Autopilot for Delphi is **free for noncommercial use** under the [SciVance Noncommercial License 2.0](LICENSE). Commercial use and government use need a separate paid license — this page explains who needs one and how to get it.
+Autopilot for Delphi has one license, the [SciVance Software License 3.0](LICENSE). Every developer who uses it needs a seat: a **paid seat** for commercial and government use, or a **free seat** for noncommercial use, after registering at <https://www.GabrielMoraru.com/autopilot>. This page explains who needs which seat and how to get it.
 
 ## Who needs a commercial license
 
@@ -10,7 +10,7 @@ You need a paid commercial license if your use is **commercial** — anything do
 - Using it inside a product or service you sell.
 - Any use by a government body or company (see *Your company* in the [LICENSE](LICENSE) for the exact definition).
 
-You do **not** need to pay — it stays free — for:
+You do **not** need to pay for the uses below. You need a free seat: register once at <https://www.GabrielMoraru.com/autopilot>.
 
 - Personal projects, study, research, hobby work.
 - Use by a charity, school, public research / health / safety organization.
@@ -19,7 +19,7 @@ The dividing line is **commercial vs. noncommercial use**, not *"individual vs. 
 
 ## What a license lets you do — and what it does not
 
-Paying removes the noncommercial restriction. It does **not** add a right to redistribute. Under both the free tier and the paid tier:
+A paid seat removes the noncommercial restriction. It does **not** add a right to redistribute. Under both the free seat and the paid seat:
 
 **Allowed**
 
@@ -33,8 +33,10 @@ Paying removes the noncommercial restriction. It does **not** add a right to red
 - Publishing the source code, the `.dcu` files, or a changed copy anywhere.
 - Putting it inside a library, component set, template, sample project or software development kit that you hand out.
 - Selling, lending or sublicensing it.
+- Decompiling, disassembling or otherwise reverse engineering `Autopilot.Mcp.exe`.
+- Letting an AI agent do any of the above for you: what it does on your behalf counts as done by you.
 
-Exact wording: [LICENSE](LICENSE) → *Distribution*.
+Exact wording: [LICENSE](LICENSE) → *Distribution*, *No Reverse Engineering*, *AI Agents and Automated Tools*.
 
 ## Price
 
