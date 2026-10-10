@@ -98,6 +98,7 @@ Source/McpServer/*
 
 # Temporary files. .claude/agents stays: AI-INSTRUCTIONS.md tells users to install autopilot-script-runner.md from there.
 Temp/
+Work in progress/
 compact-summaries/
 NEXT PROMPT*
 DONE - EXECUTED*
