@@ -46,6 +46,7 @@ type
     [Test] procedure Test_Click_ModeMessagePostsBmClickAsync;
     [Test] procedure Test_DismissDialog_FractionalHwndReturnsInvalidRequest;
     [Test] procedure Test_Click_CountStopsWhenDisabledMidLoop;
+    [Test] procedure Test_Click_CountStopsWhenOnClickFreesControl;
     [Test] procedure Test_Click_CountFiresOnClickPathNTimes;
     [Test] procedure Test_Click_MainThreadBlockedReturnsTimeoutError;
     [Test] procedure Test_GetText_NotFoundReturnsError;
@@ -180,6 +181,7 @@ type
     Btn             : TButton;
     BtnDisabled     : TButton;
     BtnSelfDisables : TButton;
+    BtnSelfFrees    : TButton;       // Created by the test that clicks it, not here: its OnClick frees it.
     BtnSlow         : TButton;
     BtnUnnamed      : TButton;       // Name = ''; addressable only via synthetic '@TButton#N' ID.
     BtnUnnamedClicks: Integer;
@@ -202,6 +204,7 @@ type
     CbxDisabled     : TCheckBox;
     ClickCount      : Integer;
     SelfDisableCount: Integer;
+    SelfFreeCount   : Integer;
     LabelClickCount : Integer;
     SlowClickCount  : Integer;
     EdtChangeCount  : Integer;       // Fires when Edt.Text is actually changed. Used by elision tests.
@@ -209,6 +212,7 @@ type
     SlowSleepMs     : Cardinal;      // OnClick sleeps this long (Sleep variant).
     procedure BtnClicked(Sender: TObject);
     procedure BtnSelfDisableClicked(Sender: TObject);
+    procedure BtnSelfFreeClicked(Sender: TObject);
     procedure BtnSlowClicked(Sender: TObject);
     procedure LblClicked(Sender: TObject);
     procedure BtnUnnamedClicked(Sender: TObject);
@@ -356,6 +360,12 @@ begin
   Inc(SelfDisableCount);
   if SelfDisableCount >= 3 then
     BtnSelfDisables.Enabled := False;
+end;
+
+procedure TFixtureForm.BtnSelfFreeClicked(Sender: TObject);
+begin
+  Inc(SelfFreeCount);
+  FreeAndNil(BtnSelfFrees);   // Sender frees itself inside its own OnClick
 end;
 
 procedure TFixtureForm.BtnSlowClicked(Sender: TObject);
@@ -1060,6 +1070,72 @@ begin
   Assert.AreEqual(3, ClicksDispatched, 'expected exactly 3 clicks before button disables itself');
   Assert.AreEqual(3, GFixtureForm.SelfDisableCount, 'OnClick should fire 3 times');
   Assert.AreEqual('disabled', StoppedReason, 'expected stoppedReason=disabled');
+end;
+
+
+// The first click's OnClick frees the button. Freeing raises nothing, so the bridge must learn
+// of it some other way and stop, instead of reading the freed control on the next iteration.
+procedure TBridgeTests.Test_Click_CountStopsWhenOnClickFreesControl;
+const
+  RequestedN = 3;
+var
+  PipeName: String;
+  ClicksDispatched: Integer;
+  StoppedReason, RawResponse: String;
+begin
+  PipeName := FPipeName;
+  ClicksDispatched := -1;
+  StoppedReason := '';
+  RawResponse := '';
+  GFixtureForm.SelfFreeCount := 0;
+  // Created here, not in the fixture constructor: the click frees it, and the fixture form is shared by every test.
+  GFixtureForm.BtnSelfFrees := TButton.Create(GFixtureForm);
+  try
+    GFixtureForm.BtnSelfFrees.Name    := 'btnSelfFrees';
+    GFixtureForm.BtnSelfFrees.Caption := 'SelfFree';
+    GFixtureForm.BtnSelfFrees.Parent  := GFixtureForm;
+    GFixtureForm.BtnSelfFrees.OnClick := GFixtureForm.BtnSelfFreeClicked;
+    RunOnWorkerAndPump(
+      procedure
+      var
+        Client: TBridgeTestClient;
+        Args, Resp, R: TJSONObject;
+        V: TJSONValue;
+      begin
+        Client := TBridgeTestClient.Create;
+        try
+          Assert.IsTrue(Client.ConnectAndHandshake(PipeName, 2000), 'connect');
+          Args := TJSONObject.Create;
+          Args.AddPair('path', 'FixtureForm.btnSelfFrees');
+          Args.AddPair('count', TJSONNumber.Create(RequestedN));
+          Resp := Client.Call(16, 'click', Args);
+          try
+            Assert.IsNotNull(Resp, 'no response');
+            RawResponse := Resp.ToJSON;
+            R := GetOkResult(Resp);
+            if R <> nil then
+            begin
+              V := R.GetValue('clicksDispatched');
+              if V IS TJSONNumber then
+                ClicksDispatched := TJSONNumber(V).AsInt;
+              V := R.GetValue('stoppedReason');
+              if V IS TJSONString then
+                StoppedReason := TJSONString(V).Value;
+            end;
+          finally
+            Resp.Free;
+          end;
+        finally
+          Client.Free;
+        end;
+      end, 5000);
+    Assert.AreEqual(1, GFixtureForm.SelfFreeCount, 'OnClick should fire once: the first click frees the button');
+    Assert.IsNull(GFixtureForm.BtnSelfFrees, 'the OnClick should have freed the button');
+    Assert.AreEqual(1, ClicksDispatched, 'expected an ok response with clicksDispatched=1. Response: ' + RawResponse);
+    Assert.AreEqual('freed', StoppedReason, 'expected stoppedReason=freed. Response: ' + RawResponse);
+  finally
+    FreeAndNil(GFixtureForm.BtnSelfFrees);   // still there only when the click never ran
+  end;
 end;
 
 

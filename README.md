@@ -97,14 +97,14 @@ Skip this and everything still works. The assistant just finds its way around mo
 
 ## License
 
-One license, the [SciVance Software License 3.0](LICENSE). Every developer needs a seat:
+One license, the [SciVance Software License 3.1](LICENSE). Every developer needs a seat:
 
-- **Noncommercial use - free seat** (personal, study, research, hobby, charity, school, public research / health / safety). Register once at <https://www.GabrielMoraru.com/autopilot>. No key, no activation.
-- **Commercial or government use - paid seat**, $25 per developer, one-time. See [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md).
+- **Personal use - free seat** (study, research, hobby - done by you for yourself, not for any organization). Register once at <https://www.GabrielMoraru.com/autopilot>. No key, no activation.
+- **Commercial use, or any use by or for an organization - paid seat** (companies, government, charities, schools, universities, public research / health / safety organizations), one per developer. Price and how to buy: <https://www.GabrielMoraru.com/autopilot>. Terms: [LICENSE](LICENSE).
 
 Both seats forbid redistributing the software and decompiling `Autopilot.Mcp.exe`, also through an AI agent acting for you.
 
-**No redistribution, under either tier.** Use it, change it for yourself, and ship your own compiled application with the Autopilot units built in — all free. Handing the code itself to anyone else is not allowed: not the source, not the `.dcu` files, not a changed copy, not folded into a library, component set, template or sample project. Exact wording: [LICENSE](LICENSE) → *Distribution*.
+**No redistribution, under either tier.** Use it, change it for yourself, and build it into your own application for your own use. You may ship your application freely only when it is built without the `AUTOPILOT` define (the bridge is then inactive). Giving anyone, customers included, a build with the bridge active needs a separate distribution license, bought from the licensor. Handing the code itself to anyone else is not allowed: not the source, not the `.dcu` files, not a changed copy, not folded into a library, component set, template or sample project. Exact wording: [LICENSE](LICENSE) → *Distribution*.
 
 The bridge is source-available, not open source. The server ships as a ready-made EXE.
 
