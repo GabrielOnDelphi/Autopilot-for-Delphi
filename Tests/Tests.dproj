@@ -46,7 +46,7 @@
     </PropertyGroup>
     <PropertyGroup Condition="'$(Base_Win32)'!=''">
         <DCC_Namespace>Winapi;System.Win;Data.Win;Datasnap.Win;Web.Win;Soap.Win;Xml.Win;Bde;$(DCC_Namespace)</DCC_Namespace>
-        <DCC_UnitSearchPath>..\Source\Bridge;c:\Delphi\Delphi 13\source\DunitX;$(DCC_UnitSearchPath)</DCC_UnitSearchPath>
+        <DCC_UnitSearchPath>..\Bridge;c:\Delphi\Delphi 13\source\DunitX;$(DCC_UnitSearchPath)</DCC_UnitSearchPath>
         <BT_BuildType>Debug</BT_BuildType>
         <VerInfo_IncludeVerInfo>true</VerInfo_IncludeVerInfo>
         <VerInfo_Keys>CompanyName=;FileDescription=$(MSBuildProjectName);FileVersion=1.0.0.0;InternalName=;LegalCopyright=;LegalTrademarks=;OriginalFilename=;ProgramID=com.embarcadero.$(MSBuildProjectName);ProductName=$(MSBuildProjectName);ProductVersion=1.0.0.0;Comments=</VerInfo_Keys>
@@ -70,19 +70,21 @@
         <DelphiCompile Include="$(MainSource)">
             <MainSource>MainSource</MainSource>
         </DelphiCompile>
-        <DCCReference Include="..\Source\Bridge\Autopilot.Bridge.Core.pas"/>
-        <DCCReference Include="..\Source\Bridge\Autopilot.Bridge.Log.pas"/>
-        <DCCReference Include="..\Source\Bridge\Autopilot.Bridge.Transport.pas"/>
-        <DCCReference Include="..\Source\Bridge\Autopilot.Bridge.Worker.pas"/>
-        <DCCReference Include="..\Source\Bridge\Autopilot.Bridge.NamedPipe.pas"/>
-        <DCCReference Include="..\Source\Bridge\Autopilot.Bridge.NativeDialogs.pas"/>
-        <DCCReference Include="..\Source\Bridge\Autopilot.Bridge.Vcl.pas"/>
+        <DCCReference Include="..\Bridge\Autopilot.Bridge.Core.pas"/>
+        <DCCReference Include="..\Bridge\Autopilot.Bridge.Log.pas"/>
+        <DCCReference Include="..\Bridge\Autopilot.Bridge.Transport.pas"/>
+        <DCCReference Include="..\Bridge\Autopilot.Bridge.Worker.pas"/>
+        <DCCReference Include="..\Bridge\Autopilot.Bridge.NamedPipe.pas"/>
+        <DCCReference Include="..\Bridge\Autopilot.Bridge.NativeDialogs.pas"/>
+        <DCCReference Include="..\Bridge\Autopilot.Bridge.Vcl.pas"/>
         <DCCReference Include="Bridge.TestClient.pas"/>
         <DCCReference Include="Bridge.Tests.pas"/>
         <DCCReference Include="Tests.Bridge.Worker.pas"/>
         <DCCReference Include="Tests.Bridge.NativeDialogs.pas"/>
         <DCCReference Include="Tests.Bridge.PathsAndActions.pas"/>
         <DCCReference Include="Tests.Bridge.PropertyTypes.pas"/>
+        <DCCReference Include="Tests.Bridge.Screenshot.pas"/>
+        <DCCReference Include="Tests.Bridge.SendKeys.pas"/>
         <DCCReference Include="Tests.RaiseCounter.pas"/>
         <DCCReference Include="Tests.LeakSuppressor.pas"/>
         <BuildConfiguration Include="Base"><Key>Base</Key></BuildConfiguration>

@@ -6,7 +6,7 @@
 # Usage: .\smoke-android-mcp.ps1 -Port 18011
 param(
   [int]$Port = 18011,
-  [string]$ExePath = "$PSScriptRoot\..\Source\McpServer\Autopilot.Mcp.exe",
+  [string]$ExePath = "$PSScriptRoot\..\McpServer\Autopilot.Mcp.exe",
   [int]$TimeoutMs = 120000,
   [string]$PngOut = "$env:TEMP\autopilot-android-screenshot.png"
 )
