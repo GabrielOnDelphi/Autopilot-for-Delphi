@@ -82,6 +82,7 @@ modules/
 
 # Local files
 /_Local info/
+/ToDo/
 /_Release Package
 /DemoVCL-Video
 /Wire test
@@ -93,8 +94,13 @@ ToDo.md
 descript.ion
 DemoVCL/Autopilot.Demo.res
 
-Source/McpServer/*
-!Source/McpServer/Autopilot.Mcp.exe
+McpServer/*
+!McpServer/Autopilot.Mcp.exe
+
+# Private test and publish tools, copied from the version 3 folder on 2026-10-12
+/E2E tests/
+/Video demo pre-flight/
+/Publish-McpServer.ps1
 
 # Temporary files. .claude/agents stays: AI-INSTRUCTIONS.md tells users to install autopilot-script-runner.md from there.
 Temp/
