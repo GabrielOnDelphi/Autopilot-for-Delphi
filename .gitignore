@@ -106,3 +106,4 @@ build_output.*
 /.claude/*
 !/.claude/agents/
 HandOver.md.bak-ndk-undo
+www - Autopilot registration.lnk
