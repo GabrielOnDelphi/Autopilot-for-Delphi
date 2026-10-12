@@ -1,7 +1,7 @@
 unit Autopilot.Bridge.Vcl;
 
 {=============================================================================================================
-   2026.10.11
+   2026.10.12
    www.GabrielMoraru.com
 --------------------------------------------------------------------------------------------------------------
    Public bridge interface for VCL target projects (Windows only)
@@ -10,8 +10,9 @@ unit Autopilot.Bridge.Vcl;
    - StartBridge / StopBridge / IsBridgeRunning; real bodies only when AUTOPILOT is defined
    - Full VCL dispatcher: list_tree, click, get_text, set_text, set_checked, set_property, read_property,
      execute_action, screenshot, wait_for, dismiss_dialog (13 MCP tools total)
+   - screenshot: a whole form, or one control cropped out of it (path), optionally scaled down (maxWidth)
    - TColor and TAlphaColor coercion, one-level dotted propName, parent-inheritance auto-flip (VCL-only),
-     opt-in click mode='message' (async BM_CLICK post to button-class controls)
+     opt-in click mode='message' (click queued to run after the answer, button-class controls)
    - How Autopilot works and how to use it with an AI: the book "Delphi in All Its Glory" Part 5, "AI-Assisted Development for Delphi",
      chapter "We Need a Hero - Enter Autopilot for Delphi".
      https://GabrielMoraru.com/the-delphi-in-all-its-glory-book-5-ai-assisted-development-for-delphi/
@@ -1802,6 +1803,43 @@ begin
 end;
 
 
+{ click mode=message: the click runs on the main thread AFTER this command's answer, so a button whose OnClick opens a modal dialog does not block the dispatcher into -32004 (pair with dismiss_dialog).
+  It used to post BM_CLICK. Measured 2026-10-12 (Test_Click_ModeMessageOnMinimizedForm): a BM_CLICK posted to a button whose form is minimized never reaches OnClick - the E2E demo started with SW_SHOWMINNOACTIVE, and any customer app sitting minimized.
+  So for a minimized form the click is queued through TThread.ForceQueue instead (it runs at the app's next CheckSynchronize, which the VCL main loop does on the WM_NULL that WakeMainThread posts). The path is resolved again when it runs, because the control may be gone by then; a control that vanished or was disabled meanwhile is skipped with a log line. }
+procedure QueueDeferredClick(const APath: String);
+var
+  Path: String;
+begin
+  Path := APath;
+  TThread.ForceQueue(NIL,
+    procedure
+    var
+      Resp: TBridgeResponse;
+      Comp: TComponent;
+      Enabled: Boolean;
+    begin
+      if GWorker = NIL then EXIT;   // the bridge stopped meanwhile
+      Resp := Default(TBridgeResponse);
+      Comp := ResolvePathOrFail(Path, Resp);
+      if not (Comp is TButtonControl) then
+      begin
+        BridgeLogWarn('bridge', 'click mode=message: ' + Path + ' is gone, the queued click is skipped');
+        EXIT;
+      end;
+      if TryGetEnabled(Comp, Enabled) and not Enabled then
+      begin
+        BridgeLogWarn('bridge', 'click mode=message: ' + Path + ' was disabled meanwhile, the queued click is skipped');
+        EXIT;
+      end;
+      { A push button (TButton, TBitBtn): TCustomButton.Click, as the default dispatch.
+        A check box or radio button toggles only through BN_CLICKED (TCustomCheckBox.Toggle), so it keeps the BM_CLICK, sent synchronously now. Not measured on a minimized form. }
+      if Comp is TCustomButton
+      then TCustomButton(Comp).Click
+      else TWinControl(Comp).Perform(BM_CLICK, 0, 0);
+    end);
+end;
+
+
 function HandleClick(const AReq: TBridgeRequest): TBridgeResponse;
 const
   MaxClickCount = 1000;   // sane cap; protects the main thread from being pinned by a runaway count.
@@ -1879,10 +1917,14 @@ var
   begin
     if DispatchedVia = 'message' then
     begin
-      { Asynchronous on purpose: the posted BM_CLICK is processed only after this response has gone out, so a button whose OnClick opens a modal dialog no longer blocks the dispatcher into -32004 (pair with dismiss_dialog).
+      { A posted BM_CLICK is lost when the button's top-level window is minimized (see QueueDeferredClick); there the click is queued instead.
+        Otherwise the BM_CLICK post stays: the BUTTON class proc turns it into WM_LBUTTONDOWN+UP plus BN_CLICKED (learn.microsoft.com, BM_CLICK).
         A failed post (e.g. full message queue) raises EOSError, which the caller's loop reports as stoppedReason. }
-      if not PostMessage(TButtonControl(Comp).Handle, BM_CLICK, 0, 0) then
-        RaiseLastOSError;
+      if IsIconic(GetAncestor(TButtonControl(Comp).Handle, GA_ROOT)) then
+        QueueDeferredClick(Path)
+      else
+        if not PostMessage(TButtonControl(Comp).Handle, BM_CLICK, 0, 0) then
+          RaiseLastOSError;
     end
     else if Comp is TButton then
       TButton(Comp).Click
@@ -1954,7 +1996,7 @@ begin
     end;
   end;
 
-  { Optional mode: absent/'auto' → the automatic dispatch policy below; 'message' → post BM_CLICK asynchronously (the click runs when the app pumps messages, AFTER this response has returned — the non-blocking way to press a button whose OnClick opens a modal dialog; pair with dismiss_dialog).
+  { Optional mode: absent/'auto' → the automatic dispatch policy below; 'message' → queue the click (QueueDeferredClick: it runs on the main thread AFTER this response has returned — the non-blocking way to press a button whose OnClick opens a modal dialog; pair with dismiss_dialog).
     Validated strictly: a typo'd mode silently falling back to the synchronous path would defeat the caller's no-block intent. }
   Mode := '';
   ModeVal := AReq.Args.GetValue('mode');
@@ -1993,15 +2035,13 @@ begin
 
   if Mode = 'message' then
   begin
-    { BM_CLICK is a button-class message: user32's BUTTON window proc turns it into WM_LBUTTONDOWN+UP plus a BN_CLICKED to the parent (learn.microsoft.com, BM_CLICK).
-      Any other window class ignores it in DefWindowProc — posting there would report success while doing nothing, so reject loudly.
-      Non-windowed controls (TLabel, TSpeedButton) have no HWND to post to at all. }
+    { mode=message is limited to button-class controls (QueueDeferredClick). Rejected loudly elsewhere, never silently ignored. }
     if not (Comp is TButtonControl) then
     begin
       Result.Ok := FALSE;
       Result.ErrorCode := ErrUnsupportedAction;
-      Result.ErrorMessage := Comp.ClassName + ' cannot take mode=message: BM_CLICK is only handled ' +
-                             'by button-class controls (TButton/TBitBtn/TCheckBox/TRadioButton). ' +
+      Result.ErrorMessage := Comp.ClassName + ' cannot take mode=message: it is only for ' +
+                             'button-class controls (TButton/TBitBtn/TCheckBox/TRadioButton). ' +
                              'Omit mode for the default dispatch.';
       exit;
     end;
@@ -2471,12 +2511,135 @@ begin
 end;
 
 
+{ The rectangle that screenshot args.path captures.
+  AForm: the top-level form that shows AComp - for a re-parented control, that is not the form that owns it.
+  ARect: AComp's bounds in AForm's client coordinates, clipped to the client area of every window it sits in. GetFormImage paints the client area at (0,0), so ARect addresses its bitmap directly.
+  FALSE, with AError set, when AComp cannot be captured: not a control, not on a form, Visible = FALSE on it or on a parent (TWinControl.PaintTo skips such a control and its children), zero size, or no part of it inside the client area. }
+function TryGetCaptureRect(AComp: TComponent; OUT AForm: TCustomForm; OUT ARect: TRect; OUT AError: String): Boolean;
+var
+  Ctrl, Top: TControl;
+  Anc: TWinControl;
+  R, ClipR: TRect;
+begin
+  Assert(GetCurrentThreadId = MainThreadID, 'TryGetCaptureRect: VCL touched off the main thread');
+  Result := FALSE;
+  AForm  := NIL;
+  ARect  := Default(TRect);
+  AError := '';
+  if not (AComp is TControl) then
+  begin
+    AError := ReferenceFor(AComp) + ' (' + AComp.ClassName + ') is not a visual control';
+    EXIT;
+  end;
+  Ctrl := TControl(AComp);
+
+  Top := Ctrl;
+  while Top.Parent <> NIL do
+  begin
+    if not Top.Visible then
+    begin
+      AError := ReferenceFor(Ctrl) + ' is not showing: Visible is FALSE on ' + ReferenceFor(Top);
+      EXIT;
+    end;
+    Top := Top.Parent;
+  end;
+  if not (Top is TCustomForm) then
+  begin
+    AError := ReferenceFor(Ctrl) + ' is not placed on a form';
+    EXIT;
+  end;
+  AForm := TCustomForm(Top);
+
+  ARect := Rect(0, 0, AForm.ClientWidth, AForm.ClientHeight);
+  if Ctrl <> AForm then
+  begin
+    if (Ctrl.Width <= 0) or (Ctrl.Height <= 0) then
+    begin
+      AError := ReferenceFor(Ctrl) + ' has zero size (' + IntToStr(Ctrl.Width) + ' x ' + IntToStr(Ctrl.Height) + ')';
+      EXIT;
+    end;
+    R := Ctrl.BoundsRect;                                  // in the parent's client coordinates
+    MapWindowPoints(Ctrl.Parent.Handle, AForm.Handle, R, 2);
+    ARect.Intersect(R);
+    Anc := Ctrl.Parent;
+    while Anc <> AForm do
+    begin
+      Winapi.Windows.GetClientRect(Anc.Handle, ClipR);
+      MapWindowPoints(Anc.Handle, AForm.Handle, ClipR, 2);
+      ARect.Intersect(ClipR);
+      Anc := Anc.Parent;
+    end;
+  end;
+  if ARect.IsEmpty then
+  begin
+    AError := ReferenceFor(Ctrl) + ' has no part inside the client area of ' + AForm.Name;
+    EXIT;
+  end;
+  Result := TRUE;
+end;
+
+
+// A new 24-bit bitmap holding ARect of ASource. The caller frees it.
+function CropBitmap(ASource: TBitmap; const ARect: TRect): TBitmap;
+begin
+  Result := TBitmap.Create;
+  try
+    Result.PixelFormat := pf24bit;
+    Result.SetSize(ARect.Width, ARect.Height);
+    Result.Canvas.Lock;
+    ASource.Canvas.Lock;
+    try
+      if not BitBlt(Result.Canvas.Handle, 0, 0, ARect.Width, ARect.Height, ASource.Canvas.Handle, ARect.Left, ARect.Top, SRCCOPY) then
+        RaiseLastOSError;
+    finally
+      ASource.Canvas.Unlock;
+      Result.Canvas.Unlock;
+    end;
+  except
+    FreeAndNil(Result);
+    raise;
+  end;
+end;
+
+
+{ A new 24-bit bitmap of ASource stretched to AWidth x AHeight. The caller frees it.
+  HALFTONE, not the STRETCH_DELETESCANS that TBitmap.Draw (Vcl.Graphics.pas) uses for a true-colour target, so small text stays readable; the brush origin is set after it, as TBitmap.Draw does. }
+function ScaleBitmap(ASource: TBitmap; AWidth, AHeight: Integer): TBitmap;
+begin
+  Result := TBitmap.Create;
+  try
+    Result.PixelFormat := pf24bit;
+    Result.SetSize(AWidth, AHeight);
+    Result.Canvas.Lock;
+    ASource.Canvas.Lock;
+    try
+      SetStretchBltMode(Result.Canvas.Handle, HALFTONE);
+      SetBrushOrgEx(Result.Canvas.Handle, 0, 0, NIL);
+      if not StretchBlt(Result.Canvas.Handle, 0, 0, AWidth, AHeight, ASource.Canvas.Handle, 0, 0, ASource.Width, ASource.Height, SRCCOPY) then
+        RaiseLastOSError;
+    finally
+      ASource.Canvas.Unlock;
+      Result.Canvas.Unlock;
+    end;
+  except
+    FreeAndNil(Result);
+    raise;
+  end;
+end;
+
+
+{ Optional args: form (ignored when path is given), path (crop to that control), maxWidth (scale down to that width).
+  Every image comes from Form.GetFormImage: the controls paint themselves into a memory bitmap (TWinControl.PaintTo), so the crop shows the control even where another window covers it on screen. }
 function HandleScreenshot(const AReq: TBridgeRequest): TBridgeResponse;
 var
   FormVal: TJSONValue;
-  FormName: String;
+  FormName, Path, ErrMsg: String;
+  MaxWidth, NewW, NewH, ImgW, ImgH: Integer;
   Form: TCustomForm;
-  Bmp: TBitmap;
+  Comp: TComponent;
+  CropRect: TRect;
+  IsScaled: Boolean;
+  Bmp, Tmp: TBitmap;
   Png: TPngImage;
   Stream: TMemoryStream;
   Base64: String;
@@ -2492,21 +2655,63 @@ begin
     if FormVal is TJSONString then
       FormName := TJSONString(FormVal).Value;
   end;
-
-  Form := FindFormByName(FormName);
-  if Form = NIL then
+  if not TryParseScreenshotArgs(AReq.Args, Path, MaxWidth, ErrMsg) then
   begin
     Result.Ok := FALSE;
-    Result.ErrorCode := ErrNotFound;
-    if FormName = '' then
-      Result.ErrorMessage := 'no main form available'
-    else
-      Result.ErrorMessage := 'no form named ' + FormName;
+    Result.ErrorCode := ErrInvalidRequest;
+    Result.ErrorMessage := ErrMsg;
     exit;
   end;
 
+  { # What to capture }
+  CropRect := Default(TRect);
+  if Path <> '' then
+  begin
+    Comp := ResolvePathOrFail(Path, Result);
+    if Comp = NIL then exit;
+    if not TryGetCaptureRect(Comp, Form, CropRect, ErrMsg) then
+    begin
+      Result.Ok := FALSE;
+      Result.ErrorCode := ErrUnsupportedAction;
+      Result.ErrorMessage := 'cannot capture ' + Path + ': ' + ErrMsg;
+      exit;
+    end;
+  end
+  else
+  begin
+    Form := FindFormByName(FormName);
+    if Form = NIL then
+    begin
+      Result.Ok := FALSE;
+      Result.ErrorCode := ErrNotFound;
+      if FormName = '' then
+        Result.ErrorMessage := 'no main form available'
+      else
+        Result.ErrorMessage := 'no form named ' + FormName;
+      exit;
+    end;
+  end;
+
+  { # Capture, crop, scale, encode }
   Bmp := Form.GetFormImage;
   try
+    // A path that names the form itself keeps the uncropped bitmap.
+    if (Path <> '') and ((CropRect.Left <> 0) or (CropRect.Top <> 0) or (CropRect.Width <> Bmp.Width) or (CropRect.Height <> Bmp.Height)) then
+    begin
+      Tmp := CropBitmap(Bmp, CropRect);
+      FreeAndNil(Bmp);
+      Bmp := Tmp;
+    end;
+    IsScaled := ScreenshotScaledSize(Bmp.Width, Bmp.Height, MaxWidth, NewW, NewH);
+    if IsScaled then
+    begin
+      Tmp := ScaleBitmap(Bmp, NewW, NewH);
+      FreeAndNil(Bmp);
+      Bmp := Tmp;
+    end;
+    ImgW := Bmp.Width;
+    ImgH := Bmp.Height;
+
     Png := TPngImage.Create;
     try
       Png.Assign(Bmp);
@@ -2527,8 +2732,11 @@ begin
 
   Wrap := TJSONObject.Create;
   Wrap.AddPair('form', Form.Name);
-  Wrap.AddPair('width', TJSONNumber.Create(Form.ClientWidth));
-  Wrap.AddPair('height', TJSONNumber.Create(Form.ClientHeight));
+  if Path <> '' then
+    Wrap.AddPair('path', Path);
+  Wrap.AddPair('width', TJSONNumber.Create(ImgW));      // the image size; without path and maxWidth that is the client size, as before
+  Wrap.AddPair('height', TJSONNumber.Create(ImgH));
+  Wrap.AddPair('scaled', TJSONBool.Create(IsScaled));
   Wrap.AddPair('encoding', 'base64');
   Wrap.AddPair('format', 'png');
   Wrap.AddPair('image', Base64);
@@ -2962,6 +3170,348 @@ begin
 end;
 
 
+{ send_keys ----------------------------------------------------------------------------------------------- }
+
+type
+  { One chord of args.keys: optional modifiers and one key. }
+  TKeyChord = record
+    Key  : Word;
+    Ctrl : Boolean;
+    Shift: Boolean;
+    Alt  : Boolean;
+  end;
+
+
+{ Maps a key name of args.keys (case-insensitive) to its virtual-key code. 0 = unknown name.
+  The same table is in Autopilot.Bridge.Fmx.pas; keep the two identical. }
+function KeyNameToVk(const AName: String): Word;
+var
+  N: String;
+  FNum: Integer;
+begin
+  N := UpperCase(AName);
+  if (Length(N) = 1) and CharInSet(N[1], ['A'..'Z', '0'..'9']) then
+    exit(Ord(N[1]));    // vkA..vkZ and vk0..vk9 equal the ASCII codes (System.UITypes)
+  if (Length(N) in [2, 3]) and (N[1] = 'F') and TryStrToInt(Copy(N, 2, 2), FNum) and (FNum >= 1) and (FNum <= 12) then
+    exit(vkF1 + FNum - 1);
+  if N = 'ENTER'     then exit(vkReturn);
+  if (N = 'ESCAPE') or (N = 'ESC') then exit(vkEscape);
+  if N = 'TAB'       then exit(vkTab);
+  if N = 'SPACE'     then exit(vkSpace);
+  if N = 'BACKSPACE' then exit(vkBack);
+  if N = 'DELETE'    then exit(vkDelete);
+  if N = 'INSERT'    then exit(vkInsert);
+  if N = 'HOME'      then exit(vkHome);
+  if N = 'END'       then exit(vkEnd);
+  if N = 'PAGEUP'    then exit(vkPrior);
+  if N = 'PAGEDOWN'  then exit(vkNext);
+  if N = 'UP'        then exit(vkUp);
+  if N = 'DOWN'      then exit(vkDown);
+  if N = 'LEFT'      then exit(vkLeft);
+  if N = 'RIGHT'     then exit(vkRight);
+  Result := 0;
+end;
+
+
+{ Parses args.keys: chords separated by spaces, a chord = optional modifiers (Ctrl, Shift, Alt) joined by '+', then one key name.
+  Parses everything before anything is sent: on the first bad token returns FALSE and AError names it. }
+function ParseKeyChords(const AKeys: String; OUT AChords: TArray<TKeyChord>; OUT AError: String): Boolean;
+var
+  Tokens, Parts: TArray<String>;
+  Token, Part: String;
+  Chord: TKeyChord;
+  i, Count: Integer;
+
+  function SplitOn(const S: String; ASep: Char; AKeepEmpty: Boolean): TArray<String>;
+  var
+    Start, k: Integer;
+  begin
+    Result := NIL;
+    Start := 1;
+    for k := 1 to Length(S) + 1 do
+      if (k > Length(S)) or (S[k] = ASep) then
+      begin
+        if AKeepEmpty or (k > Start) then
+        begin
+          SetLength(Result, Length(Result) + 1);
+          Result[High(Result)] := Copy(S, Start, k - Start);
+        end;
+        Start := k + 1;
+      end;
+  end;
+
+begin
+  AChords := NIL;
+  AError := '';
+  Tokens := SplitOn(AKeys, ' ', FALSE);
+  Count := 0;
+  SetLength(AChords, Length(Tokens));
+  for Token in Tokens do
+  begin
+    Chord := Default(TKeyChord);
+    Parts := SplitOn(Token, '+', TRUE);
+    for i := 0 to High(Parts) - 1 do
+    begin
+      Part := UpperCase(Parts[i]);
+      if Part = 'CTRL' then Chord.Ctrl := TRUE
+      else if Part = 'SHIFT' then Chord.Shift := TRUE
+      else if Part = 'ALT' then Chord.Alt := TRUE
+      else
+      begin
+        AError := 'unknown modifier "' + Parts[i] + '" in "' + Token + '" (use Ctrl, Shift, Alt)';
+        exit(FALSE);
+      end;
+    end;
+    Chord.Key := KeyNameToVk(Parts[High(Parts)]);
+    if Chord.Key = 0 then
+    begin
+      AError := 'unknown key name "' + Parts[High(Parts)] + '" in "' + Token + '"';
+      exit(FALSE);
+    end;
+    AChords[Count] := Chord;
+    Inc(Count);
+  end;
+  Result := TRUE;
+end;
+
+
+{ Keys sent inside the app, never through global input (SendInput, keybd_event): the messages go straight to the target window, the way TApplication.ProcessMessage hands a key from the queue to it:
+    1. CN_KEYDOWN / CN_SYSKEYDOWN first (TApplication.IsKeyMsg in Vcl.Forms.pas sends CN_BASE + Msg). TWinControl.CNKeyDown (Vcl.Controls.pas) runs IsMenuKey (the form's IsShortCut: action and menu ShortCuts, KeyPreview of OnShortCut) and CM_DIALOGKEY (TCustomButton.CMDialogKey: the Default button on Enter, the Cancel button on Escape).
+    2. If it was not taken: WM_KEYDOWN (TWinControl.WMKeyDown -> DoKeyDown: KeyPreview, then OnKeyDown), then TranslateMessage makes the WM_CHAR from the keyboard state; it goes through CN_CHAR, then WM_CHAR (DoKeyPress: OnKeyPress; the edit control inserts the character).
+    3. CN_KEYUP, then WM_KEYUP (OnKeyUp).
+  The modifiers are pressed only in this thread's keyboard state (SetKeyboardState), so GetKeyState - which KeyDataToShiftState and ShortCut matching read - sees them. The old state is restored in a finally. No window is activated or raised. }
+procedure SendChordToWindow(AWnd: HWND; const AChord: TKeyChord);
+var
+  Saved, State: TKeyboardState;
+  Msg, CharMsg: TMsg;
+  DownMsg, UpMsg: UINT;
+  Down, Up: NativeUInt;
+  UseSys: Boolean;
+
+  procedure SetPressed(AVk: Byte; APressed: Boolean);
+  begin
+    if APressed
+    then State[AVk] := State[AVk] or $80
+    else State[AVk] := State[AVk] and $7F;
+  end;
+
+  procedure DeliverChars(AFirst, ALast: UINT);
+  begin
+    while IsWindow(AWnd) and PeekMessageW(CharMsg, AWnd, AFirst, ALast, PM_REMOVE) do
+      if SendMessageW(AWnd, CN_BASE + CharMsg.message, CharMsg.wParam, CharMsg.lParam) = 0 then
+        SendMessageW(AWnd, CharMsg.message, CharMsg.wParam, CharMsg.lParam);
+  end;
+
+begin
+  if not GetKeyboardState(Saved) then
+    RaiseLastOSError;
+  try
+    State := Saved;
+    State[VK_CAPITAL] := State[VK_CAPITAL] and $FE;   // Caps Lock off, so 'A' types 'a' like on a fresh keyboard
+    SetPressed(VK_CONTROL, AChord.Ctrl);  SetPressed(VK_LCONTROL, AChord.Ctrl);  SetPressed(VK_RCONTROL, FALSE);
+    SetPressed(VK_SHIFT,   AChord.Shift); SetPressed(VK_LSHIFT,   AChord.Shift); SetPressed(VK_RSHIFT,   FALSE);
+    SetPressed(VK_MENU,    AChord.Alt);   SetPressed(VK_LMENU,    AChord.Alt);   SetPressed(VK_RMENU,    FALSE);
+    SetPressed(Byte(AChord.Key), TRUE);
+    if not SetKeyboardState(State) then
+      RaiseLastOSError;
+
+    { WM_KEYDOWN lParam: repeat count 1, scan code in bits 16..23, extended-key flag (bit 24) for the navigation keys, context code (bit 29) when Alt is down.
+      Windows sends WM_SYSKEYDOWN for a key pressed with Alt and without Ctrl. }
+    UseSys := AChord.Alt and not AChord.Ctrl;
+    Down := 1 or (NativeUInt(MapVirtualKeyW(AChord.Key, MAPVK_VK_TO_VSC)) shl 16);
+    if Byte(AChord.Key) in [VK_INSERT, VK_DELETE, VK_HOME, VK_END, VK_PRIOR, VK_NEXT, VK_UP, VK_DOWN, VK_LEFT, VK_RIGHT] then
+      Down := Down or (NativeUInt(1) shl 24);
+    if AChord.Alt then
+      Down := Down or (NativeUInt(1) shl 29);
+    Up := Down or (NativeUInt(1) shl 30) or (NativeUInt(1) shl 31);
+    if UseSys then
+    begin
+      DownMsg := WM_SYSKEYDOWN;
+      UpMsg   := WM_SYSKEYUP;
+    end
+    else
+    begin
+      DownMsg := WM_KEYDOWN;
+      UpMsg   := WM_KEYUP;
+    end;
+
+    if SendMessageW(AWnd, CN_BASE + DownMsg, AChord.Key, LPARAM(Down)) = 0 then
+      if IsWindow(AWnd) then
+      begin
+        SendMessageW(AWnd, DownMsg, AChord.Key, LPARAM(Down));
+        if IsWindow(AWnd) then
+        begin
+          Msg := Default(TMsg);
+          Msg.hwnd    := AWnd;
+          Msg.message := DownMsg;
+          Msg.wParam  := AChord.Key;
+          Msg.lParam  := LPARAM(Down);
+          TranslateMessage(Msg);
+          DeliverChars(WM_CHAR, WM_DEADCHAR);
+          DeliverChars(WM_SYSCHAR, WM_SYSDEADCHAR);
+        end;
+      end;
+
+    SetPressed(Byte(AChord.Key), FALSE);
+    if not SetKeyboardState(State) then
+      RaiseLastOSError;
+    if IsWindow(AWnd) then
+      if SendMessageW(AWnd, CN_BASE + UpMsg, AChord.Key, LPARAM(Up)) = 0 then
+        if IsWindow(AWnd) then
+          SendMessageW(AWnd, UpMsg, AChord.Key, LPARAM(Up));
+  finally
+    SetKeyboardState(Saved);
+  end;
+end;
+
+
+{ Types one UTF-16 character. A character the keyboard layout reaches with no modifier or with Shift is sent as that key press (VkKeyScanW), so OnKeyDown/OnKeyUp fire as for real typing; any other character (AltGr, other scripts) goes as a bare WM_CHAR. }
+procedure TypeCharToWindow(AWnd: HWND; ACh: Char);
+var
+  Scan: SHORT;
+  Chord: TKeyChord;
+begin
+  Scan := VkKeyScanW(ACh);
+  if (Scan <> -1) and ((Hi(Word(Scan)) and not 1) = 0) and (Lo(Word(Scan)) <> 0) then
+  begin
+    Chord := Default(TKeyChord);
+    Chord.Key   := Lo(Word(Scan));
+    Chord.Shift := (Hi(Word(Scan)) and 1) <> 0;
+    SendChordToWindow(AWnd, Chord);
+  end
+  else
+    if SendMessageW(AWnd, CN_CHAR, Ord(ACh), 1) = 0 then
+      if IsWindow(AWnd) then
+        SendMessageW(AWnd, WM_CHAR, Ord(ACh), 1);
+end;
+
+
+function HandleSendKeys(const AReq: TBridgeRequest): TBridgeResponse;
+var
+  PathVal, KeysVal, TextVal: TJSONValue;
+  Path, Keys, Text, ParseError, TargetPath: String;
+  Chords: TArray<TKeyChord>;
+  Comp: TComponent;
+  Ctrl: TWinControl;
+  Form: TCustomForm;
+  Enabled: Boolean;
+  Wnd: HWND;
+  i, Sent: Integer;
+  Wrap: TJSONObject;
+begin
+  Assert(GetCurrentThreadId = MainThreadID, 'HandleSendKeys must run on the main thread');
+  Result := Default(TBridgeResponse);
+  Result.Id := AReq.Id;
+  Result.Ok := FALSE;
+  Result.ErrorCode := ErrInvalidRequest;
+
+  Path := '';
+  Keys := '';
+  Text := '';
+  if AReq.Args <> NIL then
+  begin
+    PathVal := AReq.Args.GetValue('path');
+    KeysVal := AReq.Args.GetValue('keys');
+    TextVal := AReq.Args.GetValue('text');
+    if ((PathVal <> NIL) and not (PathVal is TJSONString))
+    or ((KeysVal <> NIL) and not (KeysVal is TJSONString))
+    or ((TextVal <> NIL) and not (TextVal is TJSONString)) then
+    begin
+      Result.ErrorMessage := 'send_keys args.path, args.keys and args.text must be strings';
+      exit;
+    end;
+    if PathVal <> NIL then Path := TJSONString(PathVal).Value;
+    if KeysVal <> NIL then Keys := TJSONString(KeysVal).Value;
+    if TextVal <> NIL then Text := TJSONString(TextVal).Value;
+  end;
+  if (Trim(Keys) = '') and (Text = '') then
+  begin
+    Result.ErrorMessage := 'send_keys requires args.keys or args.text';
+    exit;
+  end;
+  if not ParseKeyChords(Keys, Chords, ParseError) then
+  begin
+    Result.ErrorMessage := 'send_keys: ' + ParseError;
+    exit;
+  end;
+
+  { # Target }
+  if Path <> '' then
+  begin
+    Comp := ResolvePathOrFail(Path, Result);
+    if Comp = NIL then exit;
+    if TryGetEnabled(Comp, Enabled) and not Enabled then
+    begin
+      Result.ErrorCode := ErrControlDisabled;
+      Result.ErrorMessage := Comp.Name + ' is disabled';
+      exit;
+    end;
+    if not (Comp is TWinControl) then
+    begin
+      Result.ErrorCode := ErrUnsupportedAction;
+      Result.ErrorMessage := Comp.ClassName + ' cannot take the keyboard focus (not a windowed control)';
+      exit;
+    end;
+    Ctrl := TWinControl(Comp);
+    { Focus inside the app only: TCustomForm.SetActiveControl calls SetFocus only when the form is the active one (Vcl.Forms.pas), so it never activates a window or takes the focus from another application. }
+    Form := GetParentForm(Ctrl);
+    if (Form <> NIL) and (Form <> Ctrl) and Ctrl.CanFocus then
+    begin
+      if Form.ActiveControl <> Ctrl then
+        Form.ActiveControl := Ctrl;
+      { An inactive form gets no WM_SETFOCUS, so TCustomForm.SetFocusedControl never sends CM_FOCUSCHANGED and a button that had the focus earlier keeps acting as the default (TCustomButton.CMFocusChanged): Enter would click it.
+        Send the notification SetFocusedControl would send. }
+      if not Form.Active then
+        Form.Perform(CM_FOCUSCHANGED, 0, LPARAM(Ctrl));
+    end;
+  end
+  else
+  begin
+    Form := Screen.ActiveForm;
+    if Form = NIL then
+      Form := Application.MainForm;
+    if Form = NIL then
+    begin
+      Result.ErrorCode := ErrNotFound;
+      Result.ErrorMessage := 'send_keys: no path given and the app has no active form';
+      exit;
+    end;
+    Ctrl := Form.ActiveControl;
+    if Ctrl = NIL
+    then Ctrl := Form
+    else
+      if not Form.Active then
+        Form.Perform(CM_FOCUSCHANGED, 0, LPARAM(Ctrl));   // see the path branch above
+  end;
+
+  TargetPath := ReferenceFor(Ctrl);
+  Wnd := Ctrl.Handle;
+
+  { # Send: text first, then the chords. A handler may free the control (Escape closing its form): IsWindow stops the rest. }
+  Sent := 0;
+  for i := 1 to Length(Text) do
+  begin
+    if not IsWindow(Wnd) then Break;
+    TypeCharToWindow(Wnd, Text[i]);
+    Inc(Sent);
+  end;
+  for i := 0 to High(Chords) do
+  begin
+    if not IsWindow(Wnd) then Break;
+    SendChordToWindow(Wnd, Chords[i]);
+    Inc(Sent);
+  end;
+
+  Wrap := TJSONObject.Create;
+  Wrap.AddPair('keysSent', TJSONNumber.Create(Sent));
+  Wrap.AddPair('target', TargetPath);
+  Wrap.AddPair('via', 'keymessages');
+  Result.ErrorCode := 0;
+  Result.Ok := TRUE;
+  Result.ResultJson := Wrap;
+end;
+
+
 function Dispatch(const AReq: TBridgeRequest): TBridgeResponse;
 begin
   Assert(GetCurrentThreadId = MainThreadID, 'Dispatch must run on the main thread');
@@ -3001,6 +3551,8 @@ begin
     Result := HandleSetKeepAwake(AReq)
   else if SameText(AReq.Cmd, 'dismiss_dialog') then
     Result := HandleDismissDialog(AReq)
+  else if SameText(AReq.Cmd, 'send_keys') then
+    Result := HandleSendKeys(AReq)
   else
   begin
     Result := Default(TBridgeResponse);

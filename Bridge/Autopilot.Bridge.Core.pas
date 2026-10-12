@@ -1,12 +1,13 @@
 ﻿unit Autopilot.Bridge.Core;
 
 {=============================================================================================================
-   2026.10.07
+   2026.10.12
    www.GabrielMoraru.com
 --------------------------------------------------------------------------------------------------------------
    - Shared protocol types and wire-framing helpers for the Autopilot bridge (all platforms)
    - Stdlib-only: no VCL, no FMX, no LightSaber — usable by both the pipe and socket transports
    - Defines TBridgeRequest, TBridgeResponse, TBridgeDispatcher, TBridgeWire, and JSON-RPC error codes
+   - The screenshot argument and scale-size helpers that the VCL and FMX bridges share
    - How the bridge links your app to the AI: the book "Delphi in All Its Glory" Part 5, "AI-Assisted Development for Delphi",
      chapter "We Need a Hero - Enter Autopilot for Delphi", sections "The Bridge" and "How it Works?".
      https://gabrielmoraru.com/the-delphi-in-all-its-glory-book-5-ai-assisted-development-for-delphi/
@@ -19,7 +20,7 @@ uses
 
 const
   ProtocolVersion = 1;
-  BridgeVersion   = '1.1.0';
+  BridgeVersion   = '2.1.0';
 
   { Licence terms: LICENSE in the repository root. Price and buy page: CommercialLicenseURL - never write the price here, it may change.
     The bridge exists only in AUTOPILOT (debug) builds, so these reminders reach the developer, never an end user. }
@@ -130,6 +131,15 @@ type
   /// caller-supplied numeric args so a malformed value lands in ErrInvalidRequest instead of
   /// escaping as the EConvertError that TJSONNumber.AsInt64 (= StrToInt64) would raise.
   function TryJsonInt64(AVal: TJSONValue; OUT AOut: Int64): Boolean;
+
+  /// Reads the optional arguments of the screenshot command, shared by the VCL and FMX bridges.
+  /// APath: args.path ('' when absent). AMaxWidth: args.maxWidth (0 when absent = no scaling; a value above High(Integer) becomes High(Integer)).
+  /// FALSE, with AError set, for a path that is not a string or a maxWidth that is not a whole number >= 0: the caller answers ErrInvalidRequest.
+  function TryParseScreenshotArgs(AArgs: TJSONObject; OUT APath: String; OUT AMaxWidth: Integer; OUT AError: String): Boolean;
+
+  /// The size of an AWidth x AHeight image scaled down to exactly AMaxWidth pixels wide, aspect ratio kept (height rounded, at least 1).
+  /// FALSE, with the size unchanged, when AMaxWidth is 0 or not smaller than AWidth: an image is never scaled up.
+  function ScreenshotScaledSize(AWidth, AHeight, AMaxWidth: Integer; OUT ANewWidth, ANewHeight: Integer): Boolean;
 
 
 implementation
@@ -254,6 +264,55 @@ function TryJsonInt64(AVal: TJSONValue; OUT AOut: Int64): Boolean;
 begin
   AOut := 0;
   Result := (AVal is TJSONNumber) and TryStrToInt64(TJSONNumber(AVal).Value, AOut);
+end;
+
+
+function TryParseScreenshotArgs(AArgs: TJSONObject; OUT APath: String; OUT AMaxWidth: Integer; OUT AError: String): Boolean;
+var
+  V: TJSONValue;
+  N: Int64;
+begin
+  APath := '';
+  AMaxWidth := 0;
+  AError := '';
+  if AArgs = NIL then EXIT(TRUE);
+
+  V := AArgs.GetValue('path');
+  if V <> NIL then
+  begin
+    if not (V is TJSONString) then
+    begin
+      AError := 'screenshot args.path must be a string';
+      EXIT(FALSE);
+    end;
+    APath := TJSONString(V).Value;
+  end;
+
+  V := AArgs.GetValue('maxWidth');
+  if V <> NIL then
+  begin
+    if not TryJsonInt64(V, N) or (N < 0) then
+    begin
+      AError := 'screenshot args.maxWidth must be a whole number >= 0 (got ' + V.ToJSON + ')';
+      EXIT(FALSE);
+    end;
+    if N > High(Integer)
+    then AMaxWidth := High(Integer)
+    else AMaxWidth := Integer(N);
+  end;
+  Result := TRUE;
+end;
+
+
+function ScreenshotScaledSize(AWidth, AHeight, AMaxWidth: Integer; OUT ANewWidth, ANewHeight: Integer): Boolean;
+begin
+  ANewWidth  := AWidth;
+  ANewHeight := AHeight;
+  if (AMaxWidth <= 0) or (AWidth <= AMaxWidth) or (AHeight <= 0) then EXIT(FALSE);
+  ANewWidth  := AMaxWidth;
+  ANewHeight := Integer((Int64(AHeight) * AMaxWidth + AWidth div 2) div AWidth);
+  if ANewHeight < 1 then ANewHeight := 1;
+  Result := TRUE;
 end;
 
 

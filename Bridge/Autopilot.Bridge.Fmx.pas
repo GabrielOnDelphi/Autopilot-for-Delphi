@@ -1,12 +1,13 @@
 ﻿unit Autopilot.Bridge.Fmx;
 
 {=============================================================================================================
-   2026.10.11
+   2026.10.12
    www.GabrielMoraru.com
 --------------------------------------------------------------------------------------------------------------
    - Public bridge interface for FMX target projects (cross-platform: Windows pipe + POSIX AF_UNIX socket)
    - StartBridge / StopBridge / IsBridgeRunning; real bodies only when AUTOPILOT is defined
    - FMX dispatcher: same 13 tools as the VCL twin; click dispatches via OnClick RTTI, or via the protected TControl.Click when the control is bound to an action
+   - screenshot: a whole form, or one control cropped out of it (path), optionally scaled down (maxWidth)
    - Paths resolve through the Owner tree first, then through the visual parent tree (re-parented controls)
    - TAlphaColor coercion only (no TColor - FMX uses TAlphaColor throughout); keep-screen-on on Android
    - How Autopilot works and how to use it with an AI: the book "Delphi in All Its Glory" Part 5, "AI-Assisted Development for Delphi", chapter "We Need a Hero - Enter Autopilot for Delphi".
@@ -28,7 +29,7 @@ implementation
 
 {$IFDEF AUTOPILOT}
 uses
-  System.SysUtils, System.SyncObjs, System.JSON, System.Rtti, System.TypInfo,
+  System.SysUtils, System.Types, System.SyncObjs, System.JSON, System.Rtti, System.TypInfo,
   System.NetEncoding, System.UITypes, System.UIConsts,
   FMX.Forms, FMX.Types, FMX.StdCtrls, FMX.Controls, FMX.Graphics,
   Autopilot.Bridge.Core, Autopilot.Bridge.Log, Autopilot.Bridge.Worker, Autopilot.Bridge.NativeDialogs,
@@ -1795,12 +1796,122 @@ begin
 end;
 
 
+{ The rectangle that screenshot args.path captures, in the same units as HandleScreenshot's form bitmap (one pixel per dp).
+  AForm: the form that shows AComp (its Root) - for a re-parented control, that is not the form that owns it.
+  ARect: AComp's AbsoluteRect (form client coordinates), clipped to every parent control that clips its children and to the client area.
+  FALSE, with AError set, when AComp cannot be captured: not a control, not on a TCustomForm, Visible = FALSE on it or on a parent control, zero size, or no part of it inside the client area. }
+function TryGetCaptureRect(AComp: TComponent; OUT AForm: TCustomForm; OUT ARect: TRect; OUT AError: String): Boolean;
+var
+  Ctrl, P: TControl;
+  R: TRectF;
+begin
+  Assert(TThread.CurrentThread.ThreadID = MainThreadID, 'TryGetCaptureRect: FMX touched off the main thread');
+  Result := FALSE;
+  AForm  := NIL;
+  ARect  := Default(TRect);
+  AError := '';
+
+  if AComp is TCommonCustomForm then
+  begin
+    if not (AComp is TCustomForm) then
+    begin
+      AError := ReferenceFor(AComp) + ' (' + AComp.ClassName + ') cannot be painted to a bitmap';
+      EXIT;
+    end;
+    AForm := TCustomForm(AComp);
+    ARect := Rect(0, 0, Round(AForm.ClientWidth), Round(AForm.ClientHeight));
+  end
+  else
+  begin
+    if not (AComp is TControl) then
+    begin
+      AError := ReferenceFor(AComp) + ' (' + AComp.ClassName + ') is not a visual control';
+      EXIT;
+    end;
+    Ctrl := TControl(AComp);
+    if (Ctrl.Root = NIL) or not (Ctrl.Root.GetObject is TCustomForm) then
+    begin
+      AError := ReferenceFor(Ctrl) + ' is not placed on a form';
+      EXIT;
+    end;
+    AForm := TCustomForm(Ctrl.Root.GetObject);
+
+    P := Ctrl;
+    while P <> NIL do
+    begin
+      if not P.Visible then
+      begin
+        AError := ReferenceFor(Ctrl) + ' is not showing: Visible is FALSE on ' + ReferenceFor(P);
+        EXIT;
+      end;
+      P := P.ParentControl;
+    end;
+    if (Ctrl.Width <= 0) or (Ctrl.Height <= 0) then
+    begin
+      AError := ReferenceFor(Ctrl) + ' has zero size';
+      EXIT;
+    end;
+
+    R := Ctrl.AbsoluteRect;
+    R.NormalizeRect;                                     // a rotated or mirrored control can give swapped corners
+    P := Ctrl.ParentControl;
+    while P <> NIL do
+    begin
+      if P.ClipChildren then
+        R.Intersect(P.AbsoluteRect);
+      P := P.ParentControl;
+    end;
+    R.Intersect(RectF(0, 0, Round(AForm.ClientWidth), Round(AForm.ClientHeight)));
+    ARect := Rect(Round(R.Left), Round(R.Top), Round(R.Right), Round(R.Bottom));
+  end;
+
+  if ARect.IsEmpty then
+  begin
+    AError := ReferenceFor(AComp) + ' has no part inside the client area of ' + AForm.Name;
+    EXIT;
+  end;
+  Result := TRUE;
+end;
+
+
+{ A new bitmap of ASource drawn at AWidth x AHeight with DrawBitmap's HighSpeed = FALSE (linear interpolation on the Direct2D canvas, FMX.Canvas.D2D.pas), so small text stays readable.
+  FALSE (AScaled = NIL) when the canvas cannot begin a scene. The caller frees AScaled. }
+function TryScaleBitmap(ASource: FMX.Graphics.TBitmap; AWidth, AHeight: Integer; OUT AScaled: FMX.Graphics.TBitmap): Boolean;
+begin
+  AScaled := FMX.Graphics.TBitmap.Create(AWidth, AHeight);
+  try
+    if not AScaled.Canvas.BeginScene then
+    begin
+      FreeAndNil(AScaled);
+      EXIT(FALSE);
+    end;
+    try
+      AScaled.Canvas.Clear(0);
+      AScaled.Canvas.DrawBitmap(ASource, RectF(0, 0, ASource.Width, ASource.Height), RectF(0, 0, AWidth, AHeight), 1, FALSE);
+    finally
+      AScaled.Canvas.EndScene;
+    end;
+  except
+    FreeAndNil(AScaled);
+    raise;
+  end;
+  Result := TRUE;
+end;
+
+
+{ Optional args: form (ignored when path is given), path (crop to that control), maxWidth (scale down to that width).
+  Every image comes from the form's PaintTo, so a crop gains no failure mode the whole-form capture does not have. }
 function HandleScreenshot(const AReq: TBridgeRequest): TBridgeResponse;
 var
   FormVal: TJSONValue;
-  FormName: String;
+  FormName, Path, ErrMsg: String;
   Form: TCommonCustomForm;
-  Bmp: FMX.Graphics.TBitmap;
+  Comp: TComponent;
+  PaintForm: TCustomForm;
+  CropRect: TRect;
+  MaxWidth, NewW, NewH: Integer;
+  IsScaled: Boolean;
+  Bmp, Tmp: FMX.Graphics.TBitmap;
   Stream: TMemoryStream;
   Base64: String;
   Wrap: TJSONObject;
@@ -1816,17 +1927,43 @@ begin
     if FormVal is TJSONString then
       FormName := TJSONString(FormVal).Value;
   end;
-  Form := FindFormByName(FormName);
-  // PaintTo is declared on TCustomForm (FMX.Forms.pas), so any TCustomForm descendant is accepted, not just TForm: TCustomPopupForm etc. work too.
-  if (Form = NIL) or not (Form is TCustomForm) then
+  if not TryParseScreenshotArgs(AReq.Args, Path, MaxWidth, ErrMsg) then
   begin
-    Result.Ok := FALSE; Result.ErrorCode := ErrNotFound;
-    if FormName = '' then
-      Result.ErrorMessage := 'no main FMX form available'
-    else
-      Result.ErrorMessage := 'no FMX form named ' + FormName;
+    Result.Ok := FALSE; Result.ErrorCode := ErrInvalidRequest;
+    Result.ErrorMessage := ErrMsg;
     exit;
   end;
+
+  { # What to capture }
+  CropRect := Default(TRect);
+  if Path <> '' then
+  begin
+    Comp := ResolvePathOrFail(Path, Result);
+    if Comp = NIL then exit;
+    if not TryGetCaptureRect(Comp, PaintForm, CropRect, ErrMsg) then
+    begin
+      Result.Ok := FALSE; Result.ErrorCode := ErrUnsupportedAction;
+      Result.ErrorMessage := 'cannot capture ' + Path + ': ' + ErrMsg;
+      exit;
+    end;
+    Form := PaintForm;
+  end
+  else
+  begin
+    Form := FindFormByName(FormName);
+    // PaintTo is declared on TCustomForm (FMX.Forms.pas), so any TCustomForm descendant is accepted, not just TForm: TCustomPopupForm etc. work too.
+    if (Form = NIL) or not (Form is TCustomForm) then
+    begin
+      Result.Ok := FALSE; Result.ErrorCode := ErrNotFound;
+      if FormName = '' then
+        Result.ErrorMessage := 'no main FMX form available'
+      else
+        Result.ErrorMessage := 'no FMX form named ' + FormName;
+      exit;
+    end;
+  end;
+
+  { # Capture, crop, scale, encode }
   { FMX has no TForm.MakeScreenshot (that is on TControl), so PaintTo draws onto a bitmap canvas instead.
     ClientWidth/Height are in dp, which is what the form paints in; one pixel per dp is fine for this diagnostic use. }
   W := Round(TCustomForm(Form).ClientWidth);
@@ -1853,6 +1990,36 @@ begin
     finally
       Bmp.Canvas.EndScene;
     end;
+
+    // A path that names the form itself keeps the uncropped bitmap.
+    if (Path <> '') and ((CropRect.Left <> 0) or (CropRect.Top <> 0) or (CropRect.Width <> W) or (CropRect.Height <> H)) then
+    begin
+      Tmp := FMX.Graphics.TBitmap.Create(CropRect.Width, CropRect.Height);
+      try
+        Tmp.CopyFromBitmap(Bmp, CropRect, 0, 0);
+      except
+        FreeAndNil(Tmp);
+        raise;
+      end;
+      FreeAndNil(Bmp);
+      Bmp := Tmp;
+    end;
+
+    IsScaled := ScreenshotScaledSize(Bmp.Width, Bmp.Height, MaxWidth, NewW, NewH);
+    if IsScaled then
+    begin
+      if not TryScaleBitmap(Bmp, NewW, NewH, Tmp) then
+      begin
+        Result.Ok := FALSE; Result.ErrorCode := ErrUnsupportedAction;
+        Result.ErrorMessage := 'Canvas.BeginScene returned FALSE; cannot scale the image';
+        exit;
+      end;
+      FreeAndNil(Bmp);
+      Bmp := Tmp;
+    end;
+    W := Bmp.Width;
+    H := Bmp.Height;
+
     Stream := TMemoryStream.Create;
     try
       Bmp.SaveToStream(Stream);  // FMX picks codec by file ext / default = PNG.
@@ -1866,9 +2033,12 @@ begin
   end;
   Wrap := TJSONObject.Create;
   Wrap.AddPair('form', Form.Name);
-  // Same field set as the VCL twin (width/height in client units, here dp).
+  if Path <> '' then
+    Wrap.AddPair('path', Path);
+  // Same field set as the VCL twin: the image size, one pixel per dp; without path and maxWidth that is the client size.
   Wrap.AddPair('width', TJSONNumber.Create(W));
   Wrap.AddPair('height', TJSONNumber.Create(H));
+  Wrap.AddPair('scaled', TJSONBool.Create(IsScaled));
   Wrap.AddPair('encoding', 'base64');
   Wrap.AddPair('format', 'png');
   Wrap.AddPair('image', Base64);
@@ -2299,6 +2469,298 @@ begin
 end;
 
 
+{ send_keys ----------------------------------------------------------------------------------------------- }
+
+type
+  { One chord of args.keys: optional modifiers and one key. }
+  TKeyChord = record
+    Key  : Word;
+    Ctrl : Boolean;
+    Shift: Boolean;
+    Alt  : Boolean;
+  end;
+
+
+{ Maps a key name of args.keys (case-insensitive) to its virtual-key code. 0 = unknown name.
+  The same table is in Autopilot.Bridge.Vcl.pas; keep the two identical. }
+function KeyNameToVk(const AName: String): Word;
+var
+  N: String;
+  FNum: Integer;
+begin
+  N := UpperCase(AName);
+  if (Length(N) = 1) and CharInSet(N[1], ['A'..'Z', '0'..'9']) then
+    exit(Ord(N[1]));    // vkA..vkZ and vk0..vk9 equal the ASCII codes (System.UITypes)
+  if (Length(N) in [2, 3]) and (N[1] = 'F') and TryStrToInt(Copy(N, 2, 2), FNum) and (FNum >= 1) and (FNum <= 12) then
+    exit(vkF1 + FNum - 1);
+  if N = 'ENTER'     then exit(vkReturn);
+  if (N = 'ESCAPE') or (N = 'ESC') then exit(vkEscape);
+  if N = 'TAB'       then exit(vkTab);
+  if N = 'SPACE'     then exit(vkSpace);
+  if N = 'BACKSPACE' then exit(vkBack);
+  if N = 'DELETE'    then exit(vkDelete);
+  if N = 'INSERT'    then exit(vkInsert);
+  if N = 'HOME'      then exit(vkHome);
+  if N = 'END'       then exit(vkEnd);
+  if N = 'PAGEUP'    then exit(vkPrior);
+  if N = 'PAGEDOWN'  then exit(vkNext);
+  if N = 'UP'        then exit(vkUp);
+  if N = 'DOWN'      then exit(vkDown);
+  if N = 'LEFT'      then exit(vkLeft);
+  if N = 'RIGHT'     then exit(vkRight);
+  Result := 0;
+end;
+
+
+{ Parses args.keys: chords separated by spaces, a chord = optional modifiers (Ctrl, Shift, Alt) joined by '+', then one key name.
+  Parses everything before anything is sent: on the first bad token returns FALSE and AError names it. }
+function ParseKeyChords(const AKeys: String; OUT AChords: TArray<TKeyChord>; OUT AError: String): Boolean;
+var
+  Tokens, Parts: TArray<String>;
+  Token, Part: String;
+  Chord: TKeyChord;
+  i, Count: Integer;
+
+  function SplitOn(const S: String; ASep: Char; AKeepEmpty: Boolean): TArray<String>;
+  var
+    Start, k: Integer;
+  begin
+    Result := NIL;
+    Start := 1;
+    for k := 1 to Length(S) + 1 do
+      if (k > Length(S)) or (S[k] = ASep) then
+      begin
+        if AKeepEmpty or (k > Start) then
+        begin
+          SetLength(Result, Length(Result) + 1);
+          Result[High(Result)] := Copy(S, Start, k - Start);
+        end;
+        Start := k + 1;
+      end;
+  end;
+
+begin
+  AChords := NIL;
+  AError := '';
+  Tokens := SplitOn(AKeys, ' ', FALSE);
+  Count := 0;
+  SetLength(AChords, Length(Tokens));
+  for Token in Tokens do
+  begin
+    Chord := Default(TKeyChord);
+    Parts := SplitOn(Token, '+', TRUE);
+    for i := 0 to High(Parts) - 1 do
+    begin
+      Part := UpperCase(Parts[i]);
+      if Part = 'CTRL' then Chord.Ctrl := TRUE
+      else if Part = 'SHIFT' then Chord.Shift := TRUE
+      else if Part = 'ALT' then Chord.Alt := TRUE
+      else
+      begin
+        AError := 'unknown modifier "' + Parts[i] + '" in "' + Token + '" (use Ctrl, Shift, Alt)';
+        exit(FALSE);
+      end;
+    end;
+    Chord.Key := KeyNameToVk(Parts[High(Parts)]);
+    if Chord.Key = 0 then
+    begin
+      AError := 'unknown key name "' + Parts[High(Parts)] + '" in "' + Token + '"';
+      exit(FALSE);
+    end;
+    AChords[Count] := Chord;
+    Inc(Count);
+  end;
+  Result := TRUE;
+end;
+
+
+{ Keys go through FMX's own form keyboard routine, TCommonCustomForm.KeyDown / KeyUp (FMX.Forms.pas), the routine the platform layer calls for a real key on Windows and on Android: accelerator keys, dialog keys (Default / Cancel buttons), Tab focus moves, the focused control's KeyDown (OnKeyDown, an edit inserting KeyChar), then the form's OnKeyDown.
+  The FMX Windows platform sends the virtual key and the character as two KeyDown calls (key with #0, then 0 with the character); this does the same for a chord whose key types a character. No window is activated. }
+procedure SendChordToForm(AForm: TCommonCustomForm; const AChord: TKeyChord);
+var
+  Shift: TShiftState;
+  Key: Word;
+  Ch: Char;
+begin
+  Shift := [];
+  if AChord.Ctrl  then Include(Shift, ssCtrl);
+  if AChord.Shift then Include(Shift, ssShift);
+  if AChord.Alt   then Include(Shift, ssAlt);
+
+  Key := AChord.Key;
+  Ch  := #0;
+  AForm.KeyDown(Key, Ch, Shift);
+
+  if (Key <> 0) and not AChord.Ctrl and not AChord.Alt then
+  begin
+    Ch := #0;
+    if (AChord.Key >= Ord('A')) and (AChord.Key <= Ord('Z')) then
+      if AChord.Shift
+      then Ch := Char(AChord.Key)
+      else Ch := Char(AChord.Key + 32)
+    else if (AChord.Key >= Ord('0')) and (AChord.Key <= Ord('9')) and not AChord.Shift then
+      Ch := Char(AChord.Key)
+    else if AChord.Key = vkSpace then
+      Ch := ' ';
+    if Ch <> #0 then
+    begin
+      Key := 0;
+      AForm.KeyDown(Key, Ch, Shift);
+    end;
+  end;
+
+  Key := AChord.Key;
+  Ch  := #0;
+  AForm.KeyUp(Key, Ch, Shift);
+end;
+
+
+procedure TypeCharToForm(AForm: TCommonCustomForm; ACh: Char);
+var
+  Key: Word;
+  Ch: Char;
+begin
+  Key := 0;
+  Ch  := ACh;
+  AForm.KeyDown(Key, Ch, []);
+  Key := 0;
+  Ch  := ACh;
+  AForm.KeyUp(Key, Ch, []);
+end;
+
+
+function HandleSendKeys(const AReq: TBridgeRequest): TBridgeResponse;
+var
+  PathVal, KeysVal, TextVal: TJSONValue;
+  Path, Keys, Text, ParseError, TargetPath: String;
+  Chords: TArray<TKeyChord>;
+  Comp: TComponent;
+  Form: TCommonCustomForm;
+  Enabled: Boolean;
+  Watch: TFreeWatch;
+  i, Sent: Integer;
+  Wrap: TJSONObject;
+begin
+  Assert(TThread.CurrentThread.ThreadID = MainThreadID, 'HandleSendKeys must run on the main thread');
+  Result := Default(TBridgeResponse);
+  Result.Id := AReq.Id;
+  Result.Ok := FALSE;
+  Result.ErrorCode := ErrInvalidRequest;
+
+  Path := '';
+  Keys := '';
+  Text := '';
+  if AReq.Args <> NIL then
+  begin
+    PathVal := AReq.Args.GetValue('path');
+    KeysVal := AReq.Args.GetValue('keys');
+    TextVal := AReq.Args.GetValue('text');
+    if ((PathVal <> NIL) and not (PathVal is TJSONString))
+    or ((KeysVal <> NIL) and not (KeysVal is TJSONString))
+    or ((TextVal <> NIL) and not (TextVal is TJSONString)) then
+    begin
+      Result.ErrorMessage := 'send_keys args.path, args.keys and args.text must be strings';
+      exit;
+    end;
+    if PathVal <> NIL then Path := TJSONString(PathVal).Value;
+    if KeysVal <> NIL then Keys := TJSONString(KeysVal).Value;
+    if TextVal <> NIL then Text := TJSONString(TextVal).Value;
+  end;
+  if (Trim(Keys) = '') and (Text = '') then
+  begin
+    Result.ErrorMessage := 'send_keys requires args.keys or args.text';
+    exit;
+  end;
+  if not ParseKeyChords(Keys, Chords, ParseError) then
+  begin
+    Result.ErrorMessage := 'send_keys: ' + ParseError;
+    exit;
+  end;
+
+  { # Target }
+  if Path <> '' then
+  begin
+    Comp := ResolvePathOrFail(Path, Result);
+    if Comp = NIL then exit;
+    if TryGetEnabled(Comp, Enabled) and not Enabled then
+    begin
+      Result.ErrorCode := ErrControlDisabled;
+      Result.ErrorMessage := Comp.Name + ' is disabled';
+      exit;
+    end;
+    if Comp is TCommonCustomForm then
+      Form := TCommonCustomForm(Comp)
+    else
+    begin
+      if not (Comp is TControl) or not TControl(Comp).CanFocus or (TControl(Comp).Root = NIL)
+      or not (TControl(Comp).Root.GetObject is TCommonCustomForm) then
+      begin
+        Result.ErrorCode := ErrUnsupportedAction;
+        Result.ErrorMessage := Comp.ClassName + ' cannot take the keyboard focus';
+        exit;
+      end;
+      Form := TCommonCustomForm(TControl(Comp).Root.GetObject);
+      { Focus inside the form only (TCommonCustomForm.SetFocused): no window is activated. }
+      if Form.Focused <> TControl(Comp) as IControl then
+        try
+          Form.Focused := TControl(Comp);
+        except
+          on E: EInvalidOperation do
+          begin
+            Result.ErrorCode := ErrUnsupportedAction;
+            Result.ErrorMessage := Comp.Name + ' cannot take the keyboard focus now: ' + E.Message;
+            exit;
+          end;
+        end;
+    end;
+    TargetPath := ReferenceFor(Comp);
+  end
+  else
+  begin
+    Form := Screen.ActiveForm;
+    if Form = NIL then
+      Form := Application.MainForm;
+    if Form = NIL then
+    begin
+      Result.ErrorCode := ErrNotFound;
+      Result.ErrorMessage := 'send_keys: no path given and the app has no active form';
+      exit;
+    end;
+    if (Form.Focused <> NIL) and (Form.Focused.GetObject is TComponent)
+    then TargetPath := ReferenceFor(TComponent(Form.Focused.GetObject))
+    else TargetPath := ReferenceFor(Form);
+  end;
+
+  { # Send: text first, then the chords. A handler may free the form (Escape closing it): Watch stops the rest. }
+  Sent := 0;
+  Watch := TFreeWatch.Create(Form);
+  try
+    for i := 1 to Length(Text) do
+    begin
+      if Watch.Freed then Break;
+      TypeCharToForm(Form, Text[i]);
+      Inc(Sent);
+    end;
+    for i := 0 to High(Chords) do
+    begin
+      if Watch.Freed then Break;
+      SendChordToForm(Form, Chords[i]);
+      Inc(Sent);
+    end;
+  finally
+    FreeAndNil(Watch);
+  end;
+
+  Wrap := TJSONObject.Create;
+  Wrap.AddPair('keysSent', TJSONNumber.Create(Sent));
+  Wrap.AddPair('target', TargetPath);
+  Wrap.AddPair('via', 'formkeydown');
+  Result.ErrorCode := 0;
+  Result.Ok := TRUE;
+  Result.ResultJson := Wrap;
+end;
+
+
 function Dispatch(const AReq: TBridgeRequest): TBridgeResponse;
 begin
   Assert(TThread.CurrentThread.ThreadID = MainThreadID, 'Dispatch must run on the main thread');
@@ -2337,6 +2799,8 @@ begin
     Result := HandleSetKeepAwake(AReq)
   else if SameText(AReq.Cmd, 'dismiss_dialog') then
     Result := HandleDismissDialog(AReq)
+  else if SameText(AReq.Cmd, 'send_keys') then
+    Result := HandleSendKeys(AReq)
   else
   begin
     Result := Default(TBridgeResponse);

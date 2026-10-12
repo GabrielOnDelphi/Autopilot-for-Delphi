@@ -273,11 +273,12 @@ begin
       end;
 
       { Resolve timeout: caller-supplied > per-command default.
-        The 5000 ms bucket is every command that runs USER code on the main thread: click/set_text/set_checked/set_property fire setters + OnChange/OnClick handlers; execute_action fires OnExecute; dismiss_dialog's SendMessageTimeout alone can block up to 4000 ms on a cross-thread dialog - all of them can overrun the 2000 ms list/get default. }
+        The 5000 ms bucket is every command that runs USER code on the main thread: click/set_text/set_checked/set_property fire setters + OnChange/OnClick handlers; execute_action fires OnExecute; send_keys fires the key handlers and ShortCuts; dismiss_dialog's SendMessageTimeout alone can block up to 4000 ms on a cross-thread dialog - all of them can overrun the 2000 ms list/get default. }
       if Req.TimeoutMs > 0 then
         Timeout := Req.TimeoutMs
       else if (Req.Cmd = 'click') or (Req.Cmd = 'set_text') or (Req.Cmd = 'set_checked')
-           or (Req.Cmd = 'set_property') or (Req.Cmd = 'execute_action') or (Req.Cmd = 'dismiss_dialog') then
+           or (Req.Cmd = 'set_property') or (Req.Cmd = 'execute_action') or (Req.Cmd = 'dismiss_dialog')
+           or (Req.Cmd = 'send_keys') then
         Timeout := DefaultTimeoutClickMs
       else if Req.Cmd = 'screenshot' then
         Timeout := DefaultTimeoutScreenshotMs
