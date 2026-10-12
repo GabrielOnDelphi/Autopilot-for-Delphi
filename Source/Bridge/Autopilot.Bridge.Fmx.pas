@@ -1,17 +1,15 @@
 ﻿unit Autopilot.Bridge.Fmx;
 
 {=============================================================================================================
-   2026.10.06
+   2026.10.11
    www.GabrielMoraru.com
 --------------------------------------------------------------------------------------------------------------
    - Public bridge interface for FMX target projects (cross-platform: Windows pipe + POSIX AF_UNIX socket)
    - StartBridge / StopBridge / IsBridgeRunning; real bodies only when AUTOPILOT is defined
-   - FMX dispatcher: same 13 tools as the VCL twin; click dispatches via OnClick RTTI, or via the protected
-     TControl.Click when the control is bound to an action
+   - FMX dispatcher: same 13 tools as the VCL twin; click dispatches via OnClick RTTI, or via the protected TControl.Click when the control is bound to an action
    - Paths resolve through the Owner tree first, then through the visual parent tree (re-parented controls)
-   - TAlphaColor coercion only (no TColor — FMX uses TAlphaColor throughout); keep-screen-on on Android
-   - How Autopilot works and how to use it with an AI: the book "Delphi in All Its Glory" Part 5, "AI-Assisted Development for Delphi",
-     chapter "We Need a Hero - Enter Autopilot for Delphi".
+   - TAlphaColor coercion only (no TColor - FMX uses TAlphaColor throughout); keep-screen-on on Android
+   - How Autopilot works and how to use it with an AI: the book "Delphi in All Its Glory" Part 5, "AI-Assisted Development for Delphi", chapter "We Need a Hero - Enter Autopilot for Delphi".
      https://gabrielmoraru.com/the-delphi-in-all-its-glory-book-5-ai-assisted-development-for-delphi/
 =============================================================================================================}
 
@@ -52,7 +50,7 @@ uses
 {$IFDEF AUTOPILOT}
 
 // Licence reminder in the Messages pane, AUTOPILOT builds only. See the twin comment in Autopilot.Bridge.Vcl.pas for why this is a HINT and who sees it.
-{$MESSAGE HINT 'Autopilot for Delphi: every developer needs a seat - free for noncommercial use after registering, paid for commercial or government use. Already have a seat? Thank you - nothing to do. https://www.GabrielMoraru.com/autopilot'}
+{$MESSAGE HINT 'Autopilot for Delphi: every developer needs a seat - free for personal use after registering, paid for commercial use or any use by or for an organization. Already have a seat? Thank you - nothing to do. https://www.GabrielMoraru.com/autopilot'}
 
 var
   GWorker: TBridgeWorker = NIL;
@@ -64,13 +62,37 @@ var
 type
   TFmxControlAccess = class(TControl);   // breaks protected scope for .Click and .ActionLink
 
+  // Tells HandleClick that an event handler freed the control it clicks. The VCL twin explains how.
+  TFreeWatch = class(TComponent)
+  private
+    FWatched: TComponent;
+  protected
+    procedure Notification(AComponent: TComponent; Operation: TOperation); override;
+  public
+    Freed: Boolean;
+    constructor Create(AWatched: TComponent); reintroduce;
+  end;
 
-// Synthetic ID for an unnamed component: '@TButton#5' where 5 is the component's
-// CURRENT position in its owner's Components list. The index is computed live and
-// shifts down by 1 each time an earlier-indexed sibling is freed (RemoveComponent
-// compacts the list). A synthetic ID captured from list_tree is only reliable
-// while no earlier-indexed sibling has been destroyed since. Same scheme as the
-// VCL bridge — see comment there.
+
+constructor TFreeWatch.Create(AWatched: TComponent);
+begin
+  inherited Create(NIL);
+  FWatched := AWatched;
+  AWatched.FreeNotification(Self);
+end;
+
+
+procedure TFreeWatch.Notification(AComponent: TComponent; Operation: TOperation);
+begin
+  inherited;   // unlinks AComponent; RemoveFreeNotifications loops until this unlink happens
+  if (Operation = opRemove) and (AComponent = FWatched) then
+    Freed := TRUE;
+end;
+
+
+{ Synthetic ID for an unnamed component: '@TButton#5', where 5 is the component's CURRENT position in its owner's Components list.
+  The index shifts down by 1 each time an earlier sibling is freed (RemoveComponent compacts the list), so an ID captured from list_tree is reliable only while no earlier sibling has been destroyed since.
+  Same scheme as the VCL bridge. }
 function SyntheticIdFor(AComp: TComponent): String;
 begin
   Assert(TThread.CurrentThread.ThreadID = MainThreadID, 'SyntheticIdFor: FMX touched off the main thread');
@@ -116,8 +138,7 @@ begin
 end;
 
 
-// Prefers shallow matches: scans ALL direct children of AParent first, then
-// recurses. See the VCL twin for rationale.
+// Prefers shallow matches: scans ALL direct children of AParent first, then recurses (the VCL twin explains why).
 function FindDescendantOf(AParent: TComponent; const ALeaf: String; AVisited: TList): TComponent;
 var
   j: Integer;
@@ -145,11 +166,10 @@ end;
 
 
 { Visual-parent fallback ------------------------------------------------- }
-{ Same rule as the VCL twin: the owner walk runs first; only when it finds nothing, the path is tried through
-  the visual tree, here TFmxObject.Children. Two FMX specifics:
+{ Same rule as the VCL twin: the owner walk runs first; only when it finds nothing, the path is tried through the visual tree, here TFmxObject.Children.
+  Two FMX specifics:
   - A style tree is skipped: StyleObject.Clone(nil) gives it no Owner, and ApplyStyleLookup sets Stored=FALSE.
-  - An internal content object (Stored=FALSE but owned, e.g. TTabItemContent, TScrollContent) is looked
-    through: FMX puts the controls placed on a TTabItem or a TScrollBox inside it. }
+  - An internal content object (Stored=FALSE but owned, e.g. TTabItemContent, TScrollContent) is looked through: FMX puts the controls placed on a TTabItem or a TScrollBox inside it. }
 
 const
   MaxVisualDepth = 256;   // stops the recursion on a corrupt Parent chain; real forms nest far less
@@ -160,8 +180,8 @@ begin
 end;
 
 
-// Leaf match for an object met in the visual tree. A synthetic '@Class#N' id is owner-relative, so it is
-// checked against the object's own Owner.
+{ Leaf match for an object met in the visual tree.
+  A synthetic '@Class#N' id is owner-relative, so it is checked against the object's own Owner. }
 function MatchesVisualLeaf(AComp: TComponent; const ALeaf: String): Boolean;
 begin
   if (ALeaf <> '') and (ALeaf[1] = '@') then
@@ -217,8 +237,8 @@ begin
 end;
 
 
-// Anchored walk in which a child of ACur is a component ACur owns OR an object placed directly on it.
-// Explores every branch, so AMatches ends up holding every component the whole path AParts[AIndex..] leads to.
+{ Anchored walk in which a child of ACur is a component ACur owns OR an object placed directly on it.
+  Explores every branch, so AMatches ends up holding every component the whole path AParts[AIndex..] leads to. }
 procedure CollectAnchoredMatches(ACur: TComponent; const AParts: TArray<String>; AIndex: Integer; AMatches: TList);
 var
   Step: TList;
@@ -246,8 +266,7 @@ begin
 end;
 
 
-// See VCL twin for path-format spec, including the 1-part "Form alone" form
-// that round-trips with the form node emitted by list_tree, and for the visual-parent fallback.
+// The VCL twin documents the path format (including the 1-part "Form alone" path that round-trips with the form node emitted by list_tree) and the visual-parent fallback.
 function FindComponentByPath(const APath: String; AMatches: TList): TComponent;
 var
   i, k: Integer;
@@ -307,9 +326,7 @@ begin
 end;
 
 
-// Mirror of the VCL twin's IsReadableBooleanProp / IsReadableStringProp: list_tree, get_text, set_text and set_checked
-// check the property type BEFORE the read or write, so they raise no exception that a debugger would halt the whole
-// app on (GitHub issue 2; the VCL twin has the full note).
+// Mirror of the VCL twin's IsReadableBooleanProp / IsReadableStringProp: list_tree, get_text, set_text and set_checked check the property type BEFORE the read or write, so they raise no exception that a debugger would halt the whole app on (GitHub issue 2; the VCL twin has the full note).
 function IsReadableBooleanProp(AProp: TRttiProperty): Boolean;
 begin
   Result := (AProp <> NIL) and AProp.IsReadable and (AProp.PropertyType <> NIL)
@@ -324,8 +341,7 @@ begin
 end;
 
 
-// Mirror of the VCL twin's TryConvertForWrite: TRUE when TRttiProperty.SetValue accepts AValue for AProp (SetValue
-// converts with TValue.Cast, which raises EInvalidCast exactly where TValue.TryCast answers FALSE).
+// Mirror of the VCL twin's TryConvertForWrite: TRUE when TRttiProperty.SetValue accepts AValue for AProp (SetValue converts with TValue.Cast, which raises EInvalidCast exactly where TValue.TryCast answers FALSE).
 function TryConvertForWrite(AProp: TRttiProperty; const AValue: TValue; OUT AConverted: TValue): Boolean;
 begin
   Result := (AProp <> NIL) and (AProp.PropertyType <> NIL) and AValue.TryCast(AProp.PropertyType.Handle, AConverted);
@@ -345,15 +361,14 @@ begin
   try
     RT := Ctx.GetType(AComp.ClassType);
     if RT = NIL then exit;
-    // Mirror VCL: try Text first, then Caption. TCommonCustomForm exposes
-    // Caption (not Text), so get_text("MyFmxForm") needs the fallback to work.
-    // A Text or Caption that is not a string counts as missing.
+    { As in the VCL bridge: Text first, then Caption. TCommonCustomForm has Caption but no Text, so get_text("MyFmxForm") needs the fallback.
+      A Text or Caption that is not a string counts as missing. }
     Prop := RT.GetProperty('Text');
     if not IsReadableStringProp(Prop) then
       Prop := RT.GetProperty('Caption');
     if not IsReadableStringProp(Prop) then exit;
-    // Mirror the VCL guard: some FMX property getters can throw on
-    // partially-initialized forms or controls. Swallow and report "no text".
+    { Same guard as the VCL bridge: some FMX property getters raise on partially-initialized forms or controls.
+      The exception is swallowed and reported as "no text". }
     try
       AValue := Prop.GetValue(AComp).AsString;
       Result := TRUE;
@@ -382,8 +397,7 @@ begin
     if RT = NIL then exit;
     Prop := RT.GetProperty('Enabled');
     if not IsReadableBooleanProp(Prop) then exit;   // a non-Boolean Enabled is reported as unknown
-    // Mirror the VCL guard: a misbehaving FMX getter must not propagate out
-    // and leak the in-flight TJSONArray/TJSONObject in HandleListTree.
+    // Same guard as the VCL bridge: a misbehaving FMX getter must not propagate out and leak the in-flight TJSONArray/TJSONObject in HandleListTree.
     try
       AEnabled := Prop.GetValue(AComp).AsBoolean;
       Result := TRUE;
@@ -439,9 +453,8 @@ begin
   try
     RT := Ctx.GetType(AComp.ClassType);
     if RT = NIL then exit;
-    // Mirror VCL: try Text first, then fall back to Caption. TCommonCustomForm
-    // has only Caption (no published Text), so set_text on a form needs this.
-    // A Text or Caption that cannot hold a string counts as missing.
+    { As in the VCL bridge: Text first, then Caption. TCommonCustomForm has only Caption (no published Text), so set_text on a form needs the fallback.
+      A Text or Caption that cannot hold a string counts as missing. }
     NewValue := AValue;
     Prop := RT.GetProperty('Text');
     if not TryConvertForWrite(Prop, NewValue, Converted) then
@@ -464,14 +477,14 @@ end;
 // family, INCLUDING a strong alias (`type TFlag = type WordBool`): an alias gets its own
 // typeinfo, so a plain handle comparison misses it and the property stays unwritable.
 // BaseType resolves the alias, and it is a plain record field reached through GetTypeData
-// (System.TypInfo.pas:575) — present in every Delphi version, not a version-gated RTL
+// (TTypeData.BaseType in System.TypInfo.pas) — present in every Delphi version, not a version-gated RTL
 // routine of the ColorToStringExt kind. The RTL discriminates Boolean exactly this way in
-// GetPropValue (System.TypInfo.pas:1360). A root enumeration's BaseType points at itself,
+// GetPropValue (System.TypInfo.pas). A root enumeration's BaseType points at itself,
 // so plain WordBool matches here too (verified by Test_SetProperty_WordBoolWritesAllBitsSet,
 // which would fail if it did not), and Boolean answers FALSE (it keeps its own branch).
-// Deliberately NOT the RTL's `MinValue < 0` shortcut (System.TypInfo.pas:1616): a normal
+// Deliberately NOT the RTL's `MinValue < 0` shortcut (GetEnumName in System.TypInfo.pas): a normal
 // enumeration may legally carry a negative ordinal — the RTL declares such types itself
-// (System.Internal.ICU.pas:216) — and that test would misread them as booleans.
+// (UCollationResult in System.Internal.ICU.pas) — and that test would misread them as booleans.
 // Resolves ONE alias level, same as the RTL's own tests; an alias of an alias is not covered.
 function IsBoolFamilyType(ATypeInfo: PTypeInfo): Boolean;
 var
@@ -495,14 +508,9 @@ begin
 end;
 
 
-// Mirror of the VCL twin's TryReadPropertyAsString — used by ListWritableProperties
-// to populate the optional 'currentValue' field on each writable property entry.
-// AInstance is TObject (not TComponent) so the helper also works on nested
-// TPersistent classes reached via dotted propName.
-//
-// TAlphaColor is a `type Cardinal` (tkInteger) but we format its value as
-// '#AARRGGBB' or the canonical 'claName' so the AI sees colors in a form it
-// can feed back to set_property unchanged.
+{ Mirror of the VCL twin's TryReadPropertyAsString: ListWritableProperties uses it to fill the optional 'currentValue' field of each writable property entry.
+  AInstance is TObject (not TComponent), so the helper also works on nested TPersistent classes reached via a dotted propName.
+  TAlphaColor is a `type Cardinal` (tkInteger), but its value is formatted as '#AARRGGBB' or 'claName', so the AI can feed it back to set_property unchanged. }
 function TryReadPropertyAsString(AInstance: TObject; AProp: TRttiProperty; OUT AValue: String): Boolean;
 var
   V: TValue;
@@ -527,8 +535,7 @@ begin
     end;
     tkInteger:
     begin
-      // TAlphaColor short-circuit: emit '#AARRGGBB' (or 'claName' when named)
-      // instead of a raw 32-bit integer.
+      // TAlphaColor short-circuit: emit '#AARRGGBB' (or 'claName' when named) instead of a raw 32-bit integer.
       if AProp.PropertyType.Handle = TypeInfo(TAlphaColor) then
       begin
         try
@@ -536,8 +543,7 @@ begin
           AValue := AlphaStr;
           Result := TRUE;
         except
-          // Fall back to raw decimal on any UIConsts hiccup — never let a
-          // readback fail the whole availableProperties response.
+          // Fall back to raw decimal on any UIConsts failure: a readback must never fail the whole availableProperties response.
           AValue := IntToStr(V.AsOrdinal);
           Result := TRUE;
         end;
@@ -581,9 +587,7 @@ begin
 end;
 
 
-// AInstance is TObject (not TComponent) so this also enumerates writable
-// fields on nested TPersistent classes (e.g. TFont) reached via a dotted
-// propName like 'Font.Size'.
+// AInstance is TObject (not TComponent) so this also enumerates writable fields on nested TPersistent classes (e.g. TFont) reached via a dotted propName like 'Font.Size'.
 function ListWritableProperties(AInstance: TObject): TJSONArray;
 var
   Ctx: TRttiContext;
@@ -603,9 +607,8 @@ begin
       for Prop in RT.GetProperties do
       begin
         if not Prop.IsWritable then Continue;
-        // tkClass is included so the AI sees 'Outer.Inner' nesting is available.
-        // TAlphaColor is tkInteger by RTTI but we label it 'alphacolor' so the AI
-        // knows to send '#AARRGGBB' / 'claName' rather than a raw integer.
+        { tkClass is included so the AI sees 'Outer.Inner' nesting is available.
+          TAlphaColor is tkInteger by RTTI but is labelled 'alphacolor', so the AI knows to send '#AARRGGBB' / 'claName' rather than a raw integer. }
         case Prop.PropertyType.TypeKind of
           tkString, tkLString, tkWString, tkUString: KindName := 'string';
           tkInteger:
@@ -615,10 +618,7 @@ begin
               KindName := 'integer';
           tkInt64:                                    KindName := 'int64';
           tkEnumeration:
-            // The ByteBool/WordBool/LongBool family reads back as 'True'/'False' through
-            // GetEnumName (System.TypInfo.pas:1616-1620) and set_property takes it as a
-            // boolean, so tag it 'boolean' — 'enum' would send the AI hunting for enum
-            // identifiers this family does not have.
+            // The ByteBool/WordBool/LongBool family reads back as 'True'/'False' through GetEnumName (System.TypInfo.pas) and set_property takes it as a boolean, so tag it 'boolean': 'enum' would send the AI hunting for enum identifiers this family does not have.
             if (Prop.PropertyType.Handle = TypeInfo(Boolean))
             or IsBoolFamilyType(Prop.PropertyType.Handle) then
               KindName := 'boolean'
@@ -647,25 +647,22 @@ begin
       Ctx.Free;
     end;
   except
-    // OOM-class guard: free the partly-built array (and its nodes) before re-raising —
-    // the caller receives only the exception, never the orphaned Result.
+    // OOM-class guard: free the partly-built array (and its nodes) before re-raising; the caller receives only the exception, never the orphaned Result.
     FreeAndNil(Result);
     raise;
   end;
 end;
 
 
-// AI-friendly TAlphaColor parser. Accepts:
-//   '#FF8000'        — 6 hex digits, alpha assumed $FF (fully opaque)
-//   '#80FF8000'      — 8 hex digits, full ARGB
-//   'claSkyBlue'     — System.UIConsts cla* constant
-//   'SkyBlue'        — bare name (UIConsts prepends 'cla' itself)
-//   '4283621118'     — decimal
-//   '$FF8000FF'      — Pascal-style hex literal
-// Returns FALSE without raising on anything else. Uses StringToAlphaColor for
-// the heavy lifting; the 6-digit short form is our own convenience layer
-// because StringToAlphaColor treats '#FF8000' as alpha=0 (invisible) which is
-// almost never what the AI means.
+{ AI-friendly TAlphaColor parser. Accepts:
+    '#FF8000'        - 6 hex digits, alpha assumed $FF (fully opaque)
+    '#80FF8000'      - 8 hex digits, full ARGB
+    'claSkyBlue'     - System.UIConsts cla* constant
+    'SkyBlue'        - bare name (UIConsts prepends 'cla' itself)
+    '4283621118'     - decimal
+    '$FF8000FF'      - Pascal-style hex literal
+  Returns FALSE without raising on anything else.
+  StringToAlphaColor does the parsing; the 6-digit short form is our own layer, because StringToAlphaColor treats '#FF8000' as alpha=0 (invisible), which is almost never what the AI means. }
 function TryParseAlphaColor(const AStrValue: String; OUT AColor: TAlphaColor): Boolean;
 var
   S: String;
@@ -673,40 +670,27 @@ begin
   Result := FALSE;
   S := Trim(AStrValue);
   if S = '' then exit;
-  // 6-digit RGB short form ('#RRGGBB'): expand to 8-digit ARGB with full
-  // opacity. StringToAlphaColor would otherwise treat it as alpha=0 (fully
-  // transparent), which is almost never what the AI meant.
+  // 6-digit RGB short form ('#RRGGBB'): expand to 8-digit ARGB with full opacity, because StringToAlphaColor would read it as alpha=0 (fully transparent).
   if (S.Length = 7) and (S[1] = '#') then
     S := '#FF' + Copy(S, 2, 6);
   try
     AColor := StringToAlphaColor(S);
     Result := TRUE;
   except
-    // StrToInt64 inside StringToAlphaColor raises EConvertError on garbage.
-    // Swallow — the caller maps FALSE to a structured unsupported_action error.
+    { StrToInt64 inside StringToAlphaColor raises EConvertError on garbage.
+      Swallowed: the caller maps FALSE to a structured unsupported_action error. }
     Result := FALSE;
   end;
 end;
 
 
-// Coerce AStrValue to a TValue of the property's declared type, then write it.
-// See the VCL twin for the full type-coercion contract — including the one-level
-// dotted propName ('Font.Size') support that resolves the outer tkClass then
-// recurses onto the inner instance. AInstance is TObject (not TComponent) so
-// the recursive call accepts a nested TPersistent.
-//
-// TAlphaColor (RTTI says tkInteger) is detected by type handle and routed
-// through TryParseAlphaColor so the AI can pass '#FF8000' or 'claSkyBlue'
-// instead of a raw 32-bit integer.
-//
-// AFailedInstance: on FALSE return with ErrRttiPropertyMissing, this is set to
-// the object the lookup was performed against — used by HandleSetProperty to
-// list writables off the inner class when the typo was on the inner name.
-//
-// AElided: on TRUE return, this is set to TRUE iff the live property value
-// already equalled the coerced new value, so the bridge skipped Prop.SetValue
-// (no OnChange fires). See the VCL twin for the full contract. FMX has no
-// TColor branch — the rest of the type kinds match.
+{ Coerces AStrValue to a TValue of the property's declared type, then writes it.
+  The VCL twin documents the full type-coercion contract, including the one-level dotted propName ('Font.Size'), which resolves the outer tkClass and then recurses onto the inner instance.
+  AInstance is TObject (not TComponent) so the recursive call accepts a nested TPersistent.
+  TAlphaColor (RTTI says tkInteger) is detected by type handle and routed through TryParseAlphaColor, so the AI can pass '#FF8000' or 'claSkyBlue' instead of a raw 32-bit integer.
+  AFailedInstance: on FALSE with ErrRttiPropertyMissing, the object the lookup ran against; HandleSetProperty lists the writables of that inner class when the typo was on the inner name.
+  AElided: on TRUE, set to TRUE when the live property value already equalled the coerced new value, so Prop.SetValue was skipped (no OnChange fires).
+  FMX has no TColor branch; the other type kinds match the VCL twin. }
 function TrySetGenericProperty(AInstance: TObject; const APropName, AStrValue: String;
                                OUT AErrCode: Integer; OUT AErrMsg: String;
                                OUT AFailedInstance: TObject;
@@ -737,7 +721,7 @@ begin
   AFailedInstance := AInstance;
   AElided := FALSE;
 
-  // Dotted propName: 'Outer.Inner'. See VCL twin for full contract — one level only.
+  // Dotted propName: 'Outer.Inner', one level only (the VCL twin has the full contract).
   DotPos := Pos('.', APropName);
   if DotPos > 0 then
   begin
@@ -851,10 +835,8 @@ begin
 
       tkInteger:
       begin
-        // TAlphaColor (System.UITypes.TAlphaColor = type Cardinal). Route
-        // through TryParseAlphaColor so the AI can pass '#FF8000' (6-digit
-        // RGB, full alpha), '#80FF8000' (8-digit ARGB), 'claSkyBlue', or a
-        // raw decimal/$hex integer. Detected by type handle, not class name.
+        { TAlphaColor (System.UITypes.TAlphaColor = type Cardinal), detected by type handle, not class name.
+          TryParseAlphaColor lets the AI pass '#FF8000' (6-digit RGB, full alpha), '#80FF8000' (8-digit ARGB), 'claSkyBlue', or a raw decimal/$hex integer. }
         if Prop.PropertyType.Handle = TypeInfo(TAlphaColor) then
         begin
           if not TryParseAlphaColor(AStrValue, AlphaVal) then
@@ -933,15 +915,15 @@ begin
           // cannot write TRUE to them: GetEnumValue answers 'True' with -1, which is also its
           // not-found result, so the EnumOrd<0 fallback runs Val('True'), fails, and reports
           // -32005; any other non-numeric string reaches a bare StrToInt inside GetEnumValue
-          // and raises EConvertError (System.TypInfo.pas:1802-1809, Delphi 13), escaping as
+          // and raises EConvertError (GetEnumValue in System.TypInfo.pas, Delphi 13), escaping as
           // -32603. Reachable on a shipped component: TADOCommand.Prepared is a published
-          // WordBool (Data.Win.ADODB.pas:478). It is also the read/write round trip -
+          // WordBool (Data.Win.ADODB.pas). It is also the read/write round trip -
           // read_property renders this family through GetEnumName, which returns
-          // BooleanIdents[Value <> 0] = 'True'/'False' (System.TypInfo.pas:1616-1620).
+          // BooleanIdents[Value <> 0] = 'True'/'False' (System.TypInfo.pas).
           // Matched by BaseType (see IsBoolFamilyType), which also catches a strong alias
           // such as `type TFlag = type WordBool`, NOT by the RTL's own MinValue < 0 test:
           // a normal enumeration may legally carry a negative ordinal (the RTL declares
-          // such types itself - System.Internal.ICU.pas:216), and catching those here would
+          // such types itself - UCollationResult in System.Internal.ICU.pas), and catching those here would
           // turn set_property(<that enum>, '1') into a silent write of -1.
           Lower := LowerCase(AStrValue);
           if (Lower = 'true') or (Lower = '1') or (Lower = '-1') then
@@ -959,8 +941,7 @@ begin
             AElided := TRUE;
             exit(TRUE);
           end;
-          // TRUE is all-bits-set (-1) for this family, not 1 - the OLE VARIANT_BOOL
-          // convention the COM consumers of these properties compare against.
+          // TRUE is all-bits-set (-1) for this family, not 1 - the OLE VARIANT_BOOL convention the COM consumers of these properties compare against.
           if BoolVal
           then Prop.SetValue(AInstance, TValue.FromOrdinal(Prop.PropertyType.Handle, -1))
           else Prop.SetValue(AInstance, TValue.FromOrdinal(Prop.PropertyType.Handle, 0));
@@ -968,11 +949,8 @@ begin
         end
         else
         begin
-          // GetEnumValue is not exception-free: for an enumeration whose MinValue is
-          // negative it skips the name list and runs a bare StrToInt on the string
-          // (System.TypInfo.pas:1802-1809, Delphi 13), which raises EConvertError on any
-          // identifier. Treat that as "no such identifier" and let the ordinal fallback
-          // below decide, so the coercion lane answers -32005 instead of leaking -32603.
+          { GetEnumValue is not exception-free: for an enumeration whose MinValue is negative it skips the name list and runs a bare StrToInt on the string (System.TypInfo.pas, Delphi 13), which raises EConvertError on any identifier.
+            That is treated as "no such identifier" and the ordinal fallback decides, so the coercion lane answers -32005 instead of leaking -32603. }
           try
             EnumOrd := GetEnumValue(Prop.PropertyType.Handle, AStrValue);
           except
@@ -1001,9 +979,8 @@ begin
 
       tkSet:
       begin
-        // Accept '[a,b]', 'a,b', '[]', or a numeric ordinal. See VCL twin.
-        // NOTE: TValue.FromOrdinal raises EInvalidCast for tkSet typeinfo.
-        // Use TValue.Make with a pointer to the raw ordinal instead.
+        { Accepts '[a,b]', 'a,b', '[]', or a numeric ordinal, as the VCL twin does.
+          TValue.FromOrdinal raises EInvalidCast for tkSet typeinfo, so TValue.Make with a pointer to the raw ordinal is used instead. }
         Lower := Trim(AStrValue);
         if (Lower <> '') and (Lower[1] <> '[') then
         begin
@@ -1049,10 +1026,9 @@ begin
           AErrMsg := APropName + ' expects a number; got "' + AStrValue + '"';
           exit;
         end;
-        // Exact-bits equality (no epsilon). Double/Extended round-trip cleanly;
-        // Single-typed properties may not elide on resend of non-Single-exact
-        // decimals (e.g. 0.1) — harmless (write goes through). See VCL twin for
-        // longer note. AsExtended is the canonical tkFloat accessor.
+        { Exact-bits equality (no epsilon): Double/Extended round-trip cleanly.
+          A Single-typed property may not elide on a resend of a decimal that Single cannot hold exactly (e.g. 0.1); that is harmless, the write goes through.
+          AsExtended is the standard tkFloat accessor. }
         if CanRead and (CurVal.AsExtended = FloatVal) then
         begin
           AElided := TRUE;
@@ -1197,9 +1173,9 @@ begin
 end;
 
 
-// list_tree 'parent' field for a re-parented object only - see the VCL twin. An internal content object
-// (TTabItemContent) is reported as the control that holds it (the TTabItem), the name the AI can use in a path.
-// A parent with no owner path (an object inside a style tree) gets no field: the AI could not use it.
+{ list_tree 'parent' field, for a re-parented object only (see the VCL twin).
+  An internal content object (TTabItemContent) is reported as the control that holds it (the TTabItem), the name the AI can use in a path.
+  A parent with no owner path (an object inside a style tree) gets no field: the AI could not use it. }
 procedure AddReparentedField(ANode: TJSONObject; AComp, AListedUnder: TComponent);
 var
   VisualParent: TFmxObject;
@@ -1284,15 +1260,14 @@ begin
   Result.Ok := TRUE;
   Items := TJSONArray.Create;
   try
-    // Per-form Visited — see VCL twin for rationale.
+    // Per-form Visited (the VCL twin explains why).
     for i := 0 to Screen.FormCount - 1 do
     begin
       Form := Screen.Forms[i];
       Visited := TList.Create;
       try
-        // Emit the form as its own node first. Its Caption read may throw on an
-        // unrealized form — TryGetTextProperty swallows that and the node simply
-        // lacks a `text` field. Then recurse owned components (including frames).
+        { Emit the form as its own node first, then recurse owned components (including frames).
+          Its Caption read may raise on an unrealized form; TryGetTextProperty swallows that and the node simply lacks a `text` field. }
         Visited.Add(Form);
         FormNode := BuildComponentNode(Form.Name, Form.Name, Form);
         Items.AddElement(FormNode);
@@ -1369,6 +1344,7 @@ var
   RequestedCount, ClicksDone: Integer;
   StoppedReason, Mode, DispatchedVia: String;
   UseControlClick: Boolean;
+  Watch: TFreeWatch;
 begin
   Assert(TThread.CurrentThread.ThreadID = MainThreadID, 'HandleClick must run on the main thread');
   Result := Default(TBridgeResponse);
@@ -1396,9 +1372,8 @@ begin
   CountVal := AReq.Args.GetValue('count');
   if CountVal is TJSONNumber then
   begin
-    // TJSONNumber.AsInt is StrToInt(Value) (System.JSON.pas:2865) — it RAISES EConvertError on a
-    // fractional (1.5) or out-of-Int32 count, which would surface as ErrInternalError. TryStrToInt
-    // on the raw number text keeps a malformed count in the ErrInvalidRequest lane where it belongs.
+    { TJSONNumber.AsInt is StrToInt(Value) (TJSONNumber.GetAsInt in System.JSON.pas): it RAISES EConvertError on a fractional (1.5) or out-of-Int32 count, which would surface as ErrInternalError.
+      TryStrToInt on the raw number text keeps a malformed count in the ErrInvalidRequest lane where it belongs. }
     if not TryStrToInt(TJSONNumber(CountVal).Value, RequestedCount) then
     begin
       Result.Ok := FALSE; Result.ErrorCode := ErrInvalidRequest;
@@ -1415,10 +1390,9 @@ begin
     end;
   end;
 
-  // mode=message is VCL-on-Windows only: it posts BM_CLICK to the control's HWND, and an
-  // FMX control has no per-control window handle to post to (FMX paints its own controls).
-  // Reject explicitly — silently falling back to the synchronous OnClick path would defeat
-  // the caller's no-block intent. Validated strictly, like the VCL twin.
+  { mode=message is VCL-on-Windows only: it posts BM_CLICK to the control's HWND, and an FMX control has no per-control window handle to post to (FMX paints its own controls).
+    Rejected explicitly, because silently falling back to the synchronous OnClick path would defeat the caller's no-block intent.
+    Validated strictly, like the VCL twin. }
   ModeVal := AReq.Args.GetValue('mode');
   if ModeVal <> NIL then
   begin
@@ -1454,16 +1428,15 @@ begin
     exit;
   end;
 
-  // A control bound to an action: TControl.Click (FMX.Controls.pas) runs ActionLink.Execute, i.e.
-  // TCustomAction.Execute, with the action as Sender. Calling the OnClick that TControl.ActionChange copied
-  // from OnExecute skips that, and an action without OnExecute leaves OnClick NIL, so the click would fail.
+  { A control bound to an action: TControl.Click (FMX.Controls.pas) runs ActionLink.Execute, i.e. TCustomAction.Execute, with the action as Sender.
+    Calling the OnClick that TControl.ActionChange copied from OnExecute skips that, and an action without OnExecute leaves OnClick NIL, so the click would fail. }
   UseControlClick := (Comp is TControl) and (TFmxControlAccess(Comp).ActionLink <> NIL);
   if UseControlClick then
     DispatchedVia := 'click'
   else
   begin
-    // FMX: no other protected Click trick on a generic TControl base. Most clickable
-    // controls expose OnClick (TNotifyEvent) via RTTI. Read and invoke it.
+    { FMX has no other protected Click trick on a generic TControl base.
+      Most clickable controls expose OnClick (TNotifyEvent) via RTTI; it is read and invoked. }
     DispatchedVia := 'onclick';
     Ctx := TRttiContext.Create;
     try
@@ -1500,29 +1473,40 @@ begin
     end;
   end;
 
-  // Wrap dispatch in try/except so an OnClick that frees the control or raises
-  // stops cleanly without AV'ing on the next iteration's TryGetEnabled(stale Comp).
-  while ClicksDone < RequestedCount do
-  begin
-    if TryGetEnabled(Comp, Enabled) and not Enabled then
+  { An OnClick may free the control, or the form that owns it: Watch learns of the free, and the loop stops with stoppedReason='freed' before Comp is read again (the VCL twin explains more).
+    On an action-bound control the FMX RTL itself still reads the freed control once: TControl.Click reads Action in its finally (FMX.Controls.pas).
+    The try..except stops the loop when an OnClick raises. }
+  Watch := TFreeWatch.Create(Comp);
+  try
+    while ClicksDone < RequestedCount do
     begin
-      StoppedReason := 'disabled';
-      Break;
-    end;
-    try
-      if UseControlClick
-      then TFmxControlAccess(Comp).Click
-      else Notify(Comp);
-      Inc(ClicksDone);
-    except
-      on E: Exception do
+      if Watch.Freed then
       begin
-        StoppedReason := 'exception:' + E.ClassName;
-        BridgeLogWarn('bridge', 'click loop stopped at iter ' + IntToStr(ClicksDone + 1) +
-                                ': ' + E.ClassName + ': ' + E.Message);
+        StoppedReason := 'freed';
         Break;
       end;
+      if TryGetEnabled(Comp, Enabled) and not Enabled then
+      begin
+        StoppedReason := 'disabled';
+        Break;
+      end;
+      try
+        if UseControlClick
+        then TFmxControlAccess(Comp).Click
+        else Notify(Comp);
+        Inc(ClicksDone);
+      except
+        on E: Exception do
+        begin
+          StoppedReason := 'exception:' + E.ClassName;
+          BridgeLogWarn('bridge', 'click loop stopped at iter ' + IntToStr(ClicksDone + 1) +
+                                  ': ' + E.ClassName + ': ' + E.Message);
+          Break;
+        end;
+      end;
     end;
+  finally
+    FreeAndNil(Watch);   // its destructor unlinks it from Comp when Comp is still alive
   end;
 
   Wrap := TJSONObject.Create;
@@ -1535,12 +1519,9 @@ begin
 end;
 
 
-// execute_action — fires a TBasicAction.Execute directly. Closes the "action with
-// no control" gap (keyboard-shortcut-only actions) and the "many controls share
-// one action" case where click on the control is indirect. Verified facts:
-//   - TBasicAction.Execute (System.Classes.pas:18610) fires OnExecute and
-//     returns True iff assigned. It does not check Enabled — we must guard here.
-//   - TBasicAction lives in System.Classes (already in uses transitively).
+{ execute_action: fires TBasicAction.Execute directly.
+  Covers an action with no control (keyboard-shortcut-only actions) and many controls sharing one action, where a click on the control is indirect.
+  TBasicAction.Execute (System.Classes.pas) fires OnExecute and returns True when it is assigned; it does not check Enabled, so this handler must check it. }
 function HandleExecuteAction(const AReq: TBridgeRequest): TBridgeResponse;
 var
   PathVal: TJSONValue;
@@ -1767,8 +1748,7 @@ begin
     Result.Ok := FALSE;
     Result.ErrorCode := ErrCode;
     Result.ErrorMessage := ErrMsg;
-    // For a dotted propName whose INNER name was the typo, FailedInstance is the
-    // inner TPersistent — listing its writables gives the AI the right surface.
+    // For a dotted propName whose INNER name was the typo, FailedInstance is the inner TPersistent: listing its writables gives the AI the right surface.
     if ErrCode = ErrRttiPropertyMissing then
     begin
       Result.ErrorData := TJSONObject.Create;
@@ -1776,8 +1756,7 @@ begin
       try
         Result.ErrorData.AddPair('availableProperties', ListWritableProperties(FailedInstance));
       except
-        // OOM-class guard: a raise out of the lister must not orphan the just-built
-        // ErrorData — the worker's catch sees only the exception, never this record.
+        // OOM-class guard: a raise out of the lister must not orphan the just-built ErrorData; the worker's except block sees only the exception, never this record.
         FreeAndNil(Result.ErrorData);
         raise;
       end;
@@ -1789,8 +1768,7 @@ begin
   Wrap.AddPair('path', Path);
   Wrap.AddPair('propName', PropName);
   Wrap.AddPair('value', StrValue);
-  // Write-side elision: TRUE when the live value already equalled the coerced
-  // new value and the bridge skipped Prop.SetValue (so OnChange did not fire).
+  // Write-side elision: TRUE when the live value already equalled the coerced new value and the bridge skipped Prop.SetValue (so OnChange did not fire).
   Wrap.AddPair('elided', TJSONBool.Create(Elided));
   Result.Ok := TRUE;
   Result.ResultJson := Wrap;
@@ -1839,8 +1817,7 @@ begin
       FormName := TJSONString(FormVal).Value;
   end;
   Form := FindFormByName(FormName);
-  // PaintTo is declared on TCustomForm (FMX.Forms.pas:1145). Accept any
-  // TCustomForm descendant — not just TForm — so TCustomPopupForm etc. work.
+  // PaintTo is declared on TCustomForm (FMX.Forms.pas), so any TCustomForm descendant is accepted, not just TForm: TCustomPopupForm etc. work too.
   if (Form = NIL) or not (Form is TCustomForm) then
   begin
     Result.Ok := FALSE; Result.ErrorCode := ErrNotFound;
@@ -1850,9 +1827,8 @@ begin
       Result.ErrorMessage := 'no FMX form named ' + FormName;
     exit;
   end;
-  // FMX has no TForm.MakeScreenshot (that's on TControl). Use PaintTo against
-  // a bitmap canvas instead. ClientWidth/Height are in dp, which is what the
-  // form paints in; one pixel per dp is fine for our diagnostic use case.
+  { FMX has no TForm.MakeScreenshot (that is on TControl), so PaintTo draws onto a bitmap canvas instead.
+    ClientWidth/Height are in dp, which is what the form paints in; one pixel per dp is fine for this diagnostic use. }
   W := Round(TCustomForm(Form).ClientWidth);
   H := Round(TCustomForm(Form).ClientHeight);
   if (W <= 0) or (H <= 0) then
@@ -1863,10 +1839,8 @@ begin
   end;
   Bmp := FMX.Graphics.TBitmap.Create(W, H);
   try
-    // BeginScene can return FALSE if the bitmap context isn't ready
-    // (DoBeginScene failure on the active FMX graphics backend). Without a
-    // guard, SaveToStream would silently emit a base64 PNG of an
-    // uninitialized canvas with Ok=TRUE — wrong answer, no error.
+    { BeginScene can return FALSE if the bitmap context is not ready (DoBeginScene failure on the active FMX graphics backend).
+      Without this check, SaveToStream would silently emit a base64 PNG of an uninitialized canvas with Ok=TRUE: a wrong answer and no error. }
     if not Bmp.Canvas.BeginScene then
     begin
       Result.Ok := FALSE; Result.ErrorCode := ErrUnsupportedAction;
@@ -1903,9 +1877,8 @@ begin
 end;
 
 
-// READABLE-property enumerator for FMX — parallel to ListWritableProperties but
-// gated on IsReadable. Used by HandleReadProperty's typo recovery. Same kind
-// vocabulary as the VCL twin (minus the TColor branch — FMX has no TColor).
+{ READABLE-property enumerator for FMX, parallel to ListWritableProperties but gated on IsReadable; HandleReadProperty uses it for typo recovery.
+  Same kind vocabulary as the VCL twin, minus the TColor branch (FMX has no TColor). }
 function ListReadableProperties(AInstance: TObject): TJSONArray;
 var
   Ctx: TRttiContext;
@@ -1934,10 +1907,7 @@ begin
               KindName := 'integer';
           tkInt64:                                    KindName := 'int64';
           tkEnumeration:
-            // The ByteBool/WordBool/LongBool family reads back as 'True'/'False' through
-            // GetEnumName (System.TypInfo.pas:1616-1620) and set_property takes it as a
-            // boolean, so tag it 'boolean' — 'enum' would send the AI hunting for enum
-            // identifiers this family does not have.
+            // The ByteBool/WordBool/LongBool family reads back as 'True'/'False' through GetEnumName (System.TypInfo.pas) and set_property takes it as a boolean, so tag it 'boolean': 'enum' would send the AI hunting for enum identifiers this family does not have.
             if (Prop.PropertyType.Handle = TypeInfo(Boolean))
             or IsBoolFamilyType(Prop.PropertyType.Handle) then
               KindName := 'boolean'
@@ -1972,9 +1942,8 @@ begin
 end;
 
 
-// Resolve (possibly one-level dotted) propName on AInstance and read it. FMX
-// twin of the VCL TryReadGenericProperty. No TColor branch — FMX uses
-// TAlphaColor exclusively.
+{ Resolves a (possibly one-level dotted) propName on AInstance and reads it; FMX twin of the VCL TryReadGenericProperty.
+  No TColor branch: FMX uses TAlphaColor exclusively. }
 function TryReadGenericProperty(AInstance: TObject; const APropName: String;
                                 OUT AValue, AKind: String;
                                 OUT AErrCode: Integer; OUT AErrMsg: String;
@@ -2188,13 +2157,10 @@ begin
 end;
 
 
-// Android keep-screen-on. Sets/clears FLAG_KEEP_SCREEN_ON on the activity window;
-// while it is set and the app is foreground the screen never turns off, so the
-// OxygenOS/AOSP cached-apps freezer (which fires on the LcdOff scene) never stalls
-// the socket accept. Must run on the UI (main) thread — Dispatch and
-// StartBridgeInternal both call it there. No-op on every non-Android platform: the
-// screen-off process freeze is Android power management; a Windows target is never
-// frozen by the OS while an automation client drives it.
+{ Android keep-screen-on: sets or clears FLAG_KEEP_SCREEN_ON on the activity window.
+  While it is set and the app is foreground the screen never turns off, so the OxygenOS/AOSP cached-apps freezer (which fires on the LcdOff scene) never stalls the socket accept.
+  Must run on the UI (main) thread; Dispatch and StartBridgeInternal both call it there.
+  No-op on every non-Android platform: the screen-off process freeze is Android power management, and a Windows target is never frozen by the OS while an automation client drives it. }
 procedure ApplyKeepScreenOn(AEnable: Boolean);
 begin
   {$IFDEF ANDROID}
@@ -2206,12 +2172,9 @@ begin
 end;
 
 
-// dismiss_dialog — reach native Win32 dialogs (MessageBox / Task Dialog / common dialogs)
-// the component-tree tools cannot see. Real on FMX-Windows (the shared helper drives the
-// Win32 windows); on Android the helper returns supported:false (Android dialogs are ART
-// windows, out of Win32 reach). FMX forms are not native Win32 dialogs — FMX renders its
-// controls itself, so a form HWND has no child 'Button' windows and is not class '#32770',
-// and never matches the dialog filter — so no exclude list is needed here.
+{ dismiss_dialog: reaches native Win32 dialogs (MessageBox / Task Dialog / common dialogs) that the component-tree tools cannot see.
+  Real on FMX-Windows (the shared helper drives the Win32 windows); on Android the helper returns supported:false (Android dialogs are ART windows, out of Win32 reach).
+  No exclude list is needed: FMX renders its controls itself, so an FMX form HWND has no child 'Button' windows, is not class '#32770', and never matches the dialog filter. }
 function HandleDismissDialog(const AReq: TBridgeRequest): TBridgeResponse;
 var
   ButtonVal, HwndVal: TJSONValue;
@@ -2242,9 +2205,7 @@ begin
     HwndVal := AReq.Args.GetValue('hwnd');
     if HwndVal <> NIL then
     begin
-      // Reject a present-but-malformed hwnd (fractional / out-of-range / non-number) with
-      // ErrInvalidRequest rather than silently falling back to the topmost dialog — a typo'd
-      // handle must not dismiss an unintended dialog, and AsInt64 would otherwise raise here.
+      // Reject a present-but-malformed hwnd (fractional / out-of-range / non-number) with ErrInvalidRequest rather than silently falling back to the topmost dialog: a typo'd handle must not dismiss an unintended dialog, and AsInt64 would otherwise raise here.
       if not TryJsonInt64(HwndVal, HwndInt) then
       begin
         Result.Ok := FALSE; Result.ErrorCode := ErrInvalidRequest;
@@ -2255,7 +2216,7 @@ begin
     end;
   end;
 
-  Exclude := NIL;   // FMX forms never match the dialog filter (see header)
+  Exclude := NIL;   // FMX forms never match the dialog filter (see the comment above HandleDismissDialog)
 
   {$IFDEF MSWINDOWS} PlatformName := 'windows';
   {$ELSE}{$IFDEF ANDROID} PlatformName := 'android';
@@ -2289,10 +2250,10 @@ begin
 end;
 
 
-// set_keep_awake — toggles the device "keep screen on" state (see ApplyKeepScreenOn).
-// Android: applies the window flag, reports applied:true. Off Android: accepted but a
-// no-op (applied:false), so the shared MCP tool behaves uniformly against a VCL/Windows
-// target. The bridge enables this by default on Android at StartBridge.
+{ set_keep_awake: toggles the device "keep screen on" state (see ApplyKeepScreenOn).
+  Android: applies the window flag and reports applied:true.
+  Off Android: accepted but a no-op (applied:false), so the shared MCP tool behaves uniformly against a VCL/Windows target.
+  The bridge enables keep-screen-on by default on Android at StartBridge. }
 function HandleSetKeepAwake(const AReq: TBridgeRequest): TBridgeResponse;
 var
   EnabledVal: TJSONValue;
@@ -2341,15 +2302,10 @@ end;
 function Dispatch(const AReq: TBridgeRequest): TBridgeResponse;
 begin
   Assert(TThread.CurrentThread.ThreadID = MainThreadID, 'Dispatch must run on the main thread');
-  // Refuse to touch FMX once the bridge is gone. A TThread.Queue entry posted with a NIL
-  // thread survives the worker's destruction — RemoveQueuedEvents(Self) in TThread.Destroy
-  // skips FThread=NIL entries (System.Classes.pas:17197) — so a request that timed out can
-  // still fire its queued proc after StopBridge, which at app shutdown means walking the
-  // form list while the forms are being torn down. FreeAndNil clears GWorker BEFORE running
-  // the destructor, and both StopBridge and this proc run on the main thread, so the test is
-  // race-free. It does NOT interfere with the documented short-timeoutMs recipe (fire a
-  // click, take -32004, then dismiss_dialog): the bridge is still running there, so the
-  // queued click fires as before. Only StopBridge closes this door.
+  { Refuse to touch FMX once the bridge is gone.
+    A TThread.Queue entry posted with a NIL thread survives the worker's destruction (RemoveQueuedEvents(Self) in TThread.Destroy skips FThread=NIL entries, System.Classes.pas), so a request that timed out can still fire its queued proc after StopBridge, which at app shutdown means walking the form list while the forms are being torn down.
+    FreeAndNil clears GWorker BEFORE running the destructor, and both StopBridge and this proc run on the main thread, so the test is race-free.
+    It does NOT interfere with the documented short-timeoutMs recipe (fire a click, take -32004, then dismiss_dialog): the bridge is still running there, so the queued click fires as before. }
   if GWorker = NIL then
   begin
     Result := Default(TBridgeResponse);
@@ -2417,9 +2373,9 @@ begin
     GWorker := TBridgeWorker.Create(TSocketTransport.Create(AEndpoint), ExeName, Dispatch);
     {$ENDIF}
     {$IFDEF ANDROID}
-    // Keep the screen on by default while the bridge runs: a backgrounded / screen-off
-    // app is frozen by Android power management, which stalls the socket accept (see
-    // ApplyKeepScreenOn). set_keep_awake(false) releases it. AUTOPILOT builds only.
+    { Keep the screen on by default while the bridge runs: a backgrounded / screen-off app is frozen by Android power management, which stalls the socket accept (see ApplyKeepScreenOn).
+      set_keep_awake(false) releases it.
+      AUTOPILOT builds only. }
     ApplyKeepScreenOn(TRUE);
     BridgeLogInfo('bridge', 'keep-screen-on enabled (Android default)');
     {$ENDIF}
@@ -2434,8 +2390,8 @@ begin
   {$IFDEF MSWINDOWS}
   StartBridgeInternal(ComputePipeName);
   {$ELSE}
-  // Per-process abstract name; the kernel removes it when the socket closes.
-  // The PC side reaches it via: adb forward tcp:<hostPort> localabstract:Autopilot.<pid>
+  { Per-process abstract name; the kernel removes it when the socket closes.
+    The PC side reaches it via: adb forward tcp:<hostPort> localabstract:Autopilot.<pid> }
   StartBridgeInternal('Autopilot.' + IntToStr(getpid));
   {$ENDIF}
 end;
