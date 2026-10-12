@@ -6,7 +6,7 @@
 --------------------------------------------------------------------------------------------------------------
    - FMX demo form for the Autopilot bridge.
    - Mirrors the VCL demo layout; adds cbxFlag (TCheckBox.IsChecked) so the set_checked tool has a target to flip.
-   - Test fixtures for "_Local info\E2E tests\Test-AllTools.ps1": a button that opens a native message box
+   - Test fixtures for "Tests\E2E tests\Test-AllTools.ps1": a button that opens a native message box
      (btnDialog -> lblDialogResult), an action bound to a TButton and a TSpeedButton (actFixture -> lblActionResult),
      a label placed on a panel (pnlFixture.lblInPanel) for the path rule, a TRectangle for a TAlphaColor property,
      and a button whose label changes one second later (btnDelayed -> tmrDelayed -> lblDelayed) for wait_for.
