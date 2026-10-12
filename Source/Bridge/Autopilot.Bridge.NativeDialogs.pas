@@ -62,14 +62,9 @@ end;
 const
   TextReadTimeoutMs = 1000;   // per-read cap; after the first hung read SMTO_ABORTIFHUNG fails the rest fast
 
-// GetWindowText would be simpler, but for a window of THIS process it sends WM_GETTEXT and
-// waits with NO timeout (learn.microsoft.com GetWindowTextW, Remarks: "if the target window
-// is not responding and it belongs to the calling application, GetWindowText will cause the
-// calling application to become unresponsive") — and every window enumerated here IS
-// same-process. A dialog owned by a hung non-main thread would freeze the dispatcher, and
-// with it the whole app. SendMessageTimeout degrades that to an empty string instead. For a
-// window on the CURRENT thread the proc is called directly and the timeout is ignored
-// (SendMessageTimeoutW, Remarks), so the normal main-thread-dialog path behaves as before.
+{ GetWindowText would be simpler, but for a window of THIS process it sends WM_GETTEXT and waits with NO timeout (learn.microsoft.com GetWindowTextW, Remarks: "if the target window is not responding and it belongs to the calling application, GetWindowText will cause the calling application to become unresponsive") — and every window enumerated here IS same-process.
+  A dialog owned by a hung non-main thread would freeze the dispatcher, and with it the whole app. SendMessageTimeout degrades that to an empty string instead.
+  For a window on the CURRENT thread the proc is called directly and the timeout is ignored (SendMessageTimeoutW, Remarks), so the normal main-thread-dialog path is unaffected. }
 function WindowTextOf(AWnd: HWND): String;
 var
   Len, Copied: DWORD_PTR;
@@ -169,9 +164,7 @@ begin
 end;
 
 
-// A native dialog = a visible top-level window of this process, not one of OUR windows,
-// that either uses the system dialog class '#32770' (MessageBox / common dialogs) or owns
-// at least one child Button (Task Dialog / custom dialog).
+{ A native dialog = a visible top-level window of this process, not one of OUR windows, that either uses the system dialog class '#32770' (MessageBox / common dialogs) or owns at least one child Button (Task Dialog / custom dialog). }
 function LooksLikeDialog(AWnd: HWND; AButtonCount: Integer): Boolean;
 begin
   Result := SameText(ClassNameOf(AWnd), '#32770') or (AButtonCount > 0);
@@ -284,9 +277,8 @@ begin
 end;
 
 
-// Resolve ASelector against the dialog's buttons. On success ABtn is the matching
-// button HWND (0 when matched by id/role but the button is not separately enumerable,
-// e.g. a Task Dialog — the caller can still dispatch WM_COMMAND by id) and AId its id.
+{ Resolve ASelector against the dialog's buttons.
+  On success ABtn is the matching button HWND (0 when matched by id/role but the button is not separately enumerable, e.g. a Task Dialog — the caller can still dispatch WM_COMMAND by id) and AId its id. }
 function ResolveButton(const AButtons: TList<HWND>; const ASelector: String;
   OUT ABtn: HWND; OUT AId: Integer; OUT ACap: String): Boolean;
 var
@@ -319,9 +311,8 @@ begin
   end;
 
   { # By role keyword }
-  // Ahead of the substring pass: a role word ('ok'/'no'/...) is a deliberate intent and must
-  // beat a loose caption substring (e.g. 'no' inside 'Ignore'). Also reaches a localized common
-  // button — 'ok' -> IDOK works even when the caption reads 'Aceptar'.
+  { Ahead of the substring pass: a role word ('ok'/'no'/...) is a deliberate intent and must beat a loose caption substring (e.g. 'no' inside 'Ignore').
+    Also reaches a localized common button — 'ok' -> IDOK works even when the caption reads 'Aceptar'. }
   RoleId := RoleToId(Sel);
   if RoleId <> 0 then
   begin
@@ -410,11 +401,9 @@ begin
       exit;
     end;
 
-    // Same-thread send (the dialog lives on the main thread, where this runs), so the
-    // window proc is invoked synchronously: the button's WM_COMMAND reaches the dialog,
-    // which calls EndDialog and unwinds its modal loop. SMTO_ABORTIFHUNG guards the rare
-    // cross-thread dialog. BM_CLICK when we have the button HWND; WM_COMMAND-by-id when we
-    // only resolved a standard id (Task Dialog common button with no enumerable child).
+    { Same-thread send (the dialog lives on the main thread, where this runs), so the window proc is invoked synchronously: the button's WM_COMMAND reaches the dialog, which calls EndDialog and unwinds its modal loop.
+      SMTO_ABORTIFHUNG guards the rare cross-thread dialog.
+      BM_CLICK when we have the button HWND; WM_COMMAND-by-id when we only resolved a standard id (Task Dialog common button with no enumerable child). }
     Res := 0;
     if MatchBtn <> 0 then
     begin
@@ -423,24 +412,17 @@ begin
     end
     else
     begin
-      // Unverifiable path, reported as such through AVia. A dialog with no command for this
-      // id just ignores the message and the send still completes, so nothing in the return
-      // values can tell "dismissed" from "ignored". The dialog's own reply is not a signal
-      // either: DefDlgProc's return for an unhandled WM_COMMAND is not contractual (the
-      // DialogProc TRUE/FALSE convention is documented for dialog procedures YOU write, and
-      // the docs state the return is ignored for several messages), and we have not measured
-      // what MessageBoxW / the Task Dialog actually return - so it is not used.
+      { Unverifiable path, reported as such through AVia.
+        A dialog with no command for this id just ignores the message and the send still completes, so nothing in the return values can tell "dismissed" from "ignored".
+        The dialog's own reply is not a signal either: DefDlgProc's return for an unhandled WM_COMMAND is not contractual (the DialogProc TRUE/FALSE convention is documented for dialog procedures YOU write, and the docs state the return is ignored for several messages), and we have not measured what MessageBoxW / the Task Dialog actually return - so it is not used. }
       AVia := 'WM_COMMAND';
       WParam := Winapi.Windows.WPARAM((MatchId and $FFFF) or (BN_CLICKED shl 16));
       Sent := SendMessageTimeout(Dlg, WM_COMMAND, WParam, 0, SMTO_ABORTIFHUNG, 4000, @Res);
     end;
 
-    // A zero return means the send never completed: the window died between our enumeration
-    // and the send, or a dialog owned by a non-main thread was hung and SMTO_ABORTIFHUNG
-    // bailed out. Only the cross-thread case can actually trip it (for a same-thread window
-    // the proc is called directly and the timeout is ignored), but answering clicked:true for
-    // a click the OS says never landed would send the driver on to its next step against a
-    // dialog that is still up. Res itself is NOT a success signal - BM_CLICK returns zero.
+    { A zero return means the send never completed: the window died between our enumeration and the send, or a dialog owned by a non-main thread was hung and SMTO_ABORTIFHUNG bailed out.
+      Only the cross-thread case can actually trip it (for a same-thread window the proc is called directly and the timeout is ignored), but answering clicked:true for a click the OS says never landed would send the driver on to its next step against a dialog that is still up.
+      Res itself is NOT a success signal - BM_CLICK returns zero. }
     if Sent = 0 then
     begin
       AReason := 'send_failed';
