@@ -20,10 +20,10 @@ For full overview, demos & tool reference see **[www.GabrielMoraru.com/autopilot
 In Claude Code this is one command:
 
 ```
-claude mcp add autopilot -- C:\Your\Path\Source\McpServer\Autopilot.Mcp.exe
+claude mcp add autopilot -- C:\Your\Path\McpServer\Autopilot.Mcp.exe
 ```
 
-Write the real full path of that EXE on your disk. Restart the assistant if it was already running. It now has thirteen new tools, all prefixed `autopilot`.
+Write the real full path of that EXE on your disk. Restart the assistant if it was already running. It now has fourteen new tools, all prefixed `autopilot`.
 
 For details see **[www.GabrielMoraru.com/autopilot](https://www.GabrielMoraru.com/autopilot)**
 
@@ -37,7 +37,7 @@ Talk to the assistant about your own app in plain words. It resolves the control
 
 ## AI-INSTRUCTIONS.md — optional, and you write nothing in it
 
-`AI-INSTRUCTIONS.md` in this repository is already written. It is a briefing **for the AI, not for you**: the thirteen tools, their arguments, the error codes, and how to drive an application in few and cheap turns.
+`AI-INSTRUCTIONS.md` in this repository is already written. It is a briefing **for the AI, not for you**: the fourteen tools, their arguments, the error codes, and how to drive an application in few and cheap turns.
 
 To use it, copy the file into your own project folder and add one line to your project's `CLAUDE.md` so the assistant reads it:
 
