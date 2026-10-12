@@ -6,7 +6,7 @@
 --------------------------------------------------------------------------------------------------------------
    - VCL demo form for the Autopilot bridge.
    - One form with four controls (btnIncrement, lblCounter, edtName, lblNameEcho) to exercise list_tree, click, and get_text end-to-end.
-   - Test fixtures for "_Local info\E2E tests\Test-AllTools.ps1": an action bound to a TButton and a TSpeedButton
+   - Test fixtures for "Tests\E2E tests\Test-AllTools.ps1": an action bound to a TButton and a TSpeedButton
      (actFixture -> lblActionResult), a check box (chkFixture -> lblCheckState), a label placed on a panel
      (pnlFixture.lblInPanel) for the path rule, and a button whose label changes one second later (btnDelayed ->
      tmrDelayed -> lblDelayed) for wait_for.
