@@ -1,4 +1,4 @@
-﻿<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
     <PropertyGroup>
         <Base>True</Base>
         <AppType>Application</AppType>
@@ -143,7 +143,7 @@
     <PropertyGroup Condition="'$(Base)'!=''">
         <SanitizedProjectName>Autopilot_DemoFmx</SanitizedProjectName>
         <DCC_Define>AUTOPILOT;$(DCC_Define)</DCC_Define>
-        <DCC_UnitSearchPath>..\Source\Bridge;$(DCC_UnitSearchPath)</DCC_UnitSearchPath>
+        <DCC_UnitSearchPath>..\Bridge;$(DCC_UnitSearchPath)</DCC_UnitSearchPath>
         <DCC_ImageBase>00400000</DCC_ImageBase>
         <DCC_Namespace>System;Xml;Data;Datasnap;Web;Soap;$(DCC_Namespace)</DCC_Namespace>
         <Icns_MainIcns>$(BDS)\bin\delphi_PROJECTICNS.icns</Icns_MainIcns>
@@ -258,9 +258,9 @@
             <Form>frmFmxMain</Form>
             <FormType>fmx</FormType>
         </DCCReference>
-        <DCCReference Include="..\Source\Bridge\Autopilot.Bridge.Core.pas"/>
-        <DCCReference Include="..\Source\Bridge\Autopilot.Bridge.Log.pas"/>
-        <DCCReference Include="..\Source\Bridge\Autopilot.Bridge.Fmx.pas"/>
+        <DCCReference Include="..\Bridge\Autopilot.Bridge.Core.pas"/>
+        <DCCReference Include="..\Bridge\Autopilot.Bridge.Log.pas"/>
+        <DCCReference Include="..\Bridge\Autopilot.Bridge.Fmx.pas"/>
         <BuildConfiguration Include="Base">
             <Key>Base</Key>
         </BuildConfiguration>

@@ -64,6 +64,25 @@ object frmFmxMain: TfrmFmxMain
     Size.Height = 24.000000000000000000
     Size.PlatformDefault = False
     OnChangeTracking = edtNameChangeTracking
+    OnKeyDown = edtNameKeyDown
+  end
+  object lblLastKey: TLabel
+    Hint = 'Test fixture: edtName.OnKeyDown writes the last key code and Ctrl state here'
+    Position.X = 272.000000000000000000
+    Position.Y = 184.000000000000000000
+    Size.Width = 192.000000000000000000
+    Size.Height = 17.000000000000000000
+    Size.PlatformDefault = False
+    Text = '-'
+  end
+  object lblSaveCount: TLabel
+    Hint = 'Test fixture: actSave (ShortCut Ctrl+S) writes its run count here'
+    Position.X = 272.000000000000000000
+    Position.Y = 202.000000000000000000
+    Size.Width = 192.000000000000000000
+    Size.Height = 17.000000000000000000
+    Size.PlatformDefault = False
+    Text = '-'
   end
   object cbxFlag: TCheckBox
     Position.X = 16.000000000000000000
@@ -176,6 +195,12 @@ object frmFmxMain: TfrmFmxMain
       Text = 'Run action'
       Hint = 'Test fixture: an action bound to btnAction and sbAction'
       OnExecute = actFixtureExecute
+    end
+    object actSave: TAction
+      Text = 'Save'
+      Hint = 'Test fixture: ShortCut Ctrl+S, counts its runs in lblSaveCount'
+      ShortCut = 16467
+      OnExecute = actSaveExecute
     end
   end
 end

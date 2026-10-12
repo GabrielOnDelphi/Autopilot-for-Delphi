@@ -39,7 +39,12 @@ type
     lblDelayed     : TLabel;
     btnDelayed     : TButton;
     tmrDelayed     : TTimer;
+    lblLastKey     : TLabel;
+    lblSaveCount   : TLabel;
+    actSave        : TAction;
     procedure btnIncrementClick(Sender: TObject);
+    procedure edtNameKeyDown(Sender: TObject; var Key: Word; Shift: TShiftState);
+    procedure actSaveExecute(Sender: TObject);
     procedure edtNameChange(Sender: TObject);
     procedure btnDialogClick(Sender: TObject);
     procedure actFixtureExecute(Sender: TObject);
@@ -50,6 +55,7 @@ type
     FCounter: Integer;
     FActionRuns: Integer;
     FDelayedRuns: Integer;
+    FSaveRuns: Integer;
   end;
 
 var
@@ -71,6 +77,22 @@ end;
 procedure TfrmMain.edtNameChange(Sender: TObject);
 begin
   lblNameEcho.Caption := edtName.Text;
+end;
+
+
+// send_keys fixture: the last key that reached edtName.OnKeyDown, e.g. 'Key 13' or 'Key 90 Ctrl'.
+procedure TfrmMain.edtNameKeyDown(Sender: TObject; var Key: Word; Shift: TShiftState);
+begin
+  if ssCtrl in Shift
+  then lblLastKey.Caption := 'Key ' + IntToStr(Key) + ' Ctrl'
+  else lblLastKey.Caption := 'Key ' + IntToStr(Key);
+end;
+
+
+procedure TfrmMain.actSaveExecute(Sender: TObject);
+begin
+  Inc(FSaveRuns);
+  lblSaveCount.Caption := 'Saved ' + IntToStr(FSaveRuns);
 end;
 
 

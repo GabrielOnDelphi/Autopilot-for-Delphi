@@ -41,7 +41,12 @@ type
     tmrDelayed     : TTimer;
     actlFixture    : TActionList;
     actFixture     : TAction;
+    lblLastKey     : TLabel;
+    lblSaveCount   : TLabel;
+    actSave        : TAction;
     procedure btnIncrementClick(Sender: TObject);
+    procedure edtNameKeyDown(Sender: TObject; var Key: Word; var KeyChar: WideChar; Shift: TShiftState);
+    procedure actSaveExecute(Sender: TObject);
     procedure edtNameChangeTracking(Sender: TObject);
     procedure cbxFlagChange(Sender: TObject);
     procedure btnDialogClick(Sender: TObject);
@@ -52,6 +57,7 @@ type
     FCounter: Integer;
     FActionRuns: Integer;
     FDelayedRuns: Integer;
+    FSaveRuns: Integer;
   end;
 
 var
@@ -81,6 +87,23 @@ begin
   if cbxFlag.IsChecked
   then lblFlag.Text := 'on'
   else lblFlag.Text := 'off';
+end;
+
+
+// send_keys fixture: the last virtual key that reached edtName.OnKeyDown, e.g. 'Key 13' or 'Key 90 Ctrl'. A typed character arrives with Key = 0 and is skipped.
+procedure TfrmFmxMain.edtNameKeyDown(Sender: TObject; var Key: Word; var KeyChar: WideChar; Shift: TShiftState);
+begin
+  if Key = 0 then EXIT;
+  if ssCtrl in Shift
+  then lblLastKey.Text := 'Key ' + IntToStr(Key) + ' Ctrl'
+  else lblLastKey.Text := 'Key ' + IntToStr(Key);
+end;
+
+
+procedure TfrmFmxMain.actSaveExecute(Sender: TObject);
+begin
+  Inc(FSaveRuns);
+  lblSaveCount.Text := 'Saved ' + IntToStr(FSaveRuns);
 end;
 
 

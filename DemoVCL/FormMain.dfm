@@ -49,6 +49,23 @@ object frmMain: TfrmMain
     TabOrder = 1
     Text = ''
     OnChange = edtNameChange
+    OnKeyDown = edtNameKeyDown
+  end
+  object lblLastKey: TLabel
+    Left = 264
+    Top = 160
+    Width = 4
+    Height = 15
+    Hint = 'Test fixture: edtName.OnKeyDown writes the last key code and Ctrl state here'
+    Caption = '-'
+  end
+  object lblSaveCount: TLabel
+    Left = 264
+    Top = 178
+    Width = 4
+    Height = 15
+    Hint = 'Test fixture: actSave (ShortCut Ctrl+S) writes its run count here'
+    Caption = '-'
   end
   object btnDialog: TButton
     Left = 16
@@ -147,6 +164,12 @@ object frmMain: TfrmMain
       Caption = 'Run action'
       Hint = 'Test fixture: an action bound to btnAction and sbAction'
       OnExecute = actFixtureExecute
+    end
+    object actSave: TAction
+      Caption = 'Save'
+      Hint = 'Test fixture: ShortCut Ctrl+S, counts its runs in lblSaveCount'
+      ShortCut = 16467
+      OnExecute = actSaveExecute
     end
   end
 end
