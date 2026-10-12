@@ -85,7 +85,7 @@ modules/
 /ToDo/
 /_Release Package
 /DemoVCL-Video
-/Wire test
+/Tests/Wire test
 /MCP/
 /Autopilot.groupproj
 CLAUDE.md
@@ -96,9 +96,10 @@ DemoVCL/Autopilot.Demo.res
 
 McpServer/*
 !McpServer/Autopilot.Mcp.exe
+!McpServer/THIRD-PARTY-NOTICES.txt
 
 # Private test and publish tools, copied from the version 3 folder on 2026-10-12
-/E2E tests/
+/Tests/E2E tests/
 /Video demo pre-flight/
 /Publish-McpServer.ps1
 
