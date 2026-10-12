@@ -26,7 +26,7 @@ type
     FPipeName       : String;
     FPipeHandle     : THandle;       // current pipe instance; INVALID_HANDLE_VALUE between client sessions
     FDiscoveryPath  : String;        // %TEMP%\Autopilot\active\<PID>.pipe — empty when not written
-    FDiscoveryTried : Boolean;       // the discovery write is attempted ONCE, like the old worker prologue
+    FDiscoveryTried : Boolean;       // the discovery write is attempted ONCE
     FStopping       : Boolean;       // set by WakeAndStop; AcceptConnection swallows the wake phantom off it
 
     procedure WriteDiscoveryFile;
@@ -79,9 +79,9 @@ function ConvertSidToStringSidW(Sid: PSID; OUT StringSid: PWideChar): BOOL; stdc
   external AdvApi32 NAME 'ConvertSidToStringSidW';
 
 
-// Look up the current process token's User SID and return it as an SDDL-friendly string.
-// Result is empty on failure; the caller must fall back to a default ACL.
-// The Windows StringSid returned by ConvertSidToStringSid is freed via LocalFree.
+{ Look up the current process token's User SID and return it as an SDDL-friendly string.
+  Result is empty on failure; the caller must fall back to a default ACL.
+  The Windows StringSid returned by ConvertSidToStringSid is freed via LocalFree. }
 function GetCurrentUserSidString: String;
 var
   Token: THandle;
@@ -142,11 +142,9 @@ end;
 
 destructor TPipeTransport.Destroy;
 begin
-  // Backstop only: the worker's exit paths close the handle themselves (via
-  // AcceptConnection's failure branch or RecycleConnection). This fires when the
-  // worker died from an unhandled exception that bypassed its own close path.
-  // The worker releases the transport AFTER `inherited` (WaitFor) in its own
-  // destructor, so this cannot race the worker thread.
+  { Backstop only: the worker's exit paths close the handle themselves (via AcceptConnection's failure branch or RecycleConnection).
+    This fires when the worker died from an unhandled exception that bypassed its own close path.
+    The worker releases the transport AFTER `inherited` (WaitFor) in its own destructor, so this cannot race the worker thread. }
   if FPipeHandle <> INVALID_HANDLE_VALUE then
   begin
     DisconnectNamedPipe(FPipeHandle);
@@ -166,17 +164,14 @@ begin
   Folder := DiscoveryFolder;
   Pid := IntToStr(GetCurrentProcessId);
   FDiscoveryPath := TPath.Combine(Folder, Pid + '.pipe');
-  // Write atomically: write to a sibling temp file, then MoveFileExW with
-  // MOVEFILE_REPLACE_EXISTING. NTFS guarantees the rename is observed
-  // atomically by other processes. Without this, the MCP server can read
-  // a zero-byte file in the open-truncate-write window of WriteAllText.
+  { Write atomically: write to a sibling temp file, then MoveFileExW with MOVEFILE_REPLACE_EXISTING.
+    NTFS guarantees the rename is observed atomically by other processes.
+    Without this, the MCP server can read a zero-byte file in the open-truncate-write window of WriteAllText. }
   TempPath := FDiscoveryPath + '.tmp';
   TFile.WriteAllText(TempPath, FPipeName, TEncoding.UTF8);
   if not MoveFileExW(PWideChar(TempPath), PWideChar(FDiscoveryPath), MOVEFILE_REPLACE_EXISTING) then
   begin
-    // Capture the rename failure code BEFORE the fallback TFile calls — those make
-    // their own Win32 calls (DeleteFile / CreateFile) that overwrite GetLastError,
-    // so reading it after them would log a misleading (usually 0) code.
+    { Capture the rename failure code BEFORE the fallback TFile calls - those make their own Win32 calls (DeleteFile / CreateFile) that overwrite GetLastError, so reading it after them would log a misleading (usually 0) code. }
     MoveErr := GetLastError;
     // Fall back to a direct write so the bridge stays discoverable even if rename fails.
     TFile.Delete(TempPath);
@@ -193,8 +188,8 @@ begin
     try
       TFile.Delete(FDiscoveryPath);
     except
-      // Don't propagate — called from WakeAndStop/destructor paths that must not raise.
-      // The MCP server will treat the stale file as a dead target on its next connect attempt.
+      { Don't propagate - called from WakeAndStop/destructor paths that must not raise.
+        The MCP server will treat the stale file as a dead target on its next connect attempt. }
     end;
   FDiscoveryPath := '';
 end;
@@ -208,12 +203,9 @@ var
   SAPtr: PSecurityAttributes;
   LastErr: DWORD;
 begin
-  // Owner-only ACL: only the current user can connect. The MCP server must run as the
-  // same OS user as the target (documented constraint, Plans/04 R7).
-  //
-  // The earlier attempt with the well-known SID `OW` ("Owner Rights") silently failed
-  // because we weren't setting an owner in the descriptor. Pulling the user's actual SID
-  // out of the process token and embedding it in the SDDL string works.
+  { Owner-only ACL: only the current user can connect. The MCP server must run as the same OS user as the target.
+    Do not use the well-known SID `OW` ("Owner Rights") instead: it fails silently, because no owner is set in the descriptor.
+    Pulling the user's actual SID out of the process token and embedding it in the SDDL string works. }
   SD     := NIL;
   SAPtr  := NIL;
   UserSid := GetCurrentUserSidString;
@@ -241,7 +233,7 @@ begin
                 PWideChar(FPipeName),
                 PIPE_ACCESS_DUPLEX or FILE_FLAG_FIRST_PIPE_INSTANCE,
                 PIPE_TYPE_BYTE or PIPE_READMODE_BYTE or PIPE_WAIT,
-                1,                  // max instances — single-client per Plans/01
+                1,                  // max instances: one client at a time
                 64 * 1024,          // out buffer hint
                 64 * 1024,          // in buffer hint
                 0,                  // default timeout
@@ -264,10 +256,8 @@ end;
 
 procedure TPipeTransport.StartListening;
 begin
-  // Discovery file is best-effort, attempted ONCE (same as the pre-split worker
-  // prologue — written even if pipe creation later fails). If TFile.WriteAllText
-  // raises (disk full, permission denied, virus scanner locking the dir), the
-  // bridge can still serve clients that already know the pipe name via attach(pid).
+  { Discovery file is best-effort, attempted ONCE (written even if pipe creation later fails).
+    If TFile.WriteAllText raises (disk full, permission denied, virus scanner locking the dir), the bridge can still serve clients that already know the pipe name via attach(pid). }
   if not FDiscoveryTried then
   begin
     FDiscoveryTried := TRUE;
@@ -281,9 +271,8 @@ begin
     end;
   end;
 
-  // (Re-)create a pipe instance for each client session.
-  // FILE_FLAG_FIRST_PIPE_INSTANCE on the first call rejects an existing same-named pipe,
-  // which is what we want — if another instance of this exe is up, we want to know.
+  { (Re-)create a pipe instance for each client session.
+    FILE_FLAG_FIRST_PIPE_INSTANCE on the first call rejects an existing same-named pipe, which is what we want - if another instance of this exe is up, we want to know. }
   FPipeHandle := CreatePipeInstance;
 end;
 
@@ -293,9 +282,8 @@ var
   Connected: BOOL;
 begin
   Connected := ConnectNamedPipe(FPipeHandle, NIL);
-  // ConnectNamedPipe returns FALSE with ERROR_PIPE_CONNECTED if a client connected
-  // between CreateNamedPipe and ConnectNamedPipe. That's actually success (quirk #1).
-  // Returns FALSE with ERROR_OPERATION_ABORTED if WakeAndStop called CancelSynchronousIo.
+  { ConnectNamedPipe returns FALSE with ERROR_PIPE_CONNECTED if a client connected between CreateNamedPipe and ConnectNamedPipe. That's actually success.
+    Returns FALSE with ERROR_OPERATION_ABORTED if WakeAndStop called CancelSynchronousIo. }
   if (not Connected) and (GetLastError <> ERROR_PIPE_CONNECTED) then
   begin
     CloseHandle(FPipeHandle);
@@ -303,10 +291,8 @@ begin
     exit(FALSE);
   end;
 
-  // Quirk #3: WakeAndStop self-connects via CreateFileW to unblock us — that produces
-  // a successful "connection" that must not be handshaken with (the handshake used to
-  // raise EReadError on it, on this thread while the main thread concurrently frees handles,
-  // racing the RTL's exception machinery — was AVing in @HandleAnyException, Plans/04). Swallow it.
+  { WakeAndStop self-connects via CreateFileW to unblock us - that produces a successful "connection" that must not be handshaken with: serving it on this thread while the main thread concurrently frees handles races the RTL's exception machinery (an access violation in @HandleAnyException).
+    Swallow it. }
   if FStopping then
   begin
     DisconnectNamedPipe(FPipeHandle);
@@ -343,26 +329,21 @@ var
   Attempts: Integer;
   Err: DWORD;
 begin
-  // Order matters: FStopping FIRST, so the self-connect below is recognized as a
-  // phantom inside AcceptConnection regardless of which wake mechanism lands.
+  { Order matters: FStopping FIRST, so the self-connect below is recognized as a phantom inside AcceptConnection regardless of which wake mechanism lands. }
   FStopping := TRUE;
 
-  // Wake the worker. Two cooperating mechanisms cover the small race window where the worker
-  // is between CreatePipeInstance and ConnectNamedPipe (CSI is a no-op there) and the larger
-  // window where it's blocked inside ConnectNamedPipe:
-  //   (1) CSI cancels in-flight sync I/O.
-  //   (2) Self-connect via CreateFileW satisfies ConnectNamedPipe.
+  { Wake the worker. Two cooperating mechanisms cover the small race window where the worker is between CreatePipeInstance and ConnectNamedPipe (CSI is a no-op there) and the larger window where it's blocked inside ConnectNamedPipe:
+      (1) CSI cancels in-flight sync I/O.
+      (2) Self-connect via CreateFileW satisfies ConnectNamedPipe. }
   if (AWorkerThread <> NIL) and (AWorkerThread.Handle <> 0) then
     CancelSynchronousIo(AWorkerThread.Handle);
 
-  // Retry briefly. The pipe is in one of three states:
-  //   (a) Worker already exited via CSI — pipe gone (ERROR_FILE_NOT_FOUND), no wake needed.
-  //   (b) Worker is past CreatePipeInstance but not yet inside ConnectNamedPipe — pipe exists
-  //       but transiently busy (ERROR_PIPE_BUSY).
-  //   (c) Worker is between iterations and CreatePipeInstance hasn't run yet for this loop —
-  //       pipe gone briefly (ERROR_FILE_NOT_FOUND), comes back within tens of ms.
-  // We can't distinguish (a) from (c) without coordination, so retry briefly on FILE_NOT_FOUND
-  // too. If the worker is genuinely gone, the owner's WaitFor returns immediately anyway.
+  { Retry briefly. The pipe is in one of three states:
+      (a) Worker already exited via CSI - pipe gone (ERROR_FILE_NOT_FOUND), no wake needed.
+      (b) Worker is past CreatePipeInstance but not yet inside ConnectNamedPipe - pipe exists but transiently busy (ERROR_PIPE_BUSY).
+      (c) Worker is between iterations and CreatePipeInstance hasn't run yet for this loop - pipe gone briefly (ERROR_FILE_NOT_FOUND), comes back within tens of ms.
+    We can't distinguish (a) from (c) without coordination, so retry briefly on FILE_NOT_FOUND too.
+    If the worker is genuinely gone, the owner's WaitFor returns immediately anyway. }
   for Attempts := 1 to 20 do
   begin
     WakeClient := CreateFileW(PWideChar(FPipeName), GENERIC_READ or GENERIC_WRITE,
