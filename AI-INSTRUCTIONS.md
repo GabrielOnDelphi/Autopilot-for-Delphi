@@ -1,4 +1,4 @@
-# Autopilot for Delphi - instructions for AI sessions
+﻿# Autopilot for Delphi - instructions for AI sessions
 
 > **This file is a briefing** for an AI coding assistant (Claude Code, Claude Desktop, Cursor, Cline, or any MCP-aware host) that has the `autopilot` MCP server registered and wants to drive a running Delphi VCL or FMX application. Read it once at the start of a session; you do not need to re-read.
 > 
@@ -10,14 +10,14 @@
 
 ## TL;DR - the eight rules
 
-1. **Minimize turns, not tool calls.** One LLM turn ? 1-8 s of inference cost. The bridge itself is sub-millisecond. Ten tool calls in one turn is ~10� cheaper than one call per turn for ten turns.
+1. **Minimize turns, not tool calls.** One LLM turn ≈ 1-8 s of inference cost. The bridge itself is sub-millisecond. Ten tool calls in one turn is ~10× cheaper than one call per turn for ten turns.
 2. **Use `count=N` on `click` for repetitive same-action work.** Range 1..1000. One tool call, one turn, regardless of N.
 3. **Bundle independent tool calls into a single assistant turn (parallel tool_use).** If you need to click A, set text on B, and read C, emit all three tool_use blocks in one response - do not split into three turns.
 4. **Don't pre-flight with `list_tree` if you already know the path.** Discovery once, then act.
 5. **`set_property` returns `availableProperties` on a typo.** A single failed call gives you every writable property with its `kind` and live `currentValue`. Use it - do not blind-guess property names twice.
 6. **`screenshot` is a fallback, not a verification.** For correctness checks, `get_text(...)` returns the exact string in a few ms with no image tokens. Reserve `screenshot` for layout/visual bugs you cannot read structurally - and then pass `path` to capture only the control you care about and `maxWidth` to shrink the image: both cut the image tokens.
 7. **`set_property` skips writes that wouldn't change the value (write-side elision).** The response carries `elided: true|false` - `true` means `OnChange` did NOT fire. Use that to distinguish "I caused a change" from "the value was already correct".
-8. **Hand off scripted sequences of ? 5 sequential tool calls to a dedicated subagent.** Not relevant on hosts other than Claude Code; on Claude Code, see "Subagent dispatch" below.
+8. **Hand off scripted sequences of ≥ 5 sequential tool calls to a dedicated subagent.** Not relevant on hosts other than Claude Code; on Claude Code, see "Subagent dispatch" below.
 
 **Launching an app no longer steals the keyboard focus** - a LightSaber VCL app built with `AUTOPILOT` comes up visible but unfocused (`TLightForm` gates its startup windows with `WS_EX_NOACTIVATE`), so you can launch and drive it while the user keeps typing elsewhere; this does NOT apply to FMX, nor to an app that calls `SetForegroundWindow` / `Application.BringToFront` during startup - including an app with a `TCoolTrayIcon` whose `FocusFormOnShow` is still TRUE (that component grabs the foreground on every show of its owner form; clear the field in `FormCreate`, under an AUTOPILOT conditional) - see `Issues\No focus steal\`.
 
@@ -110,7 +110,7 @@ Errors: `-32001 not_found`, `-32003 control_disabled`, `-32005 unsupported_actio
 
 Reads `Caption` / `Text` / `Lines.Text` via RTTI. Returns the exact string (including embedded `#10` newlines - that's why the wire framing is length-prefixed instead of newline-delimited).
 
-Use this (NOT `screenshot`) to verify that a click produced the expected state. It is ~1000� cheaper.
+Use this (NOT `screenshot`) to verify that a click produced the expected state. It is ~1000× cheaper.
 
 ### `set_text`
 
@@ -118,7 +118,7 @@ Use this (NOT `screenshot`) to verify that a click produced the expected state. 
 
 Writes `Text` (or `Caption` for label-class controls) via RTTI. `OnChange` fires synchronously as a side effect of the RTL setter chain. There is no `mode='message'` opt-in yet - file a feature request if you hit a fidelity gap.
 
-**Data-aware VCL controls** (anything with a published `DataField <> ''` and a `DataSource` whose `DataSet` is assigned; verified with `TDBEdit` and `TDBMemo`) get the same chain a typing user triggers: `DataSource.Edit` BEFORE the write (the dataset enters `dsEdit`; `TDBEdit` even keeps its Windows edit read-only until then) and `CM_EXIT` AFTER it (the control's `CMExit` runs `DataLink.UpdateRecord`, then the regular `OnExit`). Without that a plain RTTI write only changes the window text and the dataset discards it on the next scroll. The response carries `dataBound: true` when the chain ran. The value sits in the field buffer afterwards - it is persisted by whatever the form does next (`Post`, a Save button, .), exactly as for a user. Resolved via RTTI only, so apps without `Data.DB` link nothing extra. FMX is unchanged.
+**Data-aware VCL controls** (anything with a published `DataField <> ''` and a `DataSource` whose `DataSet` is assigned; verified with `TDBEdit` and `TDBMemo`) get the same chain a typing user triggers: `DataSource.Edit` BEFORE the write (the dataset enters `dsEdit`; `TDBEdit` even keeps its Windows edit read-only until then) and `CM_EXIT` AFTER it (the control's `CMExit` runs `DataLink.UpdateRecord`, then the regular `OnExit`). Without that a plain RTTI write only changes the window text and the dataset discards it on the next scroll. The response carries `dataBound: true` when the chain ran. The value sits in the field buffer afterwards - it is persisted by whatever the form does next (`Post`, a Save button, …), exactly as for a user. Resolved via RTTI only, so apps without `Data.DB` link nothing extra. FMX is unchanged.
 
 The same rules a user hits apply, and each is reported as `-32005 unsupported_action` with the reason in the message instead of writing blindly: control `ReadOnly = TRUE`, field not modifiable (read-only, calculated, lookup), dataset `CanModify = FALSE` (read-only cursor), `DataSource.AutoEdit = FALSE` while the dataset is not already in `dsEdit`/`dsInsert`, `OnBeforeEdit` aborting, or a data-aware control without a writable `Text` (`TDBLookupComboBox`, `TDBRadioGroup` - use `click`/`set_property` there). A dataset the app already put into edit mode is left alone. `TDBComboBox` is untested: `WM_SETTEXT` does not reach its `Change`, so expect the field to stay unchanged there.
 
@@ -148,7 +148,7 @@ A data-aware VCL `TDBCheckBox` writes to its `DataLink` only from the protected 
 
 **Disabled controls:** on a disabled control `set_property` answers `-32003 control_disabled`, with one exception: the property `Enabled` itself (that exact name in any letter case, no dotted path) may be set to `true` or `false`, so a control you disabled with `set_property` can be enabled again. `false` on a control that is already disabled answers `elided: true`. Every other property (for example `Caption`, or a dotted `Font.Size`) still answers `-32003`.
 
-**Discovery on unknown property name:** the failure response carries `error.data.availableProperties` - a JSON array of `{name, kind, currentValue?}` entries covering every writable published property. **Use this aggressively.** One failed `set_property` shows you the entire writable surface AND the live values - much cheaper than a chain of `get_text` calls or a `screenshot`. `kind:'class'` entries (Font, Lines, Brush, Fill, .) are candidates for one-level dotted writes.
+**Discovery on unknown property name:** the failure response carries `error.data.availableProperties` - a JSON array of `{name, kind, currentValue?}` entries covering every writable published property. **Use this aggressively.** One failed `set_property` shows you the entire writable surface AND the live values - much cheaper than a chain of `get_text` calls or a `screenshot`. `kind:'class'` entries (Font, Lines, Brush, Fill, …) are candidates for one-level dotted writes.
 
 **Write-side elision** (this is important): before each write, the bridge reads the live value and skips `SetValue` if the coerced new value equals it. The response carries `elided: true|false`:
 
@@ -166,12 +166,12 @@ Comparison is type-aware: string identity, integer/int64 equality (TAlphaColor/T
 **The general-purpose live-state reader.** Returns any readable published property by RTTI. The returned `value` string is exactly what `set_property` would accept back - round-trip-safe.
 
 - Examples:
-  - `read_property(path='frmMain.btnSave', propName='Tag')` ? `{value: '42', kind: 'integer'}`
-  - `read_property(path='frmMain.lblStatus', propName='Color')` ? `{value: 'clRed', kind: 'color'}` (VCL `TColor`)
-  - `read_property(path='frmMain.rectBox', propName='Fill.Color')` ? `{value: 'claRed', kind: 'alphacolor'}` (a named `TAlphaColor`, VCL and FMX); a color with no name reads as `'#AARRGGBB'`, e.g. `{value: '#FFFF8000', kind: 'alphacolor'}`
-  - `read_property(path='frmMain.cmbItems', propName='ItemIndex')` ? `{value: '2', kind: 'integer'}`
-  - `read_property(path='frmMain.btnSave', propName='Font.Size')` ? `{value: '14', kind: 'integer'}` (one-level dotted)
-  - `read_property(path='frmMain.pnlToolbar', propName='BevelEdges')` ? `{value: '[beLeft,beTop]', kind: 'set'}`
+  - `read_property(path='frmMain.btnSave', propName='Tag')` → `{value: '42', kind: 'integer'}`
+  - `read_property(path='frmMain.lblStatus', propName='Color')` → `{value: 'clRed', kind: 'color'}` (VCL `TColor`)
+  - `read_property(path='frmMain.rectBox', propName='Fill.Color')` → `{value: 'claRed', kind: 'alphacolor'}` (a named `TAlphaColor`, VCL and FMX); a color with no name reads as `'#AARRGGBB'`, e.g. `{value: '#FFFF8000', kind: 'alphacolor'}`
+  - `read_property(path='frmMain.cmbItems', propName='ItemIndex')` → `{value: '2', kind: 'integer'}`
+  - `read_property(path='frmMain.btnSave', propName='Font.Size')` → `{value: '14', kind: 'integer'}` (one-level dotted)
+  - `read_property(path='frmMain.pnlToolbar', propName='BevelEdges')` → `{value: '[beLeft,beTop]', kind: 'set'}`
 
 **Use this instead of writing diagnostic files in the target.** A common anti-pattern: the AI patches the host source with `Diag := TStringList.Create; Diag.Add('X = ' + ...); Diag.SaveToFile(...)`, recompiles, runs, reads the file. If `X` is a published property on a discoverable component, `read_property` returns it in one round-trip with **no recompile**. (If `X` is a local variable or a function return - see "Debug channel selection" below.)
 
@@ -267,7 +267,7 @@ When you need to inspect the host app's state during a debug session, pick the c
 The bridge round-trip is sub-millisecond; the cost is **per-turn LLM inference**:
 
 ```
-total_time ? (turns � per_turn_inference) + (tool_calls � ~1ms bridge_time)
+total_time ≈ (turns × per_turn_inference) + (tool_calls × ~1ms bridge_time)
 ```
 
 Per-turn inference is ~1-8 s on Opus 4.7, ~0.3-1 s on Haiku 4.5 - the bridge is noise next to either. Measured warm-cache Opus 4.7 (2026-05): a turn costs ~20-26 s whether it carries one tool call or many, and `click(count=1000)` spent 62 ms of total bridge time. **The LLM turn dominates every scenario - the eight rules above all exist to remove *turns*, not bridge calls.** The one case where extra turns are unavoidable is a react-to-result loop ("click Save; if status shows 'error', read the error label"): the LLM must see each intermediate result, so use the most capable model and don't micro-optimize.
@@ -278,7 +278,7 @@ Per-turn inference is ~1-8 s on Opus 4.7, ~0.3-1 s on Haiku 4.5 - the bridge is 
 
 ## Subagent dispatch (Claude Code only)
 
-On Claude Code with the project-scoped `autopilot-script-runner` agent installed (`.claude/agents/autopilot-script-runner.md`), delegate **scripted sequences of ? 5 sequential tool calls** to it. It runs on Haiku 4.5 at `effort: low` - no extended thinking, pure tool dispatch, ~2.5 s/call.
+On Claude Code with the project-scoped `autopilot-script-runner` agent installed (`.claude/agents/autopilot-script-runner.md`), delegate **scripted sequences of ≥ 5 sequential tool calls** to it. It runs on Haiku 4.5 at `effort: low` - no extended thinking, pure tool dispatch, ~2.5 s/call.
 
 **When to delegate to `autopilot-script-runner`:**
 
@@ -347,7 +347,7 @@ Three checks, in order:
    
    If empty but the discovery file exists: bridge crashed or `StopBridge` was called.
 
-3. **Is the MCP server registered?** Tool names appear in your tool list as `mcp__autopilot__*`. If absent, the customer needs to re-register the MCP server with their host (`claude mcp add autopilot ...` on Claude Code). **Registering does NOT help the session you are in right now** - an MCP host reads its server list once at session start, so `mcp__autopilot__*` tools only appear in the *next* session. Confirm with `claude mcp list` that it shows `? Connected`, then either start a fresh session, or, if you need to act in the current one, drive the pipe directly (next subsection).
+3. **Is the MCP server registered?** Tool names appear in your tool list as `mcp__autopilot__*`. If absent, the customer needs to re-register the MCP server with their host (`claude mcp add autopilot ...` on Claude Code). **Registering does NOT help the session you are in right now** - an MCP host reads its server list once at session start, so `mcp__autopilot__*` tools only appear in the *next* session. Confirm with `claude mcp list` that it shows `✓ Connected`, then either start a fresh session, or, if you need to act in the current one, drive the pipe directly (next subsection).
 
 ---
 
@@ -361,7 +361,7 @@ When the `mcp__autopilot__*` tools are not loaded (you just registered the serve
 
 1. Find the pipe: `\\.\pipe\Autopilot.<ExeBaseName>.<PID>` (enumerate `\\.\pipe\` for `Autopilot.*`, or read the discovery file in `%TEMP%\Autopilot\active\<PID>.pipe` whose contents ARE the pipe name).
 2. Connect. The target sends a `{"hello":{"protocolVersion":1,...}}` frame **first**.
-3. Reply with `{"helloAck":{"protocolVersion":1}}`. (Mismatched version ? the worker drops the session.)
+3. Reply with `{"helloAck":{"protocolVersion":1}}`. (Mismatched version → the worker drops the session.)
 4. Send requests `{"id":N,"cmd":"...","args":{...}}`; read one response frame `{"id":N,"ok":true,"result":{...}}` per request. `args` keys are `path`, `count`, `text`, `checked`, `propName`, `value`, `form` (camelCase, matching the tool args above).
 
 **Minimal PowerShell client** (handshake + one command):
@@ -387,9 +387,9 @@ This is a fallback, not the preferred path - the MCP tools handle framing, retri
 
 ## Shutting down the target - prefer the bridge, kill only when it's actually faster
 
-**Bridge close path** - one `click` on File?Exit or the form's close button. The app runs `OnCloseQuery`/`OnClose`/`FormPreRelease`, writes its INI, deletes the discovery file, tears down the pipe. One tool call, one turn, ~1 ms.
+**Bridge close path** - one `click` on File→Exit or the form's close button. The app runs `OnCloseQuery`/`OnClose`/`FormPreRelease`, writes its INI, deletes the discovery file, tears down the pipe. One tool call, one turn, ~1 ms.
 
-- `click(path='frmMain.mniFileExit')` - whatever the host names its File?Exit item. Click the menu item or button, NOT the `TAction` behind it (`-32005`, see the `click` reference). If the only close path is an unbound action, kill instead.
+- `click(path='frmMain.mniFileExit')` - whatever the host names its File→Exit item. Click the menu item or button, NOT the `TAction` behind it (`-32005`, see the `click` reference). If the only close path is an unbound action, kill instead.
 
 **Kill path** - `Stop-Process` when the app is hung or its saved state is disposable. AI sessions waste turns wrapping this in a `Get-Process` pre-check, a screenshot, or window-rect math that fails on minimized/renamed targets. Just kill, one line - `-ErrorAction SilentlyContinue` makes the no-such-process case a no-op:
 
