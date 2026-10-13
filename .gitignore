@@ -93,6 +93,14 @@ HandOver.md
 ToDo.md
 descript.ion
 DemoVCL/Autopilot.Demo.res
+dunitx-results.xml
+
+# Android deploy output written into the FMX demo folder by every Android build
+/DemoFmx/CompiledResources/
+/DemoFmx/PackagedResources.zip
+/DemoFmx/BuildClassesDex.stamp
+/DemoFmx/AndroidManifest-merged.xml
+/DemoFmx/*List.txt
 
 McpServer/*
 !McpServer/Autopilot.Mcp.exe
