@@ -49,7 +49,7 @@ Skip this and everything still works. The assistant just finds its way around mo
 
 ## License
 
-One license, the [SciVance Software License 2.2](LICENSE). Every developer needs a seat:
+One license, the [SciVance Software License 2.3](LICENSE). Every developer needs a seat (a seat is for life and covers every 2.x release; version 3 is a new purchase):
 
 - **Personal use - free seat** (study, research, hobby - done by you for yourself, not for any organization). Register once at <https://www.GabrielMoraru.com/autopilot>. No key/activation needed.
 - **Commercial use, or any use by or for an organization - paid seat** (companies, government, charities, schools, universities, public research / health / safety organizations), one per developer. Price and how to buy: <https://www.GabrielMoraru.com/autopilot>. Terms: [LICENSE](LICENSE).
