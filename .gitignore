@@ -104,7 +104,7 @@ dunitx-results.xml
 
 McpServer/*
 !McpServer/Autopilot.Mcp.exe
-!McpServer/THIRD-PARTY-NOTICES.txt
+!McpServer/thirdparty-notices.txt
 
 # Private test and publish tools, copied from the version 3 folder on 2026-10-12
 /Tests/E2E tests/
