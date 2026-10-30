@@ -34,7 +34,7 @@ This does NOT apply to FMX, nor to an app that calls `SetForegroundWindow` / `Ap
 
 The MCP server is registered as `autopilot`.
 Tool names appear in your tool list as `mcp__autopilot__<name>`.
-Every tool accepts an optional `pid` argument when more than one Delphi target is running - omit it when only one target is present and the bridge auto-attaches.
+Every tool accepts an optional `pid` argument when more than one Delphi target is running - omit it when only one target is present: the tools attach to it on their own.
 
 **Crash report of the MCP server.** When `Autopilot.Mcp.exe` crashes, it sends a crash report to SciVance Tech, the maker of Autopilot.
 A user who wants no report to leave the PC registers the server with the parameter `--no-crash-report` (in either order with `--target adb:<port>`): `claude mcp add autopilot -- <path>\Autopilot.Mcp.exe --no-crash-report`.
@@ -46,7 +46,8 @@ It changes nothing in the tools or their answers.
 `attach(pid?)`
 
 Lists the running targets, or checks that the target with `pid` is reachable.
-**You almost never need to call it:** every other tool finds the target on its own. Call `attach` only:
+**You almost never need to call it:** every other tool finds the target on its own.
+Call `attach` only:
 
 - When the previous tool returned `-32099 target_not_running` AND you want to retry after the user has restarted the target.
 - When more than one live target runs and you need to choose by PID.
@@ -61,7 +62,8 @@ When `count` is 0 the answer also carries `hint`: the next step (start the app, 
 
 `list_tree(pid?)`
 
-Enumerates all forms and their controls, as an array at `result.components`. Each node carries:
+Enumerates all forms and their controls, as an array at `result.components`.
+Each node carries:
 
 - `form` - owning form name (e.g. `"frmMain"`).
 - `name` - component name, or a synthetic `@TButton#N` for an unnamed component (flagged `synthetic: true`).
@@ -101,7 +103,7 @@ Step 2, only when step 1 finds nothing: the same path is tried through the visua
 
 `click(path, count?, mode?, timeoutMs?, pid?)`
 
-Default behavior: calls the control's `Click` (buttons and other windowed controls).
+Default behavior: invokes the control's `Click` (buttons and other windowed controls).
 **A control with an `Action` assigned** is clicked through `TControl.Click`, which runs the action as a mouse click does: `OnExecute` gets the action as `Sender`, `AutoCheck` toggles `Checked`, `TActionList.OnExecute` runs, and a standard action without `OnExecute` (`TFileExit`) works too.
 This covers VCL `TSpeedButton`/`TToolButton` and, on FMX, every action-bound control.
 Other controls fall back to `OnClick(Self)`: VCL non-windowed visuals like TLabel/TImage, and every FMX control without an action.
@@ -111,35 +113,37 @@ Other controls fall back to `OnClick(Self)`: VCL non-windowed visuals like TLabe
 - `timeoutMs` - overrides the bridge's main-thread wait for this call, in milliseconds.
   Default 5000 for a single click, 5000 + (count-1)*100 for batched clicks.
   A short value is the fallback recipe for a click that opens a modal dialog (see `dismiss_dialog`).
+- `mode` - omit it, or pass `'auto'`, for the normal click described above.
 - `mode='message'` (VCL-on-Windows only) - posts `BM_CLICK` to the control and returns at once; the click runs when the app next pumps messages, AFTER this response.
   On a minimized form, where a posted `BM_CLICK` is lost, the click is queued to the main thread instead; it still runs after the response.
   Only button-class controls handle `BM_CLICK` (`TButton`/`TBitBtn`/`TCheckBox`/`TRadioButton`): any other class is rejected with `-32005` instead of being silently ignored, and FMX targets reject the mode with `-32005` too.
   **The main use: a button whose `OnClick` opens a modal dialog** (see `dismiss_dialog`).
-  Documented `BM_CLICK` behavior: a button inside a native dialog box may ignore it when that dialog is not the active window - for native dialogs use `dismiss_dialog`.
 
 Return shape: `{dispatchedVia: 'click' | 'onclick' | 'message', clicksDispatched: N, stoppedReason?: 'disabled' | 'freed' | 'exception:<ClassName>'}`.
 `'click'` = the control's `Click` method ran, `'onclick'` = the `OnClick` handler was invoked directly, `'message'` = a `BM_CLICK` was posted (async).
 `'exception:<ClassName>'` = the event handler raised (see "What this bridge deliberately does NOT do").
 With `mode='message'` + `count`, all posted clicks run after the response returns, so the between-iterations `Enabled` re-check cannot see those clicks' own effects.
 
-**Click the control, not the `TAction` - or use `execute_action`.** A `TAction` / `TBasicAction` has no `OnClick` (it carries `OnExecute`), so `click(path='Form.actFileExit')` fails with `-32005 unsupported_action` ("has no OnClick"). Two ways out:
+**Click the control, not the `TAction` - or use `execute_action`.** A `TAction` / `TBasicAction` has no `OnClick` (it carries `OnExecute`), so `click(path='Form.actFileExit')` fails with `-32005 unsupported_action` ("has no OnClick").
+Two ways out:
 - **`execute_action(path='Form.actFileExit')`** - fires the action's `OnExecute` directly (when to prefer it: `execute_action` below).
 - **`click(path='Form.btnExit')`** - click the control bound to the action: runs the action's `OnExecute` through the normal action dispatch.
   Use this when you want to verify the *control's* binding, not just the action.
 
-Errors: `-32001 not_found`, `-32003 control_disabled`, `-32005 unsupported_action`, `-32600 invalid_request` (a `count` outside 1..1000, or non-integer like `1.5`).
+Errors: `-32001 not_found`, `-32003 control_disabled`, `-32005 unsupported_action`, `-32600 invalid_request` (a `count` outside 1..1000, a non-integer like `1.5`, or an unknown `mode`).
 
 ### `execute_action`
 
 `execute_action(path, pid?)`
 
-Fires `TBasicAction.Execute` directly - runs the action's `OnExecute` handler. Use this when the command is bound to a `TAction` whose handler carries the logic:
+Fires `TBasicAction.Execute` directly - runs the action's `OnExecute` handler.
+Use this when the command is bound to a `TAction` whose handler carries the logic:
 
 - **Shortcut-only actions** that no control clicks (e.g. `actFileExit` triggered only by Alt+F4 / a hotkey).
   `click` cannot reach these; `execute_action` runs them directly, and `send_keys` presses their shortcut.
 - **Actions shared by several controls** (toolbar button + menu item + shortcut): one `execute_action` is more direct than picking one of the bound controls and clicking it.
 
-`path` must resolve to a `TBasicAction` descendant (`class:"TAction"` in `list_tree`). Plain controls are rejected - use `click` for those.
+`path` must resolve to a `TBasicAction` descendant (`class:"TAction"` in `list_tree`).
 
 `execute_action` honors `Enabled`: a disabled action refuses with `-32003 control_disabled`.
 (The base `TBasicAction.Execute` fires `OnExecute` regardless of `Enabled`; the bridge adds the guard.)
@@ -192,7 +196,8 @@ The response carries `dataBound: true`.
 `set_property(path, propName, value, pid?)`
 
 Writes any published, writable property on any control via RTTI.
-Use this when `set_text` and `set_checked` don't fit. Examples:
+Use this when `set_text` and `set_checked` don't fit.
+Examples:
 
 - `set_property(path='frmMain.pnlMain', propName='Tag', value='42')`
 - `set_property(path='frmMain.lblStatus', propName='Color', value='clRed')` - VCL TColor: `clName`, `#RRGGBB`, `$00BBGGRR`, or decimal.
@@ -214,10 +219,8 @@ Every other property (for example `Caption`, or a dotted `Font.Size`) still answ
 **Write-side elision** (TL;DR rule 7): before each write, the bridge reads the live value and skips `SetValue` if the coerced new value equals it.
 `elided: false` means a real write happened, and `OnChange` did fire (if the control has one).
 Comparison is type-aware: string identity, integer/int64 equality (TAlphaColor/TColor as 32-bit), boolean equality, enum/set ordinal equality (so `[fcRed,fcBlue]` elides against `[fcBlue,fcRed]`), float exact-bits (no epsilon).
-So you can resend the same value harmlessly: the host app won't see a phantom `OnChange`.
 
 **Parent-inheritance auto-flip (VCL only):** when a write to `Font.*`, `Color`, `BiDiMode`, `ShowHint`, `DoubleBuffered`, `CustomHint`, or `Ctl3D` SUCCEEDS (including an elided resend), the bridge sets the matching `Parent<X>:=FALSE`, so the state is always "the control owns this property".
-(The VCL only does that flip itself on a *value-changing* write, which an elided resend never reaches.)
 Success only: a REJECTED value (bad coercion, read-only inner) leaves `Parent<X>` untouched.
 Silent (no response field).
 To restore inheritance, write `ParentFont:=true` (or the matching `Parent<X>`) afterward.
@@ -247,8 +250,7 @@ Contrast with `click`, `set_text`, `set_checked` and `set_property`, which refus
 
 **Class-typed leaves** (`Font`, `Brush`, `Lines`, `Fill`) cannot be read directly: the tool returns `unsupported_action` with a hint to use a dotted propName (`Font.Size`, `Lines.Text`, `Fill.Color`).
 
-**vs. `get_text`:** `get_text` is specialized for `Text` / `Caption` / `Lines.Text` and handles the variation in property name across control classes; `read_property` is general but requires you to know the exact property name.
-Use `get_text` for the common text-readback case; use `read_property` for everything else.
+**vs. `get_text`:** use `get_text` to read back `Text` / `Caption` / `Lines.Text` (it picks the right property name for each control class), and `read_property` for everything else (it needs the exact property name).
 
 ### `wait_for`
 
@@ -276,7 +278,7 @@ A failed screenshot is one text block with the error envelope, as for every othe
   `form` is ignored (the path names its form; the answer's `form` is the form that shows the control).
   A control that cannot be captured (not visible itself or through a parent, zero size, not a visual control such as a timer or an action, or entirely outside the client area) answers `-32005`.
   The control is painted, not copied from the screen, so another window in front of it does not spoil the image.
-- **`maxWidth`** - pixels. Omitted or `0` = full size.
+- **`maxWidth`** - pixels; omitted or `0` = full size.
   When the image is wider, it is scaled down to exactly `maxWidth` wide, aspect ratio kept, with a smoothing filter so small text stays readable; a narrower image is never scaled up.
   A negative or fractional value answers `-32600`.
 - **`width` / `height`** are the size of the image you receive; **`scaled`** is `true` when `maxWidth` shrank it.
@@ -297,7 +299,7 @@ On a Windows target (VCL or FMX) it is a no-op (`applied:false`, `platform:windo
 Response: `{enabled, platform:'android'|'windows', applied}`.
 `applied:true` means the window flag was changed; `applied:false` means the platform ignores it.
 
-Why it matters on Android: a backgrounded or screen-off app is frozen by the OS (it gets no CPU), which stalls the bridge.
+On Android a backgrounded or screen-off app is frozen by the OS (it gets no CPU), which stalls the bridge.
 Keep-awake holds the screen on, so the foreground app keeps running.
 It does NOT cover the cold-start window before the bridge starts - keep the device screen on through app launch.
 
@@ -312,23 +314,25 @@ This tool reaches them through Win32 directly.
 - Call with **no `button`** to LIST the dialogs currently up.
   Response: `{dialogs:[{hwnd, class, caption, text, buttons:[{id, caption, enabled}]}], supported, platform}`.
 - Call with **`button`** to dismiss one.
-  `button` is a role (`ok`/`cancel`/`yes`/`no`/`retry`/`abort`/`ignore`/`close`/`tryagain`/`continue`), a button caption (exact then substring, case-insensitive), or a numeric control id.
+  `button` is a role (`ok`/`cancel`/`yes`/`no`/`retry`/`abort`/`ignore`/`close`/`help`/`tryagain`/`continue`), a button caption (exact then substring, case-insensitive), or a numeric control id.
   `hwnd` targets a specific dialog when several are stacked; omit it for the topmost.
   Response adds `{clicked, clickedId, clickedCaption, dialogHwnd, via, reason?}`.
   `reason` is `no_dialog`, `button_not_found`, or `send_failed` (button found, but the OS reported the click was not delivered) when `clicked:false`.
-- **Check `via` before you trust `clicked:true`.** `via:'BM_CLICK'` means the button's own window was found and clicked - verified.
+- **Check `via` before you trust `clicked:true`.** `via:'BM_CLICK'` means the button's own window was found and got the click.
+  Documented `BM_CLICK` behavior: a button inside a dialog box may ignore it when that dialog is not the active window, and the bridge never activates the dialog - when the result matters, re-list as below.
   `via:'WM_COMMAND'` means the button is not a separate window (a Task Dialog common button, or a role/id that dialog does not actually have), so the command was dispatched **by id, blind**: a dialog with no such command silently ignores it and the send still reports success.
   After a `WM_COMMAND` dismiss, call `dismiss_dialog` again with no `button` - an empty `dialogs` array is the only proof the dialog is gone.
 
-**A modal dialog blocks the main thread.** When you `click` a control whose `OnClick` opens a modal dialog, that click never returns - the main thread enters the dialog's modal loop. Two recipes:
+**A modal dialog blocks the main thread.** When you `click` a control whose `OnClick` opens a modal dialog, that click never returns - the main thread enters the dialog's modal loop.
+Two recipes:
 
-- **Preferred (VCL button-class controls):** `click(path, mode='message')` - returns before the dialog opens, then `dismiss_dialog(button=...)`. No error, no timeout burned.
+- **Preferred (VCL button-class controls):** `click(path, mode='message')` - returns before the dialog opens, then `dismiss_dialog(button=...)`: no error, no timeout burned.
 - **Fallback (FMX targets, or non-button controls):** pass a short `timeoutMs` (e.g. 500) to the `click`, expect `-32004 main_thread_blocked`, then call `dismiss_dialog(button=...)`.
 
 A `send_keys` key whose handler opens a modal dialog blocks the same way: expect `-32004 main_thread_blocked` after 5000 ms, then call `dismiss_dialog`.
 Either way the dialog's own modal loop still pumps the bridge, so the dismiss lands and the app unblocks.
 
-Windows targets only. Against an Android FMX target the response is `supported:false` (Android dialogs are ART windows, out of Win32 reach).
+Windows targets only: against an Android FMX target the response is `supported:false` (Android dialogs are ART windows, out of Win32 reach).
 
 ### `send_keys`
 
@@ -362,20 +366,18 @@ A key whose handler opens a **modal dialog** blocks the app: see `dismiss_dialog
 
 ## Debug-channel selection - read live state without a recompile
 
-When you need to inspect the host app's state during a debug session, pick the cheapest channel that works. In order:
+When you need to inspect the host app's state during a debug session, pick the cheapest channel that works.
+In order:
 
 1. **`get_text` / `read_property`** - for any value that lives on a published property of a discoverable component.
-   Both are one round-trip, no host changes. This is ~70% of debug cases.
-2. **`set_property` with a deliberate bogus propName** - when you don't know the property name yet: its `availableProperties` (TL;DR rule 5) returns the entire writable surface with live values in one round-trip.
+   Both are one round-trip with no host changes, and cover ~70% of debug cases.
+2. **`read_property` with a deliberate bogus propName** - when you don't know the property name yet: its `availableProperties` returns every readable property, read-only ones included, in one round-trip (`set_property` gives the same list for the writable ones only, TL;DR rule 5).
    Once you know the name, use `read_property` on subsequent calls.
-3. **Host-side `Log.Write` / `RamLog.AddInfo`** - when the value is NOT a published property (a local variable, a function return like `IsDarkStyle`, an intermediate computed value, or state inside a method during a specific code path).
-   Add a logging call in the host source, recompile, run, then read the log file at `%TEMP%\Autopilot\<ExeBaseName>-<PID>.log` (the bridge's own log) - or in LightSaber projects, `AppData.RamLog`'s file.
+3. **Host-side `BridgeLogInfo` / `RamLog.AddInfo`** - when the value is NOT a published property (a local variable, a function return like `IsDarkStyle`, an intermediate computed value, or state inside a method during a specific code path).
+   Add a logging call in the host source, recompile, run, then read the log: `BridgeLogInfo(Tag, Msg)` (unit `Autopilot.Bridge.Log`) appends to the bridge's own log `%TEMP%\Autopilot\<ExeBaseName>-<PID>.log`; in LightSaber projects `AppData.RamLog.AddInfo` goes to `AppData.RamLog`'s file.
+   **When a recompile IS unavoidable**, batch every value you want into ONE logging block - one cycle, one read.
 4. **Host-side `Diag.SaveToFile` scratchpad** - last resort, only when (1)-(3) all fail to fit.
    Each scratchpad file you write requires a recompile cycle AND leaves a stray file in the host's data folder; prefer logging.
-
-**Critical anti-pattern: writing a scratchpad file when read_property would work.** Before patching the host with `Diag.SaveToFile(...)` to dump a value, ask: is it a published property on a named component?
-If yes - call `read_property` instead (no recompile, one round-trip).
-**When a recompile IS unavoidable**, batch every value you want into ONE logging block, not separate `Diag.SaveToFile` calls - one cycle, one read.
 
 ---
 
@@ -387,9 +389,8 @@ The bridge round-trip is sub-millisecond; the cost is **per-turn LLM inference**
 total_time ≈ (turns × per_turn_inference) + (tool_calls × ~1ms bridge_time)
 ```
 
-Per-turn inference is ~1-8 s on Opus 4.7, ~0.3-1 s on Haiku 4.5 - the bridge is noise next to either.
+Per-turn inference is ~1-8 s on Opus 4.7, ~0.3-1 s on Haiku 4.5.
 Measured warm-cache Opus 4.7: a turn costs ~20-26 s whether it carries one tool call or many, and `click(count=1000)` spent 62 ms of total bridge time.
-**The LLM turn dominates every scenario - the eight rules above all exist to remove *turns*, not bridge calls.**
 The one case where extra turns are unavoidable is a react-to-result loop ("click Save; if status shows 'error', read the error label"): the LLM must see each intermediate result, so use the most capable model and don't micro-optimize.
 
 ---
@@ -399,13 +400,8 @@ The one case where extra turns are unavoidable is a react-to-result loop ("click
 On Claude Code with the project-scoped `autopilot-script-runner` agent installed (`.claude/agents/autopilot-script-runner.md`), delegate **scripted sequences of ≥ 5 sequential tool calls** to it.
 It runs on Haiku 4.5 at `effort: low` - no extended thinking, pure tool dispatch, ~2.5 s/call.
 
-**Delegate** a known, linear script of UI actions with no need to react to intermediate results and at least 5 sequential tool calls - with fewer, the ~14 s of subagent spin-up overhead doesn't pay back.
-
-**When NOT to delegate:**
-
-- The next step depends on the previous step's result (judgment is required - keep it in the parent session).
-- The script has fewer than 5 sequential calls (just use parallel tool_use in the parent turn).
-- You need to write code, propose alternatives, or analyze results (subagent is locked down to MCP tool calls only).
+**Delegate** only a known, linear script of UI actions: with fewer than 5 calls the ~14 s of subagent spin-up overhead doesn't pay back (use parallel tool_use in the parent turn instead).
+**Keep the work in the parent session** when the next step depends on the previous step's result, or when you need to write code, propose alternatives or analyze results: the subagent can only call the MCP tools.
 
 Invoke via the `Agent` tool with `subagent_type: autopilot-script-runner`.
 The agent returns a compact `RESULT / STEPS / FINAL STATE / NOTES` report.
@@ -486,8 +482,8 @@ When the `mcp__autopilot__*` tools are not loaded (you just registered the serve
 **Connection sequence:**
 
 1. Find the pipe: `\\.\pipe\Autopilot.<ExeBaseName>.<PID>` (enumerate `\\.\pipe\` for `Autopilot.*`, or read the discovery file in `%TEMP%\Autopilot\active\<PID>.pipe` whose contents ARE the pipe name).
-2. Connect. The target sends a `{"hello":{"protocolVersion":1,...}}` frame **first**.
-3. Reply with `{"helloAck":{"protocolVersion":1}}`. (Mismatched version → the worker drops the session.)
+2. Connect: the target sends a `{"hello":{"protocolVersion":1,...}}` frame **first**.
+3. Reply with `{"helloAck":{"protocolVersion":1}}` (a mismatched version → the worker drops the session).
 4. Send requests `{"id":N,"cmd":"...","args":{...}}`; read one response frame `{"id":N,"ok":true,"result":{...}}` per request.
    `args` keys are `path`, `count`, `text`, `checked`, `propName`, `value`, `form` (camelCase, matching the tool args above); `timeoutMs` goes beside `cmd`, not into `args`.
 
@@ -508,7 +504,6 @@ WF $c '{"helloAck":{"protocolVersion":1}}'           # send ack
 WF $c '{"id":1,"cmd":"list_tree"}'; RF $c            # one command + its response
 ```
 
-This is a fallback, not the preferred path - the MCP tools handle framing and retries for you.
 Use the raw pipe only when the tools are genuinely unavailable in the current session.
 
 ---
@@ -602,7 +597,7 @@ One tool call, one turn, ~1 ms.
   Click the menu item or button, NOT the `TAction` behind it (`-32005`, see the `click` reference).
   If the only close path is an action that no control is bound to, fire it with `execute_action`.
 
-**Kill path** - `Stop-Process` when the app is hung or its saved state is disposable.
+**Kill path** - `Stop-Process` when the app is hung, its saved state is disposable, or the bridge close path doesn't work for this target.
 Just kill, in one line - no `Get-Process` pre-check, no screenshot, no window-rect math (it fails on minimized/renamed targets); `-ErrorAction SilentlyContinue` makes the no-such-process case a no-op:
 
 ```powershell
@@ -611,4 +606,3 @@ Stop-Process -Name <ExeBaseName> -Force -ErrorAction SilentlyContinue
 
 **Side effects of killing:** `FormPreRelease` doesn't run, so INI position/size (TLightForm) + AutoState GUI state are lost; the discovery file stays until the next tool call that lists targets finds its process gone and deletes it; the pipe breaks harmlessly.
 **Rule of thumb:** if the app can answer a `click`, use the bridge close path - same one turn, no lost state.
-Kill only when hung, when state is disposable, or when the close path doesn't work for this target.
