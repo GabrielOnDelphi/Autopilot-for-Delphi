@@ -133,6 +133,7 @@ Android64/
 # The published MCP server exe is the only exe in the repository. Its builds go to Win32_*/ (ignored above).
 !Source/McpServer/Autopilot.Mcp.exe
 Source/McpServer/Autopilot.Mcp.old-*.exe
+Source/McpServer/*.mes
 *.dsv
 
 # Temporary files. .claude/agents stays: AI-INSTRUCTIONS.md tells users to install autopilot-script-runner.md from there.
