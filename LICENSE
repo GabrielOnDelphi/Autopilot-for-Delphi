@@ -2,19 +2,17 @@ Autopilot for Delphi
 Copyright (c) 2026 Gabriel Moraru (https://gabrielmoraru.com)
 
 ======================================================================
-# License summary 
+# License summary
 
-This software has ONE license, the SciVance Software License (3.5), reproduced below.
+This software has ONE license, the SciVance Software License (3.6), reproduced below.
 
-FREE FOR PRIVATE USE. An individual may use the software free of charge for their own private projects: study, hobby projects, personal research. No registration, no contact needed.
-
-COMMERCIAL USE NEEDS A PAID SEAT. Any use by or for a business, any use in paid work, and any use by or for an organization of any kind (a government institution, a charity, a school or university included) needs one paid seat per developer. To get a seat, contact the licensor: https://gabrielmoraru.com/about-me/. A seat is for life for the major version it is for: a seat for version 3 covers every 3.x release.
+FREE FOR EVERYONE. Anyone may use the software free of charge, for any purpose: private use, commercial use, paid work, and use by any business or organization. No seat, no registration, no contact needed.
 
 SOURCE CODE. The source code is public. You may read it and change it for your own use. The only place that distributes it is https://github.com/GabrielOnDelphi/Autopilot-for-Delphi: do not give copies to others or publish them anywhere else - point people at that repository.
 
-YOUR APPLICATION. A build of your application made without the AUTOPILOT define may go to anyone. A build made with the AUTOPILOT define, and a test application built with the test client, may go only to a colleague in your company who holds a seat, for testing only.
+YOUR APPLICATION. You may give your own application, built with or without the AUTOPILOT define, to anyone, in compiled form only.
 
-This is not an OSI-approved open-source license: commercial use needs a paid seat. A copy obtained under an earlier version of this license stays under that version.
+This is not an OSI-approved open-source license: copies of the software itself come only from the repository above. A copy obtained under an earlier version of this license stays under that version, or may be used under this version instead.
 
 This summary is not part of the license. Where it differs from the terms below, the terms below apply.
 
@@ -26,17 +24,9 @@ This summary is not part of the license. Where it differs from the terms below, 
 
 In order to get any license under these terms, you must agree to them as both strict obligations and conditions to all your licenses.
 
-## Free Private Use
+## Free Use
 
-An individual may use the software without a seat and free of charge for private use.  **Private use** is study, hobby projects and personal research that the individual does for themselves.  It does not include any use by or for a business, any use in work for which anyone is paid, or any use by or for an organization of any kind, including a government institution, a charity, a school or university, or a public research, health or safety organization.  Private use needs no registration and no contact with the licensor.
-
-## Seats
-
-Any use that is not private use needs a seat.  Each seat covers one individual developer.
-
-A seat is bought from the licensor.  To get one, contact the licensor through https://gabrielmoraru.com/about-me/.  A seat covers any purpose, commercial or noncommercial.
-
-A seat covers the major version of the software it was bought for, including every later release of that major version (for example 3.0, 3.1 and 3.2), with no time limit.  It does not cover a later major version of the software (for example 4.0); that needs a new seat.
+Anyone may use the software free of charge, for any purpose, commercial or noncommercial.  This includes use by or for a business, use in work for which anyone is paid, and use by or for an organization of any kind.  Use needs no seat, no registration and no contact with the licensor.
 
 ## Copyright License
 
@@ -46,38 +36,18 @@ The licensor grants you a copyright license for the software to do everything yo
 
 **You may not give the software to anyone else.**  The only place from which anyone may get the software is the licensor's repository, https://github.com/GabrielOnDelphi/Autopilot-for-Delphi.  You have no license to distribute, publish, sell, lend, mirror, host, or otherwise make the software available to any other person, in any form: to share it, point people at that repository.  This covers the source code, the compiled unit files (`.dcu`), the executable files, packages, archives, copies of the repository, uploads to a package registry or file-sharing service, and inclusion in any library, component set, template, sample project, course material, or software development kit.  It covers a changed or derived version of the software exactly as it covers the original.
 
-Everyone who gets the software gets it under these terms: without a seat, they may use it only for private use.
+Everyone who gets the software gets it under these terms.
 
-An application of your own into which the software is built is different: you may build and run it for your own use, but you may not give it to any other person, including customers, unless you hold a separate distribution license obtained from the licensor.  A seat does not include a distribution license.
+### Your own application
 
-Two narrow permissions for such an application, and nothing beyond them:
-
-### 1. Your own application with the bridge inactive
-
-You may give other people an application of your own that you built without the `AUTOPILOT` conditional define.  In such a build the bridge is inactive: it opens no connection and accepts no commands.  This permission does not cover any build made with the `AUTOPILOT` conditional define.  Conditions:
+An application of your own into which the software is built is different.  You may give it to other people, including customers, whether you built it with or without the `AUTOPILOT` conditional define, and whether it is your product or a test application you built with the test client of the software (`Autopilot.Client.pas`).  Conditions:
 
   a. You distribute the application in compiled form - an executable, an installer, a mobile application package, or similar.
   b. What you distribute does not contain the source code of the software, its `.dcu` files, or any other form from which a person could recover the software as a unit reusable in their own projects.
-  c. Your own use of the software is covered by a seat or is private use.
 
 You owe no credit, notice, or attribution inside your application for this permission.
 
-### 2. Testing inside your company
-
-This permission is an exception to the rule above that you may not give an application of your own into which the software is built to any other person.
-
-You may give another individual in your company who holds a seat of their own, for testing only:
-
-  a. a test application of your own that you built with the test client of the software (`Autopilot.Client.pas`), and
-  b. a build of your own application that you made with the `AUTOPILOT` conditional define.
-
-A build server or test machine that you control may build and run these applications under your seat.  Conditions:
-
-  a. You give these applications in compiled form only.  What you give does not contain the source code of the software, its `.dcu` files, or any other form from which a person could recover the software as a unit reusable in their own projects.
-  b. These applications are used only to test your own application.
-  c. Your own use of the software is covered by a seat.
-
-This permission does not cover giving these applications to anyone outside your company, or to anyone who does not hold a seat of their own.
+A build made with the `AUTOPILOT` conditional define lets anyone who can reach the bridge drive the application.  You are responsible for deciding to whom you give such a build.
 
 ## No Reverse Engineering
 
