@@ -101,7 +101,6 @@ modules/
 /_Release Package
 /DemoVCL-Video
 /Tests/Wire test
-/MCP/
 /Autopilot.groupproj
 CLAUDE.md
 HandOver.md
@@ -132,10 +131,10 @@ Android/
 Android64/
 *.res
 
-# The published MCP server: the exe and its notice only
-Source/McpServer/*
+# The MCP server: its source, and the published exe (the only exe in the repository). Its builds go to Win32_*/ (ignored above).
 !Source/McpServer/Autopilot.Mcp.exe
-!Source/McpServer/thirdparty-notices.txt
+Source/McpServer/Autopilot.Mcp.old-*.exe
+*.dsv
 
 # Temporary files. .claude/agents stays: AI-INSTRUCTIONS.md tells users to install autopilot-script-runner.md from there.
 Temp/
