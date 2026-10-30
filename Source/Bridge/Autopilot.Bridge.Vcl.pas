@@ -63,9 +63,9 @@ uses
 
 { Licence reminder in the Messages pane, AUTOPILOT builds only.
   It fires whenever this unit is compiled.
-  No DCUs ship, so every customer compiles the bridge and sees it, paying customers included - that is why the text thanks a licence holder instead of only asking for a licence.
+  No DCUs ship, so every user compiles the bridge and sees it, seat holders included - that is why the text thanks a seat holder instead of only asking for a seat.
   A HINT, not a WARN, so it cannot dirty a project that treats warnings as errors. }
-{$MESSAGE HINT 'Autopilot for Delphi: every developer needs a paid seat. Already have a seat? Thank you - nothing to do. https://www.GabrielMoraru.com/autopilot'}
+{$MESSAGE HINT 'Autopilot for Delphi: free for private use. Commercial use needs a paid seat - contact: https://gabrielmoraru.com/about-me/ . Already have a seat? Thank you - nothing to do.'}
 
 var
   GWorker: TBridgeWorker = NIL;
