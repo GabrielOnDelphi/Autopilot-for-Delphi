@@ -101,13 +101,29 @@ dunitx-results.xml
 /DemoFmx/BuildClassesDex.stamp
 /DemoFmx/AndroidManifest-merged.xml
 /DemoFmx/*List.txt
+/DemoFmx/*.xml
+/DemoFmx/*.prjmgc
+/DemoFmx/DeployAndroid.cmd
+*.deployproj
 
-McpServer/*
-!McpServer/Autopilot.Mcp.exe
-!McpServer/thirdparty-notices.txt
+# Build output of the demos and the demo tests ($(Platform)_$(Config))
+Win32_*/
+Win64_*/
+Android_*/
+Android64_*/
+Win32/
+Win64/
+Android/
+Android64/
+*.res
 
-# Private test and publish tools, copied from the version 3 folder on 2026-10-12
-/Tests/E2E tests/
+# The published MCP server: the exe and its notice only
+Source/McpServer/*
+!Source/McpServer/Autopilot.Mcp.exe
+!Source/McpServer/thirdparty-notices.txt
+
+# Local folders and files
+/Tests/
 /Video demo pre-flight/
 /Publish-McpServer.ps1
 
