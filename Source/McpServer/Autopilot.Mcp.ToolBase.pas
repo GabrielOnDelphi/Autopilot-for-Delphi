@@ -33,7 +33,8 @@ const
 
 
 /// The folder that holds the bridge source, searched relative to AExeFolder (the folder of Autopilot.Mcp.exe):
-/// '..\Bridge', the layout of the Autopilot package (Source\McpServer\ beside Source\Bridge\).
+/// '..\Bridge' (the EXE in Source\McpServer\, beside Source\Bridge\), then '..\..\Bridge' (the EXE in the
+/// build folder Source\McpServer\Win32_<config>\).
 /// The folder counts only if Autopilot.Bridge.Vcl.pas is in it.
 /// Returns the full path without a trailing backslash, or '' when it is not on disk.
 function FindBridgeFolder(const AExeFolder: String): String;
@@ -77,19 +78,24 @@ function RunCommandOnTarget(APid: Cardinal; ARequest: TJSONObject; ATimeoutMs: C
 implementation
 
 const
-  BridgeProbeUnit      = 'Autopilot.Bridge.Vcl.pas';
-  BridgeRelativeFolder = '..\Bridge';
+  BridgeProbeUnit = 'Autopilot.Bridge.Vcl.pas';
+  // In search order: the EXE in Source\McpServer\ (the ZIP packages), then the EXE in the build
+  // folder Source\McpServer\Win32_<config>\ (a build of the cloned repository).
+  BridgeRelativeFolders: array[0..1] of String = ('..\Bridge', '..\..\Bridge');
 
 
 function FindBridgeFolder(const AExeFolder: String): String;
 var
-  Candidate: String;
+  Candidate, Relative: String;
 begin
   Result := '';
   if AExeFolder = '' then EXIT;
-  Candidate := ExpandFileName(IncludeTrailingPathDelimiter(AExeFolder) + BridgeRelativeFolder);
-  if FileExists(IncludeTrailingPathDelimiter(Candidate) + BridgeProbeUnit)
-  then Result := ExcludeTrailingPathDelimiter(Candidate);
+  for Relative in BridgeRelativeFolders do
+    begin
+      Candidate := ExpandFileName(IncludeTrailingPathDelimiter(AExeFolder) + Relative);
+      if FileExists(IncludeTrailingPathDelimiter(Candidate) + BridgeProbeUnit)
+      then EXIT(ExcludeTrailingPathDelimiter(Candidate));
+    end;
 end;
 
 

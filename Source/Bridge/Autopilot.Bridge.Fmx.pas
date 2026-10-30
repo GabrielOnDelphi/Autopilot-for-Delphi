@@ -51,7 +51,7 @@ uses
 {$IFDEF AUTOPILOT}
 
 // Licence reminder in the Messages pane, AUTOPILOT builds only. See the twin comment in Autopilot.Bridge.Vcl.pas for why this is a HINT and who sees it.
-{$MESSAGE HINT 'Autopilot for Delphi: free for private use. Commercial use needs a paid seat - contact: https://gabrielmoraru.com/about-me/ . Already have a seat? Thank you - nothing to do.'}
+{$MESSAGE HINT 'Autopilot for Delphi: free for private and commercial use - terms: https://gabrielmoraru.com/my-delphi-code/autopilot-for-delphi-license/'}
 
 var
   GWorker: TBridgeWorker = NIL;
@@ -2830,7 +2830,7 @@ begin
     if GWorker <> NIL then exit;
     ExeName := ExtractFileName(ParamStr(0));
     BridgeLogInfo('bridge', 'StartBridge (FMX) exe=' + ExeName + ' endpoint=' + AEndpoint);
-    BridgeLogInfo('license', CommercialLicenseHint);
+    BridgeLogInfo('license', LicenseHint);
     {$IFDEF MSWINDOWS}
     GWorker := TBridgeWorker.Create(TPipeTransport.Create(AEndpoint), ExeName, Dispatch);
     {$ELSE}

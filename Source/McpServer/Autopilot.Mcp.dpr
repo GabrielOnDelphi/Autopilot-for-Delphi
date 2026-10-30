@@ -117,7 +117,7 @@ begin
       {$ENDIF}
     end;
 
-  BridgeLogInfo('license', CommercialLicenseHint);
+  BridgeLogInfo('license', LicenseHint);
   TrackUsageAndMaybePromoteBook;
 
   // Transport selection. No flag: the Windows named-pipe path. The `--target adb:<hostPort>` flag routes

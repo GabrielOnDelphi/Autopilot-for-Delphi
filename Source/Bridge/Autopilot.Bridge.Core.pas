@@ -22,16 +22,15 @@ const
   ProtocolVersion = 1;
   BridgeVersion   = '3.1.2';
 
-  { Licence terms: LICENSE in the package root. A commercial seat is obtained through LicenseContactURL; the licence texts point there.
+  { Licence terms: LICENSE in the package root, also on the LicenseURL page.
     The bridge exists only in AUTOPILOT (debug) builds, so these reminders reach the developer, never an end user. }
-  CommercialLicenseURL  = 'https://www.GabrielMoraru.com/autopilot';   // product overview page
-  LicenseContactURL     = 'https://gabrielmoraru.com/about-me/';
-  CommercialLicenseHint = 'Autopilot for Delphi is free for private use. Commercial use needs a paid seat per developer - contact: ' + LicenseContactURL;
+  LicenseURL  = 'https://gabrielmoraru.com/my-delphi-code/autopilot-for-delphi-license/';
+  LicenseHint = 'Autopilot for Delphi is free for private and commercial use - terms: ' + LicenseURL;
 
   { Rides a tool response ONCE per installation, so it reaches the driving AI and not a log nobody reads.
     It states the rule and stops. }
-  LicenseNoticeText = 'Autopilot for Delphi is free for private use; commercial use needs a paid seat for every developer'
-                    + ' (contact: ' + LicenseContactURL + ') - please pass this notice to the developer once.';
+  LicenseNoticeText = 'Autopilot for Delphi is free for private and commercial use (terms: ' + LicenseURL + ')'
+                    + ' - please pass this notice to the developer once.';
 
   { Per-command timeout defaults (ms).
     The MCP server can override them per call with the optional timeoutMs field of the request. }

@@ -63,9 +63,9 @@ uses
 
 { Licence reminder in the Messages pane, AUTOPILOT builds only.
   It fires whenever this unit is compiled.
-  No DCUs ship, so every user compiles the bridge and sees it, seat holders included - that is why the text thanks a seat holder instead of only asking for a seat.
+  No DCUs ship, so every user compiles the bridge and sees it.
   A HINT, not a WARN, so it cannot dirty a project that treats warnings as errors. }
-{$MESSAGE HINT 'Autopilot for Delphi: free for private use. Commercial use needs a paid seat - contact: https://gabrielmoraru.com/about-me/ . Already have a seat? Thank you - nothing to do.'}
+{$MESSAGE HINT 'Autopilot for Delphi: free for private and commercial use - terms: https://gabrielmoraru.com/my-delphi-code/autopilot-for-delphi-license/'}
 
 var
   GWorker: TBridgeWorker = NIL;
@@ -3636,7 +3636,7 @@ begin
     if GWorker <> NIL then exit;
     ExeName := ExtractFileName(ParamStr(0));
     BridgeLogInfo('bridge', 'StartBridge exe=' + ExeName + ' pipe=' + APipeName);
-    BridgeLogInfo('license', CommercialLicenseHint);
+    BridgeLogInfo('license', LicenseHint);
     GWorker := TBridgeWorker.Create(TPipeTransport.Create(APipeName), ExeName, Dispatch);
   finally
     GLock.Leave;
