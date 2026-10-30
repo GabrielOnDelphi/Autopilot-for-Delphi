@@ -4,40 +4,19 @@ Copyright (c) 2026 Gabriel Moraru (https://gabrielmoraru.com)
 ======================================================================
 # License summary 
 
-This software has ONE license, the SciVance Software License (2.3), reproduced
-below. You may use the software only while you hold a seat under it. There
-are two kinds of seat:
+This software has ONE license, the SciVance Software License (3.5), reproduced below.
 
-  1. PAID SEAT - for COMMERCIAL USE and for use by or for ANY ORGANIZATION.
-     Any use by or for a business, any use with an anticipated commercial
-     application, and any use by or for an organization of any kind:
-     a government institution, a charity, a school or university, a public
-     research, health or safety organization, or any other organization,
-     even when the use is noncommercial.
-     One seat per developer, perpetual. A team buys one seat for each of its
-     developers. Price and how to buy: https://www.GabrielMoraru.com/autopilot
+FREE FOR PRIVATE USE. An individual may use the software free of charge for their own private projects: study, hobby projects, personal research. No registration, no contact needed.
 
-  2. FREE SEAT - for PERSONAL USE by an individual, after you register.
-     Personal study, research, hobby projects, done by you for yourself and
-     not for any organization. No charge, but you must first register at
-     https://www.GabrielMoraru.com/autopilot
+COMMERCIAL USE NEEDS A PAID SEAT. Any use by or for a business, any use in paid work, and any use by or for an organization of any kind (a government institution, a charity, a school or university included) needs one paid seat per developer. To get a seat, contact the licensor: https://gabrielmoraru.com/about-me/. A seat is for life for the major version it is for: a seat for version 3 covers every 3.x release.
 
-PER MAJOR VERSION. A seat, paid or free, is for life for the major version you get it for: a seat for version 2 covers every 2.x release. A later major version (3.0) is not covered; it is a new purchase.
+SOURCE CODE. The source code is public. You may read it and change it for your own use. The only place that distributes it is https://github.com/GabrielOnDelphi/Autopilot-for-Delphi: do not give copies to others or publish them anywhere else - point people at that repository.
 
-The dividing line is YOU, FOR YOURSELF versus EVERYTHING ELSE. A student
-learning on their own uses a free seat; the same student doing a project for
-their university needs a paid seat. A freelancer doing paid work needs a
-paid seat.
+YOUR APPLICATION. A build of your application made without the AUTOPILOT define may go to anyone. A build made with the AUTOPILOT define, and a test application built with the test client, may go only to a colleague in your company who holds a seat, for testing only.
 
-NO REDISTRIBUTION. You may not give the software to anyone else, in any 
-form - not even built into your application, unless the conditions below are met. 
+This is not an OSI-approved open-source license: commercial use needs a paid seat. A copy obtained under an earlier version of this license stays under that version.
 
-The source code of the bridge units is AVAILABLE TO READ AND BUILD, but the
-software is not open source: the license below requires a seat and forbids
-redistribution, and an OSI-approved open-source license cannot do either.
-
-This summary is not part of the license. Where it differs from the terms
-below, the terms below apply.
+This summary is not part of the license. Where it differs from the terms below, the terms below apply.
 
 ======================================================================
 
@@ -47,26 +26,31 @@ below, the terms below apply.
 
 In order to get any license under these terms, you must agree to them as both strict obligations and conditions to all your licenses.
 
+## Free Private Use
+
+An individual may use the software without a seat and free of charge for private use.  **Private use** is study, hobby projects and personal research that the individual does for themselves.  It does not include any use by or for a business, any use in work for which anyone is paid, or any use by or for an organization of any kind, including a government institution, a charity, a school or university, or a public research, health or safety organization.  Private use needs no registration and no contact with the licensor.
+
 ## Seats
 
-You may use the software only while you hold a seat.  Each seat covers one individual developer.
+Any use that is not private use needs a seat.  Each seat covers one individual developer.
 
-  a. A **paid seat** is bought from the licensor.  It covers any purpose, including commercial use and use by or for a government institution or any other organization.
-  b. A **free seat** covers only personal, noncommercial purposes of an individual - see [Noncommercial Purposes](#noncommercial-purposes) and [Organizations](#organizations).  You get a free seat by registering with the licensor at <https://www.GabrielMoraru.com/autopilot>.  The free seat starts when the licensor confirms your registration.  The licensor may decline a registration.
+A seat is bought from the licensor.  To get one, contact the licensor through https://gabrielmoraru.com/about-me/.  A seat covers any purpose, commercial or noncommercial.
 
-A seat, paid or free, covers the major version of the software it was bought or registered for, including every later release of that major version (for example 2.0, 2.1 and 2.2), with no time limit.  It does not cover a later major version of the software (for example 3.0); that needs a new seat.
+A seat covers the major version of the software it was bought for, including every later release of that major version (for example 3.0, 3.1 and 3.2), with no time limit.  It does not cover a later major version of the software (for example 4.0); that needs a new seat.
 
 ## Copyright License
 
-The licensor grants you a copyright license for the software to do everything you might do with the software that would otherwise infringe the licensor's copyright in it for any permitted purpose.  However, you may only distribute the software according to [Distribution](#distribution) and make changes or new works based on the software according to [Changes and New Works License](#changes-and-new-works-license).
+The licensor grants you a copyright license for the software to do everything you might do with the software that would otherwise infringe the licensor's copyright in it for any purpose.  However, you may only distribute the software according to [Distribution](#distribution) and make changes or new works based on the software according to [Changes and New Works License](#changes-and-new-works-license).
 
 ## Distribution
 
-**You may not give the software to anyone else.**  You have no license to distribute, publish, sell, lend, mirror, host, or otherwise make the software available to any other person, in any form.  This covers the source code, the compiled unit files (`.dcu`), the executable files, packages, archives, copies of the repository, uploads to a package registry or file-sharing service, and inclusion in any library, component set, template, sample project, course material, training data set, or software development kit.  It covers a changed or derived version of the software exactly as it covers the original.
+**You may not give the software to anyone else.**  The only place from which anyone may get the software is the licensor's repository, https://github.com/GabrielOnDelphi/Autopilot-for-Delphi.  You have no license to distribute, publish, sell, lend, mirror, host, or otherwise make the software available to any other person, in any form: to share it, point people at that repository.  This covers the source code, the compiled unit files (`.dcu`), the executable files, packages, archives, copies of the repository, uploads to a package registry or file-sharing service, and inclusion in any library, component set, template, sample project, course material, or software development kit.  It covers a changed or derived version of the software exactly as it covers the original.
 
-This also covers an application of your own into which the software is built: you may build and run it for your own use, but you may not give it to any other person, including customers, unless you hold a separate distribution license bought from the licensor.  A seat, paid or free, does not include a distribution license.
+Everyone who gets the software gets it under these terms: without a seat, they may use it only for private use.
 
-One narrow permission, and nothing beyond it:
+An application of your own into which the software is built is different: you may build and run it for your own use, but you may not give it to any other person, including customers, unless you hold a separate distribution license obtained from the licensor.  A seat does not include a distribution license.
+
+Two narrow permissions for such an application, and nothing beyond them:
 
 ### 1. Your own application with the bridge inactive
 
@@ -74,49 +58,46 @@ You may give other people an application of your own that you built without the 
 
   a. You distribute the application in compiled form - an executable, an installer, a mobile application package, or similar.
   b. What you distribute does not contain the source code of the software, its `.dcu` files, or any other form from which a person could recover the software as a unit reusable in their own projects.
-  c. Your own use of the software is covered by a seat - a free seat if your use is personal, a paid seat if it is commercial or by or for any organization.
+  c. Your own use of the software is covered by a seat or is private use.
 
 You owe no credit, notice, or attribution inside your application for this permission.
 
+### 2. Testing inside your company
+
+This permission is an exception to the rule above that you may not give an application of your own into which the software is built to any other person.
+
+You may give another individual in your company who holds a seat of their own, for testing only:
+
+  a. a test application of your own that you built with the test client of the software (`Autopilot.Client.pas`), and
+  b. a build of your own application that you made with the `AUTOPILOT` conditional define.
+
+A build server or test machine that you control may build and run these applications under your seat.  Conditions:
+
+  a. You give these applications in compiled form only.  What you give does not contain the source code of the software, its `.dcu` files, or any other form from which a person could recover the software as a unit reusable in their own projects.
+  b. These applications are used only to test your own application.
+  c. Your own use of the software is covered by a seat.
+
+This permission does not cover giving these applications to anyone outside your company, or to anyone who does not hold a seat of their own.
+
 ## No Reverse Engineering
 
-You may not decompile, disassemble, or otherwise reverse engineer the executable files of the software, and you may not try to rebuild their source code, in whole or in part.  You may not ask or allow anyone else to do it for you.
+You may not decompile, disassemble, or otherwise reverse engineer an executable file of the software whose source code the licensor has not published, and you may not try to rebuild that source code, in whole or in part.  You may not ask or allow anyone else to do it for you.
 
 ## AI Agents and Automated Tools
 
-Anything an AI agent, AI model, or other automated tool does with the software on your behalf or at your direction counts as done by you, and these terms apply to it exactly as they apply to you.  You may not use such a tool to do anything these terms forbid you to do yourself, including reverse engineering the executable files or publishing any part of the software.
+Anything an AI agent, AI model, or other automated tool does with the software on your behalf or at your direction counts as done by you, and these terms apply to it exactly as they apply to you.  You may not use such a tool to do anything these terms forbid you to do yourself, including reverse engineering the executable files.
 
 ## Notices
 
-Where the permission above lets you pass on a copy of any part of the software, you must ensure that whoever gets that copy also gets a copy of these terms or the URL for them above.
+Where a permission above lets you pass on a copy of any part of the software, you must ensure that whoever gets that copy also gets a copy of these terms or the URL for them above.
 
 ## Changes and New Works License
 
-The licensor grants you an additional copyright license to make changes and new works based on the source code of the software for any permitted purpose.  **This is for your own use.**  It does not cover the executable files: you may not change them.  [Distribution](#distribution) applies to anything you change or derive exactly as it applies to the original, so a changed version does not become yours to hand out.
+The licensor grants you an additional copyright license to make changes and new works based on the source code of the software for any purpose.  It does not cover the executable files: you may not change them.  [Distribution](#distribution) applies to anything you change or derive exactly as it applies to the original, and these terms apply to it in full: a changed version stays under these terms.
 
 ## Patent License
 
 The licensor grants you a patent license for the software that covers patent claims the licensor can license, or becomes able to license, that you would infringe by using the software.
-
-## Permitted Purposes
-
-With a paid seat, any purpose is a permitted purpose.  With a free seat, only a noncommercial purpose is a permitted purpose.
-
-## Noncommercial Purposes
-
-Any noncommercial purpose is a permitted purpose for a free seat, except as limited by [Government Institutions](#government-institutions) and [Organizations](#organizations).
-
-## Government Institutions
-
-Notwithstanding any other section of these terms, use by or for a government institution is **not** a permitted purpose for a free seat, whether or not that use would otherwise be noncommercial and whether or not it would otherwise qualify under [Personal Uses](#personal-uses).  A government institution needs a paid seat for each developer.
-
-## Personal Uses
-
-Personal use for research, experiment, and testing for the benefit of public knowledge, personal study, private entertainment, hobby projects, amateur pursuits, or religious observance, without any anticipated commercial application, is use for a permitted purpose.
-
-## Organizations
-
-Notwithstanding any other section of these terms, use by or for an organization is **not** a permitted purpose for a free seat, whether or not that use would otherwise be noncommercial and whether or not it would otherwise qualify under [Personal Uses](#personal-uses).  This includes any charitable organization, educational institution, public research organization, public safety or health organization, environmental protection organization, association, foundation, or religious organization, regardless of how it is funded.  Such an organization needs a paid seat for each developer.
 
 ## No Other Rights
 
@@ -143,10 +124,6 @@ The **software** is the software the licensor makes available under these terms,
 **You** refers to the individual or entity agreeing to these terms.
 
 **Your company** is any legal entity, sole proprietorship, or other kind of organization that you work for, plus all organizations that have control over, are under the control of, or are under common control with that organization.  **Control** means ownership of substantially all the assets of an entity, or the power to direct its management and policies by vote, contract, or otherwise.  Control can be direct or indirect.
-
-**A government institution** is any national, federal, state, regional, provincial, municipal, or local government, and any agency, department, ministry, authority, court, armed force, public administration, or state-owned enterprise of such a government, as well as any intergovernmental or supranational organization.
-
-**An organization** is any company, government institution, charity, school, university, research institute, hospital, association, foundation, club, or other group of people acting together, whether or not it is a legal entity and whether or not it seeks a profit.  An individual acting only for themselves is not an organization.
 
 **Your licenses** are all the licenses granted to you for the software under these terms.
 
