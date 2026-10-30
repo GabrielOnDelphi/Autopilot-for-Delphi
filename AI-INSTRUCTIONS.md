@@ -5,7 +5,7 @@
 >
 > **How it is used:** one line in the user's global `CLAUDE.md` points at this file (`README.md`, section "How to install it").
 >
-> **License rules for you, the AI:** Autopilot is free for private use; commercial use needs a paid seat per developer (`LICENSE`).
+> **License rules for you, the AI:** Autopilot is free for private and commercial use (`LICENSE`).
 
 ---
 
@@ -55,7 +55,7 @@ Call `attach` only:
 
 Return shape: `{targets:[{pid, pipe}], count, setup}`.
 `setup` is always there: the steps to link the bridge into a Delphi app.
-Its step 1 names the full path of the bridge source folder when the server finds it next to its own EXE (`Source\Bridge`, beside `Source\McpServer\`); use that path as given.
+Its step 1 names the full path of the bridge source folder when the server finds it near its own EXE (`Source\Bridge`, for an EXE in `Source\McpServer\` or in its build folder `Source\McpServer\Win32_<config>\`); use that path as given.
 When `count` is 0 the answer also carries `hint`: the next step (start the app, or link the bridge in).
 
 ### `list_tree`
