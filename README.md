@@ -22,16 +22,22 @@ When this file and the website disagree, the website is right.
 
 3. Restart the AI session when it asks you to, so it can use the new MCP server.
 
-The repository holds the source of the MCP server, not the EXE.
-Build it first: open `Source\McpServer\Autopilot.Mcp.dproj` in Delphi and build it (Win32).
-The EXE lands in `Source\McpServer\Win32_<config>\`: copy it one folder up, into `Source\McpServer\`, so it finds the bridge folder `Source\Bridge\` beside it.
-If you received Autopilot as a ZIP package, it already contains a built `Autopilot.Mcp.exe`: register that one.
+### Install steps for the AI
 
-To register the MCP server by hand: in Claude Code it is one command (write the real full path of the EXE on your disk).
+The repository holds the source of the MCP server, not the EXE, so the first step builds it.
+`<repo>` below is the folder the user named.
 
-```
-claude mcp add autopilot -- C:\Your\Path\Source\McpServer\Autopilot.Mcp.exe
-```
+1. Find Delphi: the newest key under `HKEY_CURRENT_USER\Software\Embarcadero\BDS\` holds the value `RootDir`, the Delphi folder.
+2. Build the MCP server for Win32, Release, in one `cmd` call:
+   `call "<RootDir>bin\rsvars.bat" && msbuild "<repo>\Source\McpServer\Autopilot.Mcp.dproj" /t:Build /p:Config=Release /p:Platform=Win32`
+   (the switch is `/p:Config=`; MSBuild ignores `/p:Configuration=` for a Delphi project).
+3. Check that `<repo>\Source\McpServer\Win32_Release\Autopilot.Mcp.exe` exists.
+4. Register it (Claude Code): `claude mcp add autopilot -- "<repo>\Source\McpServer\Win32_Release\Autopilot.Mcp.exe"`
+5. Tell the user to restart the AI session.
+
+If you received Autopilot as a ZIP package, it already contains a built `Autopilot.Mcp.exe` in `Source\McpServer\`: skip steps 1-3 and register that one.
+
+To do it by hand instead: open `Source\McpServer\Autopilot.Mcp.dproj` in Delphi, build it (Win32, Release), then register the EXE with the command of step 4.
 
 An EXE with madExcept built in sends a crash report to SciVance Tech when it crashes.
 To keep the report on your PC instead, add `--no-crash-report` at the end of that command.
@@ -62,7 +68,7 @@ See [Automated GUI testing in Delphi](https://gabrielmoraru.com/my-delphi-code/a
 
 ## License
 
-Private use is free. Commercial use needs a paid seat per developer.
+Free for private and commercial use.
 Read the full terms on the website: [Autopilot for Delphi - License](https://gabrielmoraru.com/my-delphi-code/autopilot-for-delphi-license/) (the same text is in [LICENSE](LICENSE)).
 
 ## Related topics
