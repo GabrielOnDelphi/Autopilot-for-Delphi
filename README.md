@@ -69,9 +69,11 @@ What Autopilot can read, where the data goes, and how to keep it to test data an
 
 ## License
 
-One license, the [SciVance Software License 3.4](LICENSE). Every developer who uses Autopilot for Delphi needs a paid seat: one seat per developer, for any use, commercial or not. A seat is for life and covers every 3.x release; version 4 will be a new purchase. Price and how to buy: <https://www.GabrielMoraru.com/autopilot>.
+One license, the [SciVance Software License 3.5](LICENSE).
 
-For testing inside your company, a colleague who holds a seat of their own may get your built test application and the `AUTOPILOT` build of your app, and a build server that you control runs under your seat. Terms: [LICENSE](LICENSE).
+- **Private use is free:** an individual's own study, hobby projects and personal research. No registration, no contact needed.
+- **Commercial use needs a paid seat:** any use by or for a business, in paid work, or by any organization. One seat per developer, for life for every 3.x release. To get a seat, contact me: <https://gabrielmoraru.com/about-me/>.
+- **The source is yours to read and change** for your own use. This repository is the only place that distributes it: to share Autopilot, share the link. Terms: [LICENSE](LICENSE).
 
 
 ## Future plans
