@@ -1,85 +1,79 @@
 # Autopilot for Delphi
 
-AI assistants (Claude and others) can already write and compile your Delphi code, but they cannot test it: they cannot run your app, push its buttons and look at its forms.
-Through *Autopilot for Delphi* the AI can click, type, read state, and take screenshots of the live application and its forms. It does all this with no human at the keyboard.
+**There is a big gap between Claude and your Delphi app. Autopilot closes it.**
 
-For the full overview, demos and tool reference see **[www.GabrielMoraru.com/autopilot](https://www.GabrielMoraru.com/autopilot)**
+An AI assistant can write your Delphi code and compile it, but then it stops: it cannot run the program and click its buttons.
+Autopilot for Delphi hands the controls of your running VCL or FMX app to the AI.
+The AI can click all controls, type text into edit boxes, read the labels, set and read any property, and take screenshots - the same loop a human operator runs, with no human at the keyboard.
+It works in the background and never moves the mouse, so you can keep working while the AI tests.
 
+The full description lives on the website: **[GabrielMoraru.com/autopilot](https://gabrielmoraru.com/my-delphi-code/autopilot-for-delphi/)**.
+When this file and the website disagree, the website is right.
 
-## Requirements
+## How to install it
 
-- Delphi 11 Alexandria, 12 Athens or 13 Florence.
-- Targets: Windows 32/64 bit (VCL and FMX) and Android (FMX).
-- An AI assistant that speaks MCP: Claude Code, Kai, Claude Desktop, Cursor, Cline.
+1. Download or clone this repository to a folder, for example `c:\Autopilot For Delphi\`.
+2. Give your AI assistant (Claude, Gemini, etc.) a prompt like this:
 
-## What is in the package
+   > I have a new MCP server for you in `c:\Autopilot For Delphi\`. Install it as its README.md says.
+   > Add this line to your global CLAUDE.md:
+   > "To test the GUI of my Delphi programs, use Autopilot. See: c:\Autopilot For Delphi\AI-INSTRUCTIONS.md."
+   > Tell me when I must restart you.
 
-- `Source\McpServer\Autopilot.Mcp.exe` - the MCP server your AI assistant talks to (with `thirdparty-notices.txt`).
-- `Source\Bridge\` - the bridge units that you build into the debug build of your own app.
-- `Source\Client\Autopilot.Client.pas` - the test client, for GUI tests in DUnitX that run with no AI.
-- `DemoVCL\` and `DemoFmx\` - two demo apps, each with a demo DUnitX test project in its `UnitTesting\` folder.
-- `AI-INSTRUCTIONS.md` - the briefing for your AI assistant. `LICENSE` - the license terms.
+3. Restart the AI session when it asks you to, so it can use the new MCP server.
 
-## Quick start
-
-
-### Step 1 - Register the MCP server into your Claude
-
-In Claude Code this is one command:
+To register the MCP server by hand: in Claude Code it is one command (write the real full path of the EXE on your disk).
+`Autopilot.Mcp.exe` comes ready to run: you do not compile it.
 
 ```
 claude mcp add autopilot -- C:\Your\Path\Source\McpServer\Autopilot.Mcp.exe
 ```
 
-Write the real full path of that EXE on your disk. Restart the assistant if it was already running. It now has fourteen new tools, all prefixed `autopilot`.
+When `Autopilot.Mcp.exe` crashes, it sends a crash report to SciVance Tech.
+To keep the report on your PC instead, add `--no-crash-report` at the end of that command.
 
-Optional: when `Autopilot.Mcp.exe` crashes, it sends a crash report to SciVance Tech.
-To keep that report on your PC, add `--no-crash-report` at the end: `claude mcp add autopilot -- C:\Your\Path\Source\McpServer\Autopilot.Mcp.exe --no-crash-report`.
-A crash report is then only saved to a file in `%TEMP%\Autopilot\`.
+Optional: to build the MCP server yourself, open `Source\McpServer\Autopilot.Mcp.dproj` in Delphi and build it (Win32), then register the EXE from `Source\McpServer\Win32_<config>\`.
+A build on a PC without madExcept has no crash reporter, so it never sends a report.
 
-For details see **[www.GabrielMoraru.com/autopilot](https://www.GabrielMoraru.com/autopilot)**
+`AI-INSTRUCTIONS.md` is a briefing for the AI, not for you: you write nothing in it.
+Without it everything still works, but the AI finds its way more slowly and spends more tokens.
 
-### Step 2 - Now use it
+## How to use it
 
-Ask the assistant to wire Autopilot into your project. It puts the `Source\Bridge` folder on the unit search path of your project, adds a `StartBridge` call to your `.dpr`, and adds the `AUTOPILOT` define to your Debug build only.
+**Demo app:** open `DemoVCL\Autopilot.Demo.dproj` and run it.
+Then ask your AI assistant: *"List the controls of Autopilot.Demo app, then click btnIncrement five times and read lblCounter and confirm it shows the correct answer."*
 
-Then talk to the assistant about your own app in plain words. It resolves the control names itself:
+**Your own app:** ask the AI to wire Autopilot into your project, then talk to it about your app in plain words:
 
 > *"Start my app, type 'Gabriel' in the name field, press Save, and tell me what the status label says."*
->
-> *"The Next Page button does nothing. Run the app, press it, and find out why."*
 
-GUI tests that run with no AI, in a DUnitX project or as a build step: see the section "Repeatable tests without AI: DUnitX with Autopilot.Client" in [AI-INSTRUCTIONS.md](AI-INSTRUCTIONS.md), and the page [Automated GUI testing in Delphi](https://gabrielmoraru.com/my-delphi-code/automated-gui-testing-delphi/).
+**Repeatable GUI tests, with no AI:** your DUnitX tests start the app, click, type, read the labels and check the result with `Assert`.
+No AI and no tokens, so the tests run on every build.
+See [Automated GUI testing in Delphi](https://gabrielmoraru.com/my-delphi-code/automated-gui-testing-delphi/).
 
-## AI-INSTRUCTIONS.md - optional, and you write nothing in it
+## Supported platforms
 
-`AI-INSTRUCTIONS.md` in this package is already written. It is a briefing **for the AI, not for you**: the fourteen tools, their arguments, the error codes, and how to drive an application in few and cheap turns.
-
-To use it, copy the file into your own project folder and add one line to your project's `CLAUDE.md` so the assistant reads it:
-
-```
-Driving the GUI: see AI-INSTRUCTIONS.md
-```
-
-Skip this and everything still works. The assistant just finds its way around more slowly and spends more of your tokens.
-
-## Security and privacy
-
-What Autopilot can read, where the data goes, and how to keep it to test data and one project: [Autopilot for Delphi - Security and privacy](https://gabrielmoraru.com/my-delphi-code/autopilot-for-delphi-security-and-privacy/).
+- Delphi: Rio, Alexandria, Athens and Florence. Users report that it works on Delphi 10.2 too.
+- Platforms: Win32, Win64 (VCL and FMX), Android (FMX). Mac to be added soon.
+- An AI assistant that speaks MCP: Claude Code, Kai, Claude Desktop, Cursor, Cline.
+- No third-party dependencies.
 
 ## License
 
-One license, the [SciVance Software License 3.5](LICENSE).
+Private use is free. Commercial use needs a paid seat per developer.
+Read the full terms on the website: [Autopilot for Delphi - License](https://gabrielmoraru.com/my-delphi-code/autopilot-for-delphi-license/) (the same text is in [LICENSE](LICENSE)).
 
-- **Private use is free:** an individual's own study, hobby projects and personal research. No registration, no contact needed.
-- **Commercial use needs a paid seat:** any use by or for a business, in paid work, or by any organization. One seat per developer, for life for every 3.x release. To get a seat, contact me: <https://gabrielmoraru.com/about-me/>.
-- **The source is yours to read and change** for your own use. This repository is the only place that distributes it: to share Autopilot, share the link. Terms: [LICENSE](LICENSE).
+## Related topics
 
+* [How does it compare with Embarcadero Kai?](https://gabrielmoraru.com/my-delphi-code/autopilot-for-delphi-details/#kai)
+* [How it works](https://gabrielmoraru.com/my-delphi-code/autopilot-for-delphi-details/#how-it-works)
+* [The tools the AI calls](https://gabrielmoraru.com/my-delphi-code/autopilot-for-delphi-details/#tools)
+* [Native OS dialogs](https://gabrielmoraru.com/my-delphi-code/autopilot-for-delphi-details/#native-dialogs)
+* [What it deliberately doesn't do](https://gabrielmoraru.com/my-delphi-code/autopilot-for-delphi-details/#limits)
+* [Found a bug?](https://gabrielmoraru.com/my-delphi-code/autopilot-for-delphi-details/#found-a-bug)
+* [Automated GUI testing in Delphi](https://gabrielmoraru.com/my-delphi-code/automated-gui-testing-delphi/)
+* [What's new in each version](https://gabrielmoraru.com/my-delphi-code/autopilot-for-delphi-whats-new/)
+* [Security and privacy](https://gabrielmoraru.com/my-delphi-code/autopilot-for-delphi-security-and-privacy/)
 
-## Future plans
-
-Support for Mac.
-
-## What's new
-
-See [Autopilot for Delphi - What's New](https://gabrielmoraru.com/my-delphi-code/autopilot-for-delphi-whats-new/).
+Questions, or something broke? [Write to me](https://gabrielmoraru.com/about-me/).
+If Autopilot is useful to you, give it a star on GitHub.
