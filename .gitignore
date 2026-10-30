@@ -1,5 +1,4 @@
-# WHITELIST: this folder also holds private notes, customer data and the MCP server source.
-# Everything at the root is ignored, except the public files and folders named here.
+# WHITELIST: everything at the root is ignored, except the public files and folders named here.
 /*
 !/.gitignore
 !/.gitattributes
@@ -131,7 +130,7 @@ Android/
 Android64/
 *.res
 
-# The MCP server: its source, and the published exe (the only exe in the repository). Its builds go to Win32_*/ (ignored above).
+# The published MCP server exe is the only exe in the repository. Its builds go to Win32_*/ (ignored above).
 !Source/McpServer/Autopilot.Mcp.exe
 Source/McpServer/Autopilot.Mcp.old-*.exe
 *.dsv
