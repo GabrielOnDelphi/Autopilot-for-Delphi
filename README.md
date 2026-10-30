@@ -77,3 +77,5 @@ Read the full terms on the website: [Autopilot for Delphi - License](https://gab
 
 Questions, or something broke? [Write to me](https://gabrielmoraru.com/about-me/).
 If Autopilot is useful to you, give it a star on GitHub.
+
+![Even the AI knows which button to click: give Autopilot for Delphi a star](DemoVCL/Logo.jpg)
