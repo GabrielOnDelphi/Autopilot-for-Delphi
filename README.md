@@ -22,17 +22,19 @@ When this file and the website disagree, the website is right.
 
 3. Restart the AI session when it asks you to, so it can use the new MCP server.
 
+The repository holds the source of the MCP server, not the EXE.
+Build it first: open `Source\McpServer\Autopilot.Mcp.dproj` in Delphi and build it (Win32).
+The EXE lands in `Source\McpServer\Win32_<config>\`.
+If you received Autopilot as a ZIP package, it already contains a built `Autopilot.Mcp.exe`: register that one.
+
 To register the MCP server by hand: in Claude Code it is one command (write the real full path of the EXE on your disk).
-`Autopilot.Mcp.exe` comes ready to run: you do not compile it.
 
 ```
-claude mcp add autopilot -- C:\Your\Path\Source\McpServer\Autopilot.Mcp.exe
+claude mcp add autopilot -- C:\Your\Path\Source\McpServer\Win32_Release\Autopilot.Mcp.exe
 ```
 
-When `Autopilot.Mcp.exe` crashes, it sends a crash report to SciVance Tech.
+An EXE with madExcept built in sends a crash report to SciVance Tech when it crashes.
 To keep the report on your PC instead, add `--no-crash-report` at the end of that command.
-
-Optional: to build the MCP server yourself, open `Source\McpServer\Autopilot.Mcp.dproj` in Delphi and build it (Win32), then register the EXE from `Source\McpServer\Win32_<config>\`.
 A build on a PC without madExcept has no crash reporter, so it never sends a report.
 
 `AI-INSTRUCTIONS.md` is a briefing for the AI, not for you: you write nothing in it.
@@ -78,4 +80,4 @@ Read the full terms on the website: [Autopilot for Delphi - License](https://gab
 Questions, or something broke? [Write to me](https://gabrielmoraru.com/about-me/).
 If Autopilot is useful to you, give it a star on GitHub.
 
-![Even the AI knows which button to click: give Autopilot for Delphi a star](DemoVCL/Logo.jpg)
+![Even the AI knows which button to click: give Autopilot for Delphi a star](DemoVCL/star_bringer.jpg)
