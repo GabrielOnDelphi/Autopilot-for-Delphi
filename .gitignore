@@ -1,3 +1,18 @@
+# WHITELIST: this folder also holds private notes, customer data and the MCP server source.
+# Everything at the root is ignored, except the public files and folders named here.
+/*
+!/.gitignore
+!/.gitattributes
+!/README.md
+!/AI-INSTRUCTIONS.md
+!/LICENSE
+!/Home page.url
+!/Delphi, in all its glory.url
+!/Source/
+!/DemoVCL/
+!/DemoFmx/
+!/.claude/
+
 # Uncomment these types if you want even more clean repository. But be careful.
 # It can make harm to an existing project source. Read explanations below.
 #
@@ -121,11 +136,6 @@ Android64/
 Source/McpServer/*
 !Source/McpServer/Autopilot.Mcp.exe
 !Source/McpServer/thirdparty-notices.txt
-
-# Local folders and files
-/Tests/
-/Video demo pre-flight/
-/Publish-McpServer.ps1
 
 # Temporary files. .claude/agents stays: AI-INSTRUCTIONS.md tells users to install autopilot-script-runner.md from there.
 Temp/
