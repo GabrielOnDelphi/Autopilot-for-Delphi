@@ -101,7 +101,7 @@ begin
   // Caller-supplied timeoutMs wins (the documented modal-dialog recipe: pass a short
   // timeout, expect -32004, then dismiss_dialog). Otherwise scale the worker-side wait
   // with the requested count so the timeout fires only after a genuinely stuck dispatch,
-  // not after a legitimate long count loop. Mitigates Plans/04 R1 by reducing the window
+  // not after a legitimate long count loop. This narrows the window
   // where main-thread-blocked fires while the queued procedure is still running.
   // Default 5000 ms for count <= 1; extra 100 ms per extra click.
   if Params.TimeoutMs > 0
