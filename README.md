@@ -24,13 +24,13 @@ When this file and the website disagree, the website is right.
 
 The repository holds the source of the MCP server, not the EXE.
 Build it first: open `Source\McpServer\Autopilot.Mcp.dproj` in Delphi and build it (Win32).
-The EXE lands in `Source\McpServer\Win32_<config>\`.
+The EXE lands in `Source\McpServer\Win32_<config>\`: copy it one folder up, into `Source\McpServer\`, so it finds the bridge folder `Source\Bridge\` beside it.
 If you received Autopilot as a ZIP package, it already contains a built `Autopilot.Mcp.exe`: register that one.
 
 To register the MCP server by hand: in Claude Code it is one command (write the real full path of the EXE on your disk).
 
 ```
-claude mcp add autopilot -- C:\Your\Path\Source\McpServer\Win32_Release\Autopilot.Mcp.exe
+claude mcp add autopilot -- C:\Your\Path\Source\McpServer\Autopilot.Mcp.exe
 ```
 
 An EXE with madExcept built in sends a crash report to SciVance Tech when it crashes.
