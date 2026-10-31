@@ -51,7 +51,7 @@ uses
 {$IFDEF AUTOPILOT}
 
 // Licence reminder in the Messages pane, AUTOPILOT builds only. See the twin comment in Autopilot.Bridge.Vcl.pas for why this is a HINT and who sees it.
-{$MESSAGE HINT 'Autopilot for Delphi: free for private and commercial use - terms: https://gabrielmoraru.com/my-delphi-code/autopilot-for-delphi-license/'}
+{$MESSAGE HINT 'Autopilot for Delphi: license: https://github.com/GabrielOnDelphi/Autopilot-for-Delphi/blob/main/LICENSE'}
 
 var
   GWorker: TBridgeWorker = NIL;
