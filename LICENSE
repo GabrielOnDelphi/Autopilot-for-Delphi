@@ -4,15 +4,21 @@ Copyright (c) 2026 Gabriel Moraru (https://gabrielmoraru.com)
 ======================================================================
 # License summary
 
-This software has ONE license, the SciVance Software License (3.6), reproduced below.
+This software is under the SciVance Software License (3.7), reproduced below.
 
-FREE FOR EVERYONE. Anyone may use the software free of charge, for any purpose: private use, commercial use, paid work, and use by any business or organization. No seat, no registration, no contact needed.
+FREE FOR EVERYONE.
+Anyone may use the software free of charge, for any purpose: private use, commercial use, paid work, and use by any business or organization.
 
-SOURCE CODE. The source code is public. You may read it and change it for your own use. The only place that distributes it is https://github.com/GabrielOnDelphi/Autopilot-for-Delphi: do not give copies to others or publish them anywhere else - point people at that repository.
+SOURCE CODE.
+The source code is public. You may read it and change it.
+If you change it, you must send your changes back to the licensor (as a pull request, or as a patch through https://gabrielmoraru.com), or ask the licensor to waive this for a small fee.
+The only places that distribute it are https://github.com/GabrielOnDelphi/Autopilot-for-Delphi and the downloads on https://gabrielmoraru.com. You are not to redistribute it - point people at that repository.
 
-YOUR APPLICATION. You may give your own application, built with or without the AUTOPILOT define, to anyone, in compiled form only.
+YOUR APPLICATION.
+You may give your own application, built with or without the AUTOPILOT define, to anyone, in compiled form only.
+Its main window must show a visible link to https://gabrielmoraru.com, or you ask the licensor to waive this for a small fee.
 
-This is not an OSI-approved open-source license: copies of the software itself come only from the repository above. A copy obtained under an earlier version of this license stays under that version, or may be used under this version instead.
+This is not an OSI-approved open-source license: copies of the software itself come only from the places above.
 
 This summary is not part of the license. Where it differs from the terms below, the terms below apply.
 
@@ -26,7 +32,7 @@ In order to get any license under these terms, you must agree to them as both st
 
 ## Free Use
 
-Anyone may use the software free of charge, for any purpose, commercial or noncommercial.  This includes use by or for a business, use in work for which anyone is paid, and use by or for an organization of any kind.  Use needs no seat, no registration and no contact with the licensor.
+Anyone may use the software free of charge, for any purpose, commercial or noncommercial.  This includes use by or for a business, use in work for which anyone is paid, and use by or for an organization of any kind.  
 
 ## Copyright License
 
@@ -34,53 +40,40 @@ The licensor grants you a copyright license for the software to do everything yo
 
 ## Distribution
 
-**You may not give the software to anyone else.**  The only place from which anyone may get the software is the licensor's repository, https://github.com/GabrielOnDelphi/Autopilot-for-Delphi.  You have no license to distribute, publish, sell, lend, mirror, host, or otherwise make the software available to any other person, in any form: to share it, point people at that repository.  This covers the source code, the compiled unit files (`.dcu`), the executable files, packages, archives, copies of the repository, uploads to a package registry or file-sharing service, and inclusion in any library, component set, template, sample project, course material, or software development kit.  It covers a changed or derived version of the software exactly as it covers the original.
+**You may not give the software to anyone else.**  
+The only places from which anyone may get the software are the licensor's repository, https://github.com/GabrielOnDelphi/Autopilot-for-Delphi, and the downloads the licensor offers on https://gabrielmoraru.com.
+You have no license to distribute, publish, sell, lend, mirror, host, or otherwise make the software available to any other person, in any form: to share it, point people at that repository.  This covers the source code, the compiled unit files (`.dcu`), the executable files, packages, archives, copies of the repository, uploads to a package registry or file-sharing service, and inclusion in any library, component set, template, sample project, course material, or software development kit.  It covers a changed or derived version of the software exactly as it covers the original.
+One exception: you may send your changes to the licensor, as [Changes and New Works License](#changes-and-new-works-license) requires.
 
 Everyone who gets the software gets it under these terms.
 
-### Your own application
+### Your application
 
-An application of your own into which the software is built is different.  You may give it to other people, including customers, whether you built it with or without the `AUTOPILOT` conditional define, and whether it is your product or a test application you built with the test client of the software (`Autopilot.Client.pas`).  Conditions:
+An application you make, for yourself or for a client, into which the software is built is different.  You may give it to other people, including customers, whether you built it with or without the `AUTOPILOT` conditional define, and whether it is your product or a test application you built with the test client of the software (`Autopilot.Client.pas`).  
+Conditions:
 
   a. You distribute the application in compiled form - an executable, an installer, a mobile application package, or similar.
   b. What you distribute does not contain the source code of the software, its `.dcu` files, or any other form from which a person could recover the software as a unit reusable in their own projects.
+  c. The main window of the application shows a visible link to the licensor's website, https://gabrielmoraru.com.  An application whose main window is never shown, or that has no graphical window (a console program, a service), shows the link in its documentation instead.
 
-You owe no credit, notice, or attribution inside your application for this permission.
-
-A build made with the `AUTOPILOT` conditional define lets anyone who can reach the bridge drive the application.  You are responsible for deciding to whom you give such a build.
-
-## No Reverse Engineering
-
-You may not decompile, disassemble, or otherwise reverse engineer an executable file of the software whose source code the licensor has not published, and you may not try to rebuild that source code, in whole or in part.  You may not ask or allow anyone else to do it for you.
-
-## AI Agents and Automated Tools
-
-Anything an AI agent, AI model, or other automated tool does with the software on your behalf or at your direction counts as done by you, and these terms apply to it exactly as they apply to you.  You may not use such a tool to do anything these terms forbid you to do yourself, including reverse engineering the executable files.
+The licensor can waive condition c in writing, for a small fee.  To ask, contact the licensor through https://gabrielmoraru.com.
+Apart from the link of condition c, you owe no credit, notice, or attribution inside your application.
+A person who gets your application, from you or from someone you allowed, may use it and pass it on as you allow.  That person needs no license under these terms.
 
 ## Notices
 
-Where a permission above lets you pass on a copy of any part of the software, you must ensure that whoever gets that copy also gets a copy of these terms or the URL for them above.
+Where a permission above lets you pass on a copy of any part of the software, you must ensure that whoever gets that copy also gets a copy of these terms and their URL, https://github.com/GabrielOnDelphi/Autopilot-for-Delphi/blob/main/LICENSE.
 
 ## Changes and New Works License
 
-The licensor grants you an additional copyright license to make changes and new works based on the source code of the software for any purpose.  It does not cover the executable files: you may not change them.  [Distribution](#distribution) applies to anything you change or derive exactly as it applies to the original, and these terms apply to it in full: a changed version stays under these terms.
-
-## Patent License
-
-The licensor grants you a patent license for the software that covers patent claims the licensor can license, or becomes able to license, that you would infringe by using the software.
+The licensor grants you an additional copyright license to make changes and new works based on the source code of the software for any purpose.
+Condition: you send your changes to the licensor, as a pull request to https://github.com/GabrielOnDelphi/Autopilot-for-Delphi or as a patch sent through https://gabrielmoraru.com, so the licensor can publish them.  By sending them, you grant the licensor a free, permanent, irrevocable, worldwide license to use, change, publish, and license your changes under any terms.
+The licensor can waive this condition in writing, for a small fee.  To ask, contact the licensor through https://gabrielmoraru.com.
 
 ## No Other Rights
 
 These terms do not allow you to sublicense or transfer any of your licenses to anyone else, or prevent the licensor from granting licenses to anyone else.  These terms do not imply any other licenses.
-
-## Patent Defense
-
-If you make any written claim that the software infringes or contributes to infringement of any patent, your patent license for the software granted under these terms ends immediately. If your company makes such a claim, your patent license ends immediately for work on behalf of your company.
-
-## Violations
-
-The first time you are notified in writing that you have violated any of these terms, or done anything with the software not covered by your licenses, your licenses can nonetheless continue if you come into full compliance with these terms, and take practical steps to correct past violations, within 7 days of receiving notice.  Otherwise, all your licenses end immediately.
-
+ 
 ## No Liability
 
 ***As far as the law allows, the software comes as is, without any warranty or condition, and the licensor will not be liable to you for any damages arising out of these terms or the use or nature of the software, under any kind of legal claim.***
@@ -93,7 +86,7 @@ The **software** is the software the licensor makes available under these terms,
 
 **You** refers to the individual or entity agreeing to these terms.
 
-**Your company** is any legal entity, sole proprietorship, or other kind of organization that you work for, plus all organizations that have control over, are under the control of, or are under common control with that organization.  **Control** means ownership of substantially all the assets of an entity, or the power to direct its management and policies by vote, contract, or otherwise.  Control can be direct or indirect.
+**Your changes** are every change you make to the source code of the software, also when the changed code sits in a file of your own.  Your own code that only calls or links the software is not a change.
 
 **Your licenses** are all the licenses granted to you for the software under these terms.
 
