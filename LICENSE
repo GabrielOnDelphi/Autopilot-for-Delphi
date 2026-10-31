@@ -11,14 +11,12 @@ Anyone may use the software free of charge, for any purpose: private use, commer
 
 SOURCE CODE.
 The source code is public. You may read it and change it.
-If you change it, you must send your changes back to the licensor (as a pull request, or as a patch through https://gabrielmoraru.com), or ask the licensor to waive this for a small fee.
-The only places that distribute it are https://github.com/GabrielOnDelphi/Autopilot-for-Delphi and the downloads on https://gabrielmoraru.com. You are not to redistribute it - point people at that repository.
+If you change it, you must send your changes back to the licensor (as a pull request, or as a patch through gabrielmoraru.com), or ask the licensor to waive this.
+The only places that distribute it are github.com/GabrielOnDelphi/Autopilot-for-Delphi and the downloads on gabrielmoraru.com. 
+You are not to redistribute it - point people at that repository.
 
 YOUR APPLICATION.
 You may give your own application, built with or without the AUTOPILOT define, to anyone, in compiled form only.
-Its main window must show a visible link to https://gabrielmoraru.com, or you ask the licensor to waive this for a small fee.
-
-This is not an OSI-approved open-source license: copies of the software itself come only from the places above.
 
 This summary is not part of the license. Where it differs from the terms below, the terms below apply.
 
@@ -41,7 +39,7 @@ The licensor grants you a copyright license for the software to do everything yo
 ## Distribution
 
 **You may not give the software to anyone else.**  
-The only places from which anyone may get the software are the licensor's repository, https://github.com/GabrielOnDelphi/Autopilot-for-Delphi, and the downloads the licensor offers on https://gabrielmoraru.com.
+The only places from which anyone may get the software are the licensor's repository, github.com/GabrielOnDelphi/Autopilot-for-Delphi, and the downloads the licensor offers on gabrielmoraru.com.
 You have no license to distribute, publish, sell, lend, mirror, host, or otherwise make the software available to any other person, in any form: to share it, point people at that repository.  This covers the source code, the compiled unit files (`.dcu`), the executable files, packages, archives, copies of the repository, uploads to a package registry or file-sharing service, and inclusion in any library, component set, template, sample project, course material, or software development kit.  It covers a changed or derived version of the software exactly as it covers the original.
 One exception: you may send your changes to the licensor, as [Changes and New Works License](#changes-and-new-works-license) requires.
 
@@ -67,7 +65,7 @@ Where a permission above lets you pass on a copy of any part of the software, yo
 ## Changes and New Works License
 
 The licensor grants you an additional copyright license to make changes and new works based on the source code of the software for any purpose.
-Condition: you send your changes to the licensor, as a pull request to https://github.com/GabrielOnDelphi/Autopilot-for-Delphi or as a patch sent through https://gabrielmoraru.com, so the licensor can publish them.  By sending them, you grant the licensor a free, permanent, irrevocable, worldwide license to use, change, publish, and license your changes under any terms.
+Condition: you send your changes to the licensor, as a pull request to https://github.com/GabrielOnDelphi/Autopilot-for-Delphi or as a patch sent through https://gabrielmoraru.com, so the licensor can publish them.  Send them within 30 days after you first use the changed software in your work; a change you throw away before then needs no sending.  By sending them, you grant the licensor a free, permanent, irrevocable, worldwide license to use, change, publish, and license your changes under any terms.
 The licensor can waive this condition in writing, for a small fee.  To ask, contact the licensor through https://gabrielmoraru.com.
 
 ## No Other Rights
