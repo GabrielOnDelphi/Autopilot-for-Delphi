@@ -31,11 +31,10 @@ The repository holds the source of the MCP server, not the EXE, so the first ste
 2. Build the MCP server for Win32, Release, in one `cmd` call:
    `call "<RootDir>bin\rsvars.bat" && msbuild "<repo>\Source\McpServer\Autopilot.Mcp.dproj" /t:Build /p:Config=Release /p:Platform=Win32`
    (the switch is `/p:Config=`; MSBuild ignores `/p:Configuration=` for a Delphi project).
+   If the build answers "This version of the product does not support command line compiling" (Delphi Community Edition), or Delphi has no `dcc32.exe` in its `bin` folder, stop and ask the user, in one sentence, to open `<repo>\Source\McpServer\Autopilot.Mcp.dproj` in Delphi, select Release and Win32, click Build, then tell you "done".
 3. Check that `<repo>\Source\McpServer\Win32_Release\Autopilot.Mcp.exe` exists.
 4. Register it (Claude Code): `claude mcp add autopilot -- "<repo>\Source\McpServer\Win32_Release\Autopilot.Mcp.exe"`
 5. Tell the user to restart the AI session.
-
-If you received Autopilot as a ZIP package, it already contains a built `Autopilot.Mcp.exe` in `Source\McpServer\`: skip steps 1-3 and register that one.
 
 To do it by hand instead: open `Source\McpServer\Autopilot.Mcp.dproj` in Delphi, build it (Win32, Release), then register the EXE with the command of step 4.
 
@@ -68,8 +67,7 @@ See [Automated GUI testing in Delphi](https://gabrielmoraru.com/my-delphi-code/a
 
 ## License
 
-Free for private and commercial use.
-Read the full terms on the website: [Autopilot for Delphi - License](https://gabrielmoraru.com/my-delphi-code/autopilot-for-delphi-license/) (the same text is in [LICENSE](LICENSE)).
+[LICENSE](LICENSE)
 
 ## Related topics
 
