@@ -1,6 +1,6 @@
 unit MCPServer.Schema.Generator;
 
-// Derived from GDK
+// Derived from GDK Software's Delphi-MCP-Server (MIT) - see thirdparty-notices.txt
 
 (*=============================================================================================================
    2026.11.01
