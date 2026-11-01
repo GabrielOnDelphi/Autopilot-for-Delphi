@@ -1,7 +1,7 @@
 unit Autopilot.Mcp.JsonRpc;
 
 {=============================================================================================================
-   2026.10.06
+   2026.11.01
    www.GabrielMoraru.com
 --------------------------------------------------------------------------------------------------------------
    Single-line JSON-RPC 2.0 dispatcher for the Autopilot MCP server. Implements the minimum MCP
@@ -10,6 +10,11 @@ unit Autopilot.Mcp.JsonRpc;
 
    A tools/call result is one text block, or - for a tool whose IMCPTool.ExtractImage hands over a
    picture (screenshot) - an image block followed by a text block with the rest of the answer.
+   Errors of a tools/call follow MCP 2025-11-25, section "Error Handling" of
+   https://modelcontextprotocol.io/specification/2025-11-25/server/tools : an unknown tool, and params
+   that break the CallToolRequest shape (no "name" string, "arguments" not an object) are the protocol
+   error -32602; everything the tool itself raises, its argument value checks included (a missing
+   required argument, a wrong type, a value out of range), is a result with isError: true.
 
    No threads, no transport here — the caller (Autopilot.Mcp.Stdio) drives the readln loop.
    Pure JSON in -> JSON out (or '' for notifications).
@@ -28,7 +33,7 @@ const
   /// The version of Autopilot.Mcp.exe: serverInfo.version in the initialize answer, the startup log line and
   /// the Version field of a crash report. Keep it equal to FileVersion in Autopilot.Mcp.dproj (Win32).
   /// Separate from Autopilot.Bridge.Core.BridgeVersion, which the bridge sends in its hello frame.
-  McpServerVersion = '3.1.3';
+  McpServerVersion = '3.1.4';
 
 
 /// Process one JSON-RPC line. Returns the response line (no trailing newline)
@@ -94,6 +99,10 @@ const
   );
 
 type
+  /// A tools/call that names no registered tool, or whose params break the CallToolRequest shape.
+  /// DispatchLine answers it with the JSON-RPC error -32602.
+  EMcpInvalidParams = class(Exception);
+
   /// Holder for the singleton tool-instance cache. Wrapped in a class so we can
   /// hang a class destructor on it (no finalization section, per project rule).
   /// One IMCPTool per tool name, built lazily on first tools/list or tools/call,
@@ -148,6 +157,14 @@ end;
 function ResolveCachedTool(const AName: String): IMCPTool;
 begin
   Result := TToolCache.Resolve(AName);
+end;
+
+
+/// TRUE when ANode is a JSON string. Up to Delphi 12 TJSONNumber descends from TJSONString, so a test with
+/// 'is TJSONString' alone also lets a number through there.
+function IsJsonText(ANode: TJSONValue): Boolean;
+begin
+  Result := (ANode is TJSONString) and not (ANode is TJSONNumber);
 end;
 
 
@@ -223,7 +240,7 @@ begin
   Result := MCP_PROTOCOL_VERSION;
   if AParams = nil then Exit;
   Node := AParams.GetValue('protocolVersion');
-  if (Node <> nil) and IsSupportedVersion(Node.Value) then
+  if IsJsonText(Node) and IsSupportedVersion(Node.Value) then
     Result := Node.Value;
 end;
 
@@ -365,9 +382,12 @@ begin
 end;
 
 
-/// Build the tools/call result. Reads name + arguments from AParams (either
-/// may be missing or wrong-typed — handle gracefully), resolves the tool,
-/// runs it, and wraps the output. AParams may be nil.
+/// Build the tools/call result. Reads name + arguments from AParams, resolves the tool, runs it, and wraps
+/// the output. AParams may be nil (no params, or params that are not an object).
+/// Raises EMcpInvalidParams when "name" is not a non-empty string, when "arguments" is there but is not an
+/// object (a JSON null counts as absent), and when no tool has that name: the protocol errors of
+/// https://modelcontextprotocol.io/specification/2025-11-25/server/tools section "Error Handling".
+/// A bad argument VALUE is not one of them: it raises inside Tool.Execute and comes back as an isError result.
 function BuildToolCallResult(AParams: TJSONObject): TJSONObject;
 var
   ToolName  : String;
@@ -381,42 +401,45 @@ var
   MimeType  : String;
   HasImage  : Boolean;
 begin
-  ToolName := '';
+  NameNode := nil;
+  ArgsNode := nil;
   if AParams <> nil then
   begin
     NameNode := AParams.GetValue('name');
-    if NameNode is TJSONString then
-      ToolName := NameNode.Value;
-  end;
-
-  if ToolName = '' then
-    Exit(WrapToolCallContent('Error: tools/call missing required "name" parameter', true));
-
-  // Extract arguments. The spec lets clients omit "arguments" entirely or send
-  // nil; either is treated as an empty object.
-  Args      := nil;
-  ArgsOwned := false;
-  if AParams <> nil then
-  begin
     ArgsNode := AParams.GetValue('arguments');
-    if ArgsNode is TJSONObject then
-      Args := TJSONObject(ArgsNode);
   end;
-  if Args = nil then
+
+  if not IsJsonText(NameNode) or (NameNode.Value = '') then
+    raise EMcpInvalidParams.Create('Invalid params: tools/call needs "name", the name of a tool as a string');
+  ToolName := NameNode.Value;
+
+  if (ArgsNode <> nil) and not (ArgsNode is TJSONNull) and not (ArgsNode is TJSONObject) then
+    raise EMcpInvalidParams.Create('Invalid params: tools/call "arguments" must be an object');
+
+  Tool := ResolveCachedTool(ToolName);
+  if Tool = nil then
+    raise EMcpInvalidParams.Create('Unknown tool: ' + ToolName);
+
+  // A missing "arguments" and a JSON null both mean: no arguments, an empty object.
+  if ArgsNode is TJSONObject then
   begin
-    Args := TJSONObject.Create;
-    ArgsOwned := true;
+    Args      := TJSONObject(ArgsNode);
+    ArgsOwned := FALSE;
+  end
+  else
+  begin
+    Args      := TJSONObject.Create;
+    ArgsOwned := TRUE;
   end;
 
   try
-    Tool := ResolveCachedTool(ToolName);
-    if Tool = nil then
-      Exit(WrapToolCallContent('Error: Tool not found: ' + ToolName, true));
-
     try
       Text := Tool.Execute(Args);
       HasImage := Tool.ExtractImage(Text, ImageData, MimeType);
     except
+      // A tool execution error, an argument the params class refuses included (TMCPSerializer raises
+      // EArgumentException for it): a result with isError: true, never a JSON-RPC error.
+      // https://modelcontextprotocol.io/specification/2025-11-25/server/tools section "Error Handling".
       on E: Exception do
         Exit(WrapToolCallContent('Error executing tool: ' + E.Message, true));
     end;
@@ -424,7 +447,7 @@ begin
     then Result := WrapToolCallImage(ImageData, MimeType, Text)
     else Result := WrapToolCallContent(Text, DetectIsError(Text));
   finally
-    if ArgsOwned then Args.Free;
+    if ArgsOwned then FreeAndNil(Args);
   end;
 end;
 
@@ -452,7 +475,7 @@ begin
     Req := TJSONObject(Parsed);
 
     MethodVal := Req.GetValue('method');
-    if not (MethodVal is TJSONString) then
+    if not IsJsonText(MethodVal) then
       Exit(BuildErrorEnvelope(CloneIdOrNull(Req.GetValue('id')),
                               ErrInvalidRequest, 'Invalid request: missing "method"'));
     Method := MethodVal.Value;
@@ -486,6 +509,11 @@ begin
 
       Result := BuildOkEnvelope(CloneIdOrNull(IdNode), Inner);
     except
+      on E: EMcpInvalidParams do
+      begin
+        BridgeLogWarn('mcp', 'dispatch ' + Method + ': invalid params: ' + E.Message);
+        Result := BuildErrorEnvelope(CloneIdOrNull(IdNode), ErrInvalidParams, E.Message);
+      end;
       on E: Exception do
       begin
         BridgeLogError('mcp', 'dispatch ' + Method + ': ' + E.ClassName + ': ' + E.Message);
