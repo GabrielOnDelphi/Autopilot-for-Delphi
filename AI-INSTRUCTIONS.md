@@ -128,7 +128,8 @@ Two ways out:
 - **`click(path='Form.btnExit')`** - click the control bound to the action: runs the action's `OnExecute` through the normal action dispatch.
   Use this when you want to verify the *control's* binding, not just the action.
 
-Errors: `-32001 not_found`, `-32003 control_disabled`, `-32005 unsupported_action`, `-32600 invalid_request` (a `count` outside 1..1000, a non-integer like `1.5`, or an unknown `mode`).
+Errors: `-32001 not_found`, `-32003 control_disabled`, `-32005 unsupported_action`, `-32600 invalid_request` (a `count` outside 1..1000, or an unknown `mode`).
+A non-integer `count` like `1.5` never reaches the app: the MCP server answers an `isError` result that names `count` (section "Error envelope").
 
 ### `execute_action`
 
@@ -420,6 +421,10 @@ All bridge errors use JSON-RPC error envelopes with custom codes:
 | -32006 | `rtti_property_missing` | Property not exposed via RTTI | Property isn't `published`, or doesn't exist. The error carries `availableProperties` (TL;DR rule 5) |
 | -32098 | `target_not_responding` | The target stopped answering (MCP side) | It accepted the connection but did not reply in time (the call fails after the per-call timeout + 2 s instead of hanging), or its pipe stayed busy for the whole per-call timeout. Typical: the whole app is stopped on an IDE breakpoint or hung |
 | -32099 | `target_not_running` | No target to connect to (MCP side) | App not running, unknown `pid`, or (Android) no `adb forward`. The message carries the steps to start the app or link the bridge in - follow them instead of retrying |
+
+Two more answers come from the MCP server itself, before anything reaches the app:
+- A `tools/call` with an unknown tool name, a missing `name`, or `arguments` that are not an object answers the JSON-RPC error `-32602`.
+- An argument of the wrong type, or a required argument that is missing (`"abc"` for `pid`, `1.5` for `count`, `1` for `checked`), answers an `isError: true` result whose text names the argument. Fix the argument and call again.
 
 ---
 
