@@ -19,15 +19,16 @@ unit MCPServer.Serializer;
      - Accepted JSON values; anything else raises EArgumentException:
          * tkInteger / tkInt64  -- JSON number or text holding a whole number that fits the type.
          * tkFloat              -- JSON number, or numeric text (invariant '.').
-         * tkString family      -- JSON string, number or Boolean (its JSON text). Not an object or array.
+         * tkString family      -- JSON string, number or Boolean (its JSON text).
+                                   Not an object or array.
          * Boolean              -- JSON bool, or the text 'true'/'false' (any case).
          * Other enumerations   -- a value name (GetEnumValue), or an ordinal in range as a number or text.
                                    Empty text keeps the property's value.
          * Any other type kind  -- refused (MCPServer.Schema.Generator refuses it too).
      - Every conversion error names the parameter: 'Parameter "<name>": ...'.
 
-   Generic surface intentionally minimal: one method Deserialize<T>. The generic constraint is
-   `class, constructor` because we need T.Create.
+   Generic surface intentionally minimal: one method Deserialize<T>.
+   The generic constraint is `class, constructor` because we need T.Create.
 
    Stdlib only.
 =============================================================================================================}
@@ -40,14 +41,12 @@ uses
 type
   TMCPSerializer = class
   public
-    /// Create a fresh T and populate writable public properties from AJson.
-    /// Raises EArgumentException if AJson contains a key that doesn't match any
-    /// writable property of T (after case-insensitive normalization).
+    { Create a fresh T and populate writable public properties from AJson.
+      Raises EArgumentException if AJson contains a key that doesn't match any writable property of T (after case-insensitive normalization). }
     class function Deserialize<T: class, constructor>(AJson: TJSONObject): T;
 
-    /// Populate every writable property of AInstance from matching keys in AJson.
-    /// Raises EArgumentException for an unknown key, a missing required parameter and a value that does not fit
-    /// its property.
+    { Populate every writable property of AInstance from matching keys in AJson.
+      Raises EArgumentException for an unknown key, a missing required parameter and a value that does not fit its property. }
     class procedure FillObject(AInstance: TObject; AJson: TJSONObject);
   end;
 
@@ -59,15 +58,16 @@ uses
   MCPServer.Types;
 
 
-/// Lower-case + strip '_'. The single normalization rule shared between key
-/// lookup and unknown-key validation, so the two stay in sync.
+{ Lower-case + strip '_'.
+  The single normalization rule shared between key lookup and unknown-key validation, so the two stay in sync. }
 function NormalizeKey(const AName: String): String; inline;
 begin
   Result := LowerCase(AName).Replace('_', '', [rfReplaceAll]);
 end;
 
 
-/// Find AJson[APropName] by normalized comparison. Returns nil if not present.
+{ Find AJson[APropName] by normalized comparison.
+  Returns nil if not present. }
 function FindJsonValueCI(AJson: TJSONObject; const APropName: String): TJSONValue;
 var
   Pair: TJSONPair;
@@ -86,23 +86,24 @@ begin
 end;
 
 
-/// TRUE for a JSON number or a JSON string: the two that carry a text a number can be read from.
-/// TJSONNumber is tested on its own because it descends from TJSONString only up to Delphi 12.
+{ TRUE for a JSON number or a JSON string: the two that carry a text a number can be read from.
+  TJSONNumber is tested on its own because it descends from TJSONString only up to Delphi 12. }
 function IsNumberOrText(AJson: TJSONValue): Boolean;
 begin
   Result := (AJson is TJSONNumber) or (AJson is TJSONString);
 end;
 
 
-/// Raise the EArgumentException for a value that does not fit its property. FillObject puts the parameter name in front.
+{ Raise the EArgumentException for a value that does not fit its property.
+  FillObject puts the parameter name in front. }
 procedure RaiseWrongValue(AJson: TJSONValue; const AExpected: String);
 begin
   raise EArgumentException.Create('expected ' + AExpected + ', got ' + Copy(AJson.ToJSON, 1, 80) + '.');
 end;
 
 
-/// An enumeration other than Boolean: a value name, or an ordinal in range given as a number or as text.
-/// Empty text gives TValue.Empty, so the property keeps its value.
+{ An enumeration other than Boolean: a value name, or an ordinal in range given as a number or as text.
+  Empty text gives TValue.Empty, so the property keeps its value. }
 function JsonToEnum(AJson: TJSONValue; AType: TRttiEnumerationType): TValue;
 var
   Ordinal: Integer;
@@ -122,16 +123,15 @@ begin
     end;
 
   if not Found or (Ordinal < AType.MinValue) or (Ordinal > AType.MaxValue) then
-    raise EArgumentException.Create('invalid value ' + Copy(AJson.ToJSON, 1, 80) + '. Valid values: '
-                                  + String.Join(', ', EnumValueNames(AType)) + '.');
+    raise EArgumentException.Create('invalid value ' + Copy(AJson.ToJSON, 1, 80) + '. Valid values: ' + String.Join(', ', EnumValueNames(AType)) + '.');
 
   Result := TValue.FromOrdinal(AType.Handle, Ordinal);
 end;
 
 
-/// Convert a JSON value (never nil, never TJSONNull) to a TValue for a property of type AType.
-/// Raises EArgumentException when the value does not fit the type, or the type kind is not supported.
-/// TValue.Empty (enumeration, empty text) means: leave the property as it is.
+{ Convert a JSON value (never nil, never TJSONNull) to a TValue for a property of type AType.
+  Raises EArgumentException when the value does not fit the type, or the type kind is not supported.
+  TValue.Empty (enumeration, empty text) means: leave the property as it is. }
 function JsonToValue(AJson: TJSONValue; AType: TRttiType): TValue;
 var
   IntValue  : Integer;
@@ -195,8 +195,9 @@ begin
 end;
 
 
-/// The actual filling step. Walks every writable property of AInstance and
-/// looks for a matching key in AJson. Unknown keys, missing required parameters and values that do not fit raise.
+{ The actual filling step.
+  Walks every writable property of AInstance and looks for a matching key in AJson.
+  Unknown keys, missing required parameters and values that do not fit raise. }
 class procedure TMCPSerializer.FillObject(AInstance: TObject; AJson: TJSONObject);
 var
   Ctx          : TRttiContext;
@@ -233,13 +234,12 @@ begin
       begin
         KeyNorm := NormalizeKey(Pair.JsonString.Value);
         if KnownNormSet.IndexOf(KeyNorm) < 0 then
-          raise EArgumentException.CreateFmt(
-            'Unknown parameter "%s". Valid parameters: %s.',
-            [Pair.JsonString.Value, String.Join(', ', KnownNames.ToStringArray)]);
+          raise EArgumentException.CreateFmt('Unknown parameter "%s". Valid parameters: %s.', [Pair.JsonString.Value, String.Join(', ', KnownNames.ToStringArray)]);
       end;
 
-      // Second pass: assign each writable property if a matching key is present. A JSON null counts as absent.
-      // A required property (one the schema lists under "required": readable, writable, no [Optional]) must be there.
+      { Second pass: assign each writable property if a matching key is present.
+        A JSON null counts as absent.
+        A required property (one the schema lists under "required": readable, writable, no [Optional]) must be there. }
       for Prop in T.GetProperties do
       begin
         if not Prop.IsWritable then Continue;

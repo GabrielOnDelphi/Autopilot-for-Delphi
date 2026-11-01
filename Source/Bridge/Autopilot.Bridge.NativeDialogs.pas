@@ -15,29 +15,21 @@ interface
 uses
   System.JSON;
 
-/// TRUE on Windows (the only platform with Win32 dialogs the bridge can reach this way).
+// TRUE on Windows (the only platform with Win32 dialogs the bridge can reach this way).
 function NativeDialogsSupported: Boolean;
 
-/// Enumerate native (non-component) top-level dialog windows of THIS process.
-/// AExclude = window handles to skip (the framework's own form windows + the app window),
-/// so the framework's TForm/TfmxForm windows are not mistaken for OS dialogs.
-/// Returns a JSON array (caller owns it); each node is
-/// { hwnd, class, caption, text, buttons:[{id,caption,enabled}] }.
-/// Empty array when no dialog is up, or always on non-Windows.
+// Enumerate native (non-component) top-level dialog windows of THIS process.
+// AExclude = window handles to skip (the framework's own form windows + the app window), so the framework's TForm/TfmxForm windows are not mistaken for OS dialogs.
+// Returns a JSON array (caller owns it); each node is { hwnd, class, caption, text, buttons:[{id,caption,enabled}] }.
+// Empty array when no dialog is up, or always on non-Windows.
 function EnumerateNativeDialogs(const AExclude: array of NativeUInt): TJSONArray;
 
-/// Find a native dialog (ATargetDlg=0 -> the topmost one) and click the button picked
-/// by ASelector. ASelector accepts a role keyword ('ok'/'cancel'/'yes'/'no'/'retry'/
-/// 'abort'/'ignore'/'close'/'tryagain'/'continue'/'help'), a caption (exact then
-/// substring, case-insensitive, '&' accelerator stripped), or a numeric control id.
-/// Returns TRUE and sets AClickedId / AClickedCaption / AResolvedDlg on a dispatched click.
-/// On FALSE, AReason is 'no_dialog' (nothing matched), 'button_not_found', or
-/// 'send_failed' (the button was found but SendMessageTimeout did not complete).
-/// AVia names the dispatch path actually used: 'BM_CLICK' (we hold the button's own HWND —
-/// the button provably exists) or 'WM_COMMAND' (dispatched by control id to a dialog whose
-/// button is not enumerable as a child window, e.g. a Task Dialog). The WM_COMMAND path is
-/// UNVERIFIABLE: a dialog that has no such command silently ignores the message and the send
-/// still completes, so TRUE there means "sent", not "landed" — re-list the dialogs to confirm.
+{ Find a native dialog (ATargetDlg=0 -> the topmost one) and click the button picked by ASelector.
+  ASelector accepts a role keyword ('ok'/'cancel'/'yes'/'no'/'retry'/'abort'/'ignore'/'close'/'tryagain'/'continue'/'help'), a caption (exact then substring, case-insensitive, '&' accelerator stripped), or a numeric control id.
+  Returns TRUE and sets AClickedId / AClickedCaption / AResolvedDlg on a dispatched click.
+  On FALSE, AReason is 'no_dialog' (nothing matched), 'button_not_found', or 'send_failed' (the button was found but SendMessageTimeout did not complete).
+  AVia names the dispatch path actually used: 'BM_CLICK' (we hold the button's own HWND — the button provably exists) or 'WM_COMMAND' (dispatched by control id to a dialog whose button is not enumerable as a child window, e.g. a Task Dialog).
+  The WM_COMMAND path is UNVERIFIABLE: a dialog that has no such command silently ignores the message and the send still completes, so TRUE there means "sent", not "landed" — re-list the dialogs to confirm. }
 function ClickNativeDialogButton(const AExclude: array of NativeUInt; ATargetDlg: NativeUInt;
   const ASelector: String; OUT AClickedId: Integer; OUT AClickedCaption: String;
   OUT AResolvedDlg: NativeUInt; OUT AReason: String; OUT AVia: String): Boolean;
@@ -63,7 +55,8 @@ const
   TextReadTimeoutMs = 1000;   // per-read cap; after the first hung read SMTO_ABORTIFHUNG fails the rest fast
 
 { GetWindowText would be simpler, but for a window of THIS process it sends WM_GETTEXT and waits with NO timeout (learn.microsoft.com GetWindowTextW, Remarks: "if the target window is not responding and it belongs to the calling application, GetWindowText will cause the calling application to become unresponsive") — and every window enumerated here IS same-process.
-  A dialog owned by a hung non-main thread would freeze the dispatcher, and with it the whole app. SendMessageTimeout degrades that to an empty string instead.
+  A dialog owned by a hung non-main thread would freeze the dispatcher, and with it the whole app.
+  SendMessageTimeout degrades that to an empty string instead.
   For a window on the CURRENT thread the proc is called directly and the timeout is ignored (SendMessageTimeoutW, Remarks), so the normal main-thread-dialog path is unaffected. }
 function WindowTextOf(AWnd: HWND): String;
 var
@@ -124,8 +117,9 @@ begin
   Cls := ClassNameOf(AWnd);
   if SameText(Cls, 'Button') then
     Ctx.Buttons.Add(AWnd)
-  else if SameText(Cls, 'Static') then
-    Ctx.Statics.Add(AWnd);
+  else
+    if SameText(Cls, 'Static') then
+      Ctx.Statics.Add(AWnd);
   Result := TRUE;
 end;
 

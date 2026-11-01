@@ -5,13 +5,12 @@ unit Autopilot.Mcp.Tool.Screenshot;
    www.GabrielMoraru.com
 --------------------------------------------------------------------------------------------------------------
    - MCP tool: screenshot
-   - Captures a form as a PNG. Form name optional; defaults to the target's main form.
+   - Captures a form as a PNG.
+     Form name optional; defaults to the target's main form.
    - Optional path crops the image to one control; optional maxWidth scales it down (both done in the bridge).
-   - The bridge answers with the PNG as base64 in result.image. ExtractImage moves it out, so the tools/call
-     result is an MCP image content block (which a host shows as a picture), followed by a text block with
-     the rest of the bridge's answer: form, width, height, licenseNotice and any other field, but no base64.
-     Until 1.1.0 the base64 went out inside the text block: the model never saw a picture, and a 64 KB
-     result was written to a file instead (Kai, 2026-08-25).
+   - The bridge answers with the PNG as base64 in result.image.
+     ExtractImage moves it out, so the tools/call result is an MCP image content block (which a host shows as a picture), followed by a text block with the rest of the bridge's answer: form, width, height, licenseNotice and any other field, but no base64.
+     Until 1.1.0 the base64 went out inside the text block: the model never saw a picture, and a 64 KB result was written to a file instead (Kai, 2026-08-25).
    - Runs in Autopilot.Mcp.exe (Windows PC-side MCP server); target may be any platform.
 =============================================================================================================}
 
@@ -77,21 +76,19 @@ var
 begin
   Args := TJSONObject.Create;
   Args.AddPair('form', Params.Form);
-  // Forwarded only when given, so a call without them is the request every older server sent.
-  // A negative maxWidth is forwarded too: the bridge answers it with -32600.
+  { Forwarded only when given, so a call without them is the request every older server sent.
+    A negative maxWidth is forwarded too: the bridge answers it with -32600. }
   if Params.Path <> ''
   then Args.AddPair('path', Params.Path);
   if Params.MaxWidth <> 0
   then Args.AddPair('maxWidth', TJSONNumber.Create(Params.MaxWidth));
   // Per-command default of 30 s lives on the bridge side (DefaultTimeoutScreenshotMs).
-  Result := RunCommandOnTarget(Cardinal(Params.Pid),
-                               BuildRequest(1, 'screenshot', Args),
-                               DefaultTimeoutScreenshotMs);
+  Result := RunCommandOnTarget(Cardinal(Params.Pid), BuildRequest(1, 'screenshot', Args), DefaultTimeoutScreenshotMs);
 end;
 
 
-// AText without the characters base64 does not use. The bridge encodes with TNetEncoding.Base64, which puts a
-// CRLF after every 76 characters (System.NetEncoding.pas, TCustomBase64Encoding.kCharsPerLine / kLineSeparator).
+{ AText without the characters base64 does not use.
+  The bridge encodes with TNetEncoding.Base64, which puts a CRLF after every 76 characters (System.NetEncoding.pas, TCustomBase64Encoding.kCharsPerLine / kLineSeparator). }
 function StripBase64Breaks(const AText: String): String;
 var
   i, n: Integer;
@@ -108,10 +105,9 @@ begin
 end;
 
 
-// AText is the bridge's answer: {"id":..,"ok":true,"result":{"form":..,"width":..,"height":..,
-// "encoding":"base64","format":"png","image":"<base64>"}}, plus "licenseNotice" on the first answer of
-// an installation. Only "image" leaves AText. FALSE (AText untouched) for any answer without a picture,
-// a failed capture or a -3209x envelope among them.
+// AText is the bridge's answer: {"id":..,"ok":true,"result":{"form":..,"width":..,"height":..,"encoding":"base64","format":"png","image":"<base64>"}}, plus "licenseNotice" on the first answer of an installation.
+// Only "image" leaves AText.
+// FALSE (AText untouched) for any answer without a picture, a failed capture or a -3209x envelope among them.
 function TScreenshotTool.ExtractImage(var AText: String; OUT AImageBase64, AMimeType: String): Boolean;
 var
   Root, Res, V: TJSONValue;

@@ -5,11 +5,11 @@ unit Autopilot.Mcp.Tool.DismissDialog;
    www.GabrielMoraru.com
 --------------------------------------------------------------------------------------------------------------
    - MCP tool: dismiss_dialog
-   - Lists and dismisses native OS dialogs (MessageBox, Vista Task Dialog, common file dialogs) raised by
-     the target. These are raw Win32 windows with no TComponent, so the path-based tools (list_tree / click)
-     cannot see them — they return not_found while the app's main thread is blocked in the dialog's modal loop.
+   - Lists and dismisses native OS dialogs (MessageBox, Vista Task Dialog, common file dialogs) raised by the target.
+     These are raw Win32 windows with no TComponent, so the path-based tools (list_tree / click) cannot see them — they return not_found while the app's main thread is blocked in the dialog's modal loop.
    - Call with no 'button' to LIST the dialogs currently up; call with 'button' to dismiss one.
-   - Windows targets only. Against an Android FMX target the response is supported:false.
+   - Windows targets only.
+     Against an Android FMX target the response is supported:false.
    - Runs in Autopilot.Mcp.exe (Windows PC-side MCP server); target may be any platform.
 =============================================================================================================}
 
@@ -28,10 +28,7 @@ type
     FPid   : Integer;
   public
     [Optional]
-    [SchemaDescription('Button to click: a role ("ok", "cancel", "yes", "no", "retry", "abort", ' +
-                       '"ignore", "close", "tryagain", "continue"), a caption (exact, then substring, ' +
-                       'case-insensitive) or a numeric control id. Omit to only list the open ' +
-                       'dialogs and their buttons.')]
+    [SchemaDescription('Button to click: a role ("ok", "cancel", "yes", "no", "retry", "abort", ' + '"ignore", "close", "tryagain", "continue"), a caption (exact, then substring, ' + 'case-insensitive) or a numeric control id. Omit to only list the open ' + 'dialogs and their buttons.')]
     property Button: String read FButton write FButton;
 
     [Optional]

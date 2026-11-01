@@ -58,8 +58,7 @@ var
 begin
   Args := TJSONObject.Create;
   Args.AddPair('path', Params.Path);
-  Result := RunCommandOnTarget(Cardinal(Params.Pid),
-                               BuildRequest(1, 'get_text', Args));
+  Result := RunCommandOnTarget(Cardinal(Params.Pid), BuildRequest(1, 'get_text', Args));
 end;
 
 

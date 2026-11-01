@@ -6,8 +6,7 @@
 --------------------------------------------------------------------------------------------------------------
    - Holds the MCP server's target transport mode, parsed once from the command line at startup.
    - Default (no flag) = tmPipe — the existing Windows named-pipe path, unchanged.
-   - '--target adb:<hostPort>' = tmAdbSocket — connect to 127.0.0.1:<hostPort>, which 'adb forward' has
-     tunnelled to the device-side bridge.
+   - '--target adb:<hostPort>' = tmAdbSocket — connect to 127.0.0.1:<hostPort>, which 'adb forward' has tunnelled to the device-side bridge.
    - Read by Autopilot.Mcp.ToolBase when routing each command.
    - Stdlib only.
 =============================================================================================================}
@@ -17,9 +16,10 @@ interface
 type
   TTargetMode = (tmPipe, tmAdbSocket);
 
-// Parse the process command line for `--target adb:<port>`. Call once at startup.
-// Absent or unrecognised → leaves the default (tmPipe). Returns TRUE if a valid
-// `--target adb:<port>` was found and applied.
+{ Parse the process command line for `--target adb:<port>`.
+  Call once at startup.
+  Absent or unrecognised → leaves the default (tmPipe).
+  Returns TRUE if a valid `--target adb:<port>` was found and applied. }
 function ParseTargetModeFromCmdLine: Boolean;
 
 // The resolved mode. tmPipe until ParseTargetModeFromCmdLine sets otherwise.
@@ -51,9 +51,8 @@ begin
 end;
 
 
-// Accepts the spelling `--target adb:<port>` either as two arguments
-// (`--target` `adb:5037`) or one (`--target=adb:5037`). Only the adb form is
-// recognised today; an unrecognised --target value leaves the pipe default.
+{ Accepts the spelling `--target adb:<port>` either as two arguments (`--target` `adb:5037`) or one (`--target=adb:5037`).
+  Only the adb form is recognised today; an unrecognised --target value leaves the pipe default. }
 function ParseTargetModeFromCmdLine: Boolean;
 
   // Apply an "adb:<port>" value. Returns TRUE if the port parsed in range.

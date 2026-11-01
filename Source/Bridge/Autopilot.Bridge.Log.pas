@@ -17,19 +17,22 @@ uses
 type
   TBridgeLogLevel = (llDebug, llInfo, llWarn, llError);
 
-/// Append a log line. Lazy-initializes the file on first call. Safe to call from any thread.
+{ Append a log line.
+  Lazy-initializes the file on first call.
+  Safe to call from any thread. }
 procedure BridgeLog(ALevel: TBridgeLogLevel; const ATag, AMessage: String);
 
-/// Convenience wrappers — same semantics as BridgeLog with the level baked in.
+// Convenience wrappers — same semantics as BridgeLog with the level baked in.
 procedure BridgeLogInfo (const ATag, AMessage: String); inline;
 procedure BridgeLogWarn (const ATag, AMessage: String); inline;
 procedure BridgeLogError(const ATag, AMessage: String); inline;
 
-/// Returns the resolved log path (or '' if not yet written to).
+// Returns the resolved log path (or '' if not yet written to).
 function BridgeLogPath: String;
 
-/// Tear down the lock and close any handles. Idempotent.
-/// Called from finalization; safe to call manually too.
+{ Tear down the lock and close any handles.
+  Idempotent.
+  Called from finalization; safe to call manually too. }
 procedure BridgeLogShutdown;
 
 
@@ -65,7 +68,8 @@ end;
 
 procedure EnsureLogLockNoBlock;
 begin
-  { Lazy lock creation. We deliberately avoid initialization sections (project rule).
+  { Lazy lock creation.
+    We deliberately avoid initialization sections (project rule).
     First-call race is theoretically possible but practically nil: the bridge calls BridgeLog from main-thread StartBridge before any worker threads exist, so the lock is created before any concurrent caller. }
   if GLogLock = NIL then
     GLogLock := TCriticalSection.Create;
@@ -105,9 +109,7 @@ var
 begin
   { CreateFile with FILE_APPEND_DATA + OPEN_ALWAYS gives us atomic appends without racing on file position between threads (we already hold the lock, but this also guards against other processes appending to the same file in degenerate cases). }
   Bytes := TEncoding.UTF8.GetBytes(ALine + #13#10);
-  H := CreateFileW(PWideChar(GLogPath), FILE_APPEND_DATA,
-                   FILE_SHARE_READ or FILE_SHARE_WRITE, NIL,
-                   OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, 0);
+  H := CreateFileW(PWideChar(GLogPath), FILE_APPEND_DATA, FILE_SHARE_READ or FILE_SHARE_WRITE, NIL, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, 0);
   if H = INVALID_HANDLE_VALUE then exit;
   try
     WriteFile(H, Bytes[0], Length(Bytes), Written, NIL);

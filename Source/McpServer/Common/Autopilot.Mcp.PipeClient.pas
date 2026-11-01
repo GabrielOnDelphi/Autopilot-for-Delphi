@@ -6,10 +6,9 @@
 --------------------------------------------------------------------------------------------------------------
    - Named-pipe client for the MCP-server side of the bridge (Windows, PC side).
    - Each MCP tool call: scan %TEMP%\Autopilot\active\*.pipe, open pipe, hello/helloAck handshake, one request/response round-trip, close.
-   - Every read/write after connect runs under an I/O deadline (overlapped I/O + CancelIoEx): a target that
-     accepts the connection but stops servicing the wire (frozen on an IDE breakpoint) raises
-     ETargetNotResponding instead of blocking the single-threaded MCP server forever.
-   - No VCL, no FMX, no LightSaber. Stdlib + Win32 only (plus Autopilot.Bridge.Log, itself stdlib+Win32, for best-effort discovery-scan warnings).
+   - Every read/write after connect runs under an I/O deadline (overlapped I/O + CancelIoEx): a target that accepts the connection but stops servicing the wire (frozen on an IDE breakpoint) raises ETargetNotResponding instead of blocking the single-threaded MCP server forever.
+   - No VCL, no FMX, no LightSaber.
+     Stdlib + Win32 only (plus Autopilot.Bridge.Log, itself stdlib+Win32, for best-effort discovery-scan warnings).
 =============================================================================================================}
 
 interface
@@ -20,7 +19,7 @@ uses
   Autopilot.Bridge.Core;
 
 type
-  /// Result of a target lookup.
+  // Result of a target lookup.
   TTargetEntry = record
     Pid       : Cardinal;
     PipeName  : String;
@@ -30,16 +29,16 @@ type
   TTargetList = TArray<TTargetEntry>;
 
 
-/// Enumerate the discovery folder. Stale entries (target process is gone) are filtered out.
+{ Enumerate the discovery folder.
+  Stale entries (target process is gone) are filtered out. }
 function ListTargets: TTargetList;
 
-/// Convenience: read the discovery folder path.
+// Convenience: read the discovery folder path.
 function DiscoveryFolderPath: String;
 
-/// Run one round-trip: open pipe, handshake, send one command frame, read one response, close.
-/// Returns the parsed response object (caller frees) or raises on transport failure.
-/// ATimeoutMs budgets the connect phase; every read/write after connect runs under a deadline of
-/// ATimeoutMs + IoDeadlineGraceMs and raises ETargetNotResponding when it expires (frozen target).
+{ Run one round-trip: open pipe, handshake, send one command frame, read one response, close.
+  Returns the parsed response object (caller frees) or raises on transport failure.
+  ATimeoutMs budgets the connect phase; every read/write after connect runs under a deadline of ATimeoutMs + IoDeadlineGraceMs and raises ETargetNotResponding when it expires (frozen target). }
 function CallTarget(const APipeName: String; ARequestJson: TJSONObject; ATimeoutMs: Cardinal = 5000): TJSONObject;
 
 
@@ -63,21 +62,15 @@ begin
   if APid = 0 then Exit(False);
   H := OpenProcess(SYNCHRONIZE, False, APid);
   if H = 0 then
-    // Same "err on alive" principle as the wait below, applied to the open itself.
-    // ERROR_INVALID_PARAMETER (87) is the code Windows returns when no process has
-    // this pid — the only failure that genuinely means dead. Anything else (notably
-    // ERROR_ACCESS_DENIED, 5) means a process with that pid EXISTS but we may not
-    // open it, so reporting "dead" would delete a live target's discovery file, and
-    // StartBridge writes that file only once at startup — the target would stay
-    // undiscoverable for the rest of its run. Measured 2026-08-11: a free pid gives
-    // 87, a live SYSTEM-owned process gives 5.
+    { Same "err on alive" principle as the wait below, applied to the open itself.
+      ERROR_INVALID_PARAMETER (87) is the code Windows returns when no process has this pid — the only failure that genuinely means dead.
+      Anything else (notably ERROR_ACCESS_DENIED, 5) means a process with that pid EXISTS but we may not open it, so reporting "dead" would delete a live target's discovery file, and StartBridge writes that file only once at startup — the target would stay undiscoverable for the rest of its run.
+      Measured 2026-08-11: a free pid gives 87, a live SYSTEM-owned process gives 5. }
     EXIT(GetLastError <> ERROR_INVALID_PARAMETER);
   try
-    // A zero-timeout wait is the unambiguous liveness probe: WAIT_TIMEOUT = still
-    // running. The old GetExitCodeProcess check compared against STILL_ACTIVE (259),
-    // so a process that had EXITED with code 259 read as alive forever. `<>
-    // WAIT_OBJECT_0` (not `= WAIT_TIMEOUT`) so an unexpected WAIT_FAILED errs on
-    // "alive" — falsely dead would delete a live target's discovery file.
+    { A zero-timeout wait is the unambiguous liveness probe: WAIT_TIMEOUT = still running.
+      The old GetExitCodeProcess check compared against STILL_ACTIVE (259), so a process that had EXITED with code 259 read as alive forever.
+      `<> WAIT_OBJECT_0` (not `= WAIT_TIMEOUT`) so an unexpected WAIT_FAILED errs on "alive" — falsely dead would delete a live target's discovery file. }
     Result := WaitForSingleObject(H, 0) <> WAIT_OBJECT_0;
   finally
     CloseHandle(H);
@@ -164,13 +157,9 @@ end;
 
 
 type
-  // THandleStream cannot serve an overlapped pipe handle (its ReadFile passes no
-  // OVERLAPPED, which is invalid on a FILE_FLAG_OVERLAPPED handle). This stream does
-  // the same job with a per-operation deadline: each Read/Write is an overlapped I/O
-  // plus an event wait; on deadline expiry the operation is cancelled (CancelIoEx)
-  // and ETargetNotResponding raised, so a frozen target (breakpoint, hang) can no
-  // longer block the single-threaded MCP server forever. Does NOT own the pipe
-  // handle — CallTarget closes it, mirroring the THandleStream contract it replaces.
+  { THandleStream cannot serve an overlapped pipe handle (its ReadFile passes no OVERLAPPED, which is invalid on a FILE_FLAG_OVERLAPPED handle).
+    This stream does the same job with a per-operation deadline: each Read/Write is an overlapped I/O plus an event wait; on deadline expiry the operation is cancelled (CancelIoEx) and ETargetNotResponding raised, so a frozen target (breakpoint, hang) can no longer block the single-threaded MCP server forever.
+    Does NOT own the pipe handle — CallTarget closes it, mirroring the THandleStream contract it replaces. }
   TDeadlinePipeStream = class(TStream)
   strict private
     FPipe     : THandle;
@@ -227,31 +216,28 @@ begin
     Err := GetLastError;
     if Err <> ERROR_IO_PENDING then
     begin
-      // Immediate failure. A closed peer reads as EOF (0) so TBridgeWire.TryReadFrame
-      // takes its normal FALSE path; anything else is a genuine OS error.
+      { Immediate failure.
+        A closed peer reads as EOF (0) so TBridgeWire.TryReadFrame takes its normal FALSE path; anything else is a genuine OS error. }
       if AIsRead and ((Err = ERROR_BROKEN_PIPE) or (Err = ERROR_PIPE_NOT_CONNECTED))
       then Exit(0)
       else RaiseLastOSError(Err);
     end;
 
     if WaitForSingleObject(FEvent, FTimeoutMs) <> WAIT_OBJECT_0 then
-      // Deadline hit: cancel the pending operation. ERROR_NOT_FOUND (it completed in
-      // the race window) is fine — GetOverlappedResult below resolves either way.
+      { Deadline hit: cancel the pending operation.
+        ERROR_NOT_FOUND (it completed in the race window) is fine — GetOverlappedResult below resolves either way. }
       CancelIoEx(FPipe, @Ov);
   end;
 
-  // Single collection point for every path (synchronous completion, signaled wait,
-  // post-cancel). bWait=TRUE also guarantees the kernel is DONE with Ov and Buffer
-  // before they leave scope — mandatory after CancelIoEx.
+  { Single collection point for every path (synchronous completion, signaled wait, post-cancel).
+    bWait=TRUE also guarantees the kernel is DONE with Ov and Buffer before they leave scope — mandatory after CancelIoEx. }
   if not GetOverlappedResult(FPipe, Ov, N, True) then
   begin
     Err := GetLastError;
     if Err = ERROR_OPERATION_ABORTED then
     begin
       if AIsRead then OpWord := 'reply' else OpWord := 'accept data';
-      raise ETargetNotResponding.CreateFmt(
-        'target accepted the pipe connection but did not %s within %u ms — frozen on a breakpoint or hung?',
-        [OpWord, FTimeoutMs]);
+      raise ETargetNotResponding.CreateFmt('target accepted the pipe connection but did not %s within %u ms — frozen on a breakpoint or hung?', [OpWord, FTimeoutMs]);
     end;
     if AIsRead and ((Err = ERROR_BROKEN_PIPE) or (Err = ERROR_PIPE_NOT_CONNECTED)) then
       Exit(0);
@@ -269,8 +255,7 @@ end;
 
 function TDeadlinePipeStream.Write(const Buffer; Count: Longint): Longint;
 begin
-  // Overlapped WriteFile does not modify the buffer; the var-cast only satisfies
-  // RunOverlapped's shared signature.
+  // Overlapped WriteFile does not modify the buffer; the var-cast only satisfies RunOverlapped's shared signature.
   Result := RunOverlapped(False, PByte(@Buffer)^, Count);
 end;
 
@@ -282,10 +267,9 @@ begin
 end;
 
 
-// Returns an open pipe handle, or raises.
-// A pipe that is still BUSY when ATimeoutMs runs out raises ETargetNotResponding (-32098 in Autopilot.Mcp.ToolBase):
-// the bridge has one pipe instance, and it stays taken while the bridge worker is stuck with an earlier connection,
-// e.g. the whole target stopped on a breakpoint (GitHub issue #2). Any other failure raises a plain Exception.
+{ Returns an open pipe handle, or raises.
+  A pipe that is still BUSY when ATimeoutMs runs out raises ETargetNotResponding (-32098 in Autopilot.Mcp.ToolBase): the bridge has one pipe instance, and it stays taken while the bridge worker is stuck with an earlier connection, e.g. the whole target stopped on a breakpoint (GitHub issue #2).
+  Any other failure raises a plain Exception. }
 function OpenPipeWithTimeout(const APipeName: String; ATimeoutMs: Cardinal): THandle;
 var
   Deadline: UInt64;
@@ -293,24 +277,20 @@ var
 begin
   Deadline := GetTickCount64 + ATimeoutMs;
   repeat
-    // FILE_FLAG_OVERLAPPED: overlapped-ness is a per-HANDLE choice — the bridge's
-    // server end stays synchronous, unaffected. Required by TDeadlinePipeStream.
-    Result := CreateFileW(PWideChar(APipeName), GENERIC_READ or GENERIC_WRITE,
-                          0, nil, OPEN_EXISTING, FILE_FLAG_OVERLAPPED, 0);
+    { FILE_FLAG_OVERLAPPED: overlapped-ness is a per-HANDLE choice — the bridge's server end stays synchronous, unaffected.
+      Required by TDeadlinePipeStream. }
+    Result := CreateFileW(PWideChar(APipeName), GENERIC_READ or GENERIC_WRITE, 0, nil, OPEN_EXISTING, FILE_FLAG_OVERLAPPED, 0);
     if Result <> INVALID_HANDLE_VALUE then Exit;
-    // ERROR_FILE_NOT_FOUND: listener not up yet (cold start) -> wait + retry.
-    // ERROR_PIPE_BUSY: pipe exists but its only instance is momentarily taken
-    // (bridge between DisconnectNamedPipe and the next ConnectNamedPipe) -> retry.
-    // Anything else (e.g. ACCESS_DENIED from an ACL mismatch) is permanent.
+    { ERROR_FILE_NOT_FOUND: listener not up yet (cold start) -> wait + retry.
+      ERROR_PIPE_BUSY: pipe exists but its only instance is momentarily taken (bridge between DisconnectNamedPipe and the next ConnectNamedPipe) -> retry.
+      Anything else (e.g. ACCESS_DENIED from an ACL mismatch) is permanent. }
     LErr := GetLastError;
     if (LErr <> ERROR_FILE_NOT_FOUND) and (LErr <> ERROR_PIPE_BUSY) then Break;
     Sleep(25);
   until GetTickCount64 >= Deadline;
 
   if LErr = ERROR_PIPE_BUSY then
-    raise ETargetNotResponding.CreateFmt(
-      'pipe "%s" stayed busy for %u ms: the target is busy with another client, or frozen (stopped on a breakpoint or hung)',
-      [APipeName, ATimeoutMs]);
+    raise ETargetNotResponding.CreateFmt('pipe "%s" stayed busy for %u ms: the target is busy with another client, or frozen (stopped on a breakpoint or hung)', [APipeName, ATimeoutMs]);
   raise Exception.CreateFmt('CallTarget: could not open pipe "%s" (code %d)', [APipeName, LErr]);
 end;
 

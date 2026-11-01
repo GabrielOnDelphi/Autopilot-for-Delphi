@@ -53,10 +53,7 @@ constructor TSetTextTool.Create;
 begin
   inherited;
   FName := 'set_text';
-  FDescription := 'Set the Text (preferred) or Caption of a control. ' +
-                  'A VCL data-aware control (TDBEdit, TDBMemo) is edited like a typing user: ' +
-                  'the value reaches the field buffer and the result carries dataBound=true; ' +
-                  'a read-only control, field or dataset fails with -32005.';
+  FDescription := 'Set the Text (preferred) or Caption of a control. ' + 'A VCL data-aware control (TDBEdit, TDBMemo) is edited like a typing user: ' + 'the value reaches the field buffer and the result carries dataBound=true; ' + 'a read-only control, field or dataset fails with -32005.';
 end;
 
 

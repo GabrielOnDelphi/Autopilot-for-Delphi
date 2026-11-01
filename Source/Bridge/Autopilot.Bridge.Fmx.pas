@@ -287,26 +287,27 @@ begin
     if (FormName <> '*') and not SameText(Form.Name, FormName) then Continue;
     if Length(Parts) = 1 then
       exit(TComponent(Form))
-    else if Length(Parts) = 2 then
-    begin
-      Visited := TList.Create;
-      try
-        Result := FindDescendantOf(Form, Parts[1], Visited);
-      finally
-        FreeAndNil(Visited);
-      end;
-      if Result <> NIL then exit;
-    end
     else
-    begin
-      Cur := Form;
-      for k := 1 to High(Parts) do
+      if Length(Parts) = 2 then
       begin
-        Cur := FindChildOf(Cur, Parts[k]);
-        if Cur = NIL then Break;
+        Visited := TList.Create;
+        try
+          Result := FindDescendantOf(Form, Parts[1], Visited);
+        finally
+          FreeAndNil(Visited);
+        end;
+        if Result <> NIL then exit;
+      end
+      else
+      begin
+        Cur := Form;
+        for k := 1 to High(Parts) do
+        begin
+          Cur := FindChildOf(Cur, Parts[k]);
+          if Cur = NIL then Break;
+        end;
+        if Cur <> NIL then exit(Cur);
       end;
-      if Cur <> NIL then exit(Cur);
-    end;
   end;
 
   { # Visual-parent fallback }
@@ -327,15 +328,13 @@ end;
 // Mirror of the VCL twin's IsReadableBooleanProp / IsReadableStringProp: list_tree, get_text, set_text and set_checked check the property type BEFORE the read or write, so they raise no exception that a debugger would halt the whole app on (a user's report; the VCL twin has the full note).
 function IsReadableBooleanProp(AProp: TRttiProperty): Boolean;
 begin
-  Result := (AProp <> NIL) and AProp.IsReadable and (AProp.PropertyType <> NIL)
-        and IsBoolType(AProp.PropertyType.Handle);
+  Result := (AProp <> NIL) and AProp.IsReadable and (AProp.PropertyType <> NIL) and IsBoolType(AProp.PropertyType.Handle);
 end;
 
 
 function IsReadableStringProp(AProp: TRttiProperty): Boolean;
 begin
-  Result := (AProp <> NIL) and AProp.IsReadable and (AProp.PropertyType <> NIL)
-        and (AProp.PropertyType.TypeKind in [tkString, tkLString, tkWString, tkUString, tkChar, tkWChar]);
+  Result := (AProp <> NIL) and AProp.IsReadable and (AProp.PropertyType <> NIL) and (AProp.PropertyType.TypeKind in [tkString, tkLString, tkWString, tkUString, tkChar, tkWChar]);
 end;
 
 
@@ -359,7 +358,8 @@ begin
   try
     RT := Ctx.GetType(AComp.ClassType);
     if RT = NIL then exit;
-    { As in the VCL bridge: Text first, then Caption. TCommonCustomForm has Caption but no Text, so get_text("MyFmxForm") needs the fallback.
+    { As in the VCL bridge: Text first, then Caption.
+      TCommonCustomForm has Caption but no Text, so get_text("MyFmxForm") needs the fallback.
       A Text or Caption that is not a string counts as missing. }
     Prop := RT.GetProperty('Text');
     if not IsReadableStringProp(Prop) then
@@ -451,7 +451,8 @@ begin
   try
     RT := Ctx.GetType(AComp.ClassType);
     if RT = NIL then exit;
-    { As in the VCL bridge: Text first, then Caption. TCommonCustomForm has only Caption (no published Text), so set_text on a form needs the fallback.
+    { As in the VCL bridge: Text first, then Caption.
+      TCommonCustomForm has only Caption (no published Text), so set_text on a form needs the fallback.
       A Text or Caption that cannot hold a string counts as missing. }
     NewValue := AValue;
     Prop := RT.GetProperty('Text');
@@ -471,19 +472,13 @@ begin
 end;
 
 
-// Mirror of the VCL twin's IsBoolFamilyType. TRUE for the ByteBool / WordBool / LongBool
-// family, INCLUDING a strong alias (`type TFlag = type WordBool`): an alias gets its own
-// typeinfo, so a plain handle comparison misses it and the property stays unwritable.
-// BaseType resolves the alias, and it is a plain record field reached through GetTypeData
-// (TTypeData.BaseType in System.TypInfo.pas) — present in every Delphi version, not a version-gated RTL
-// routine of the ColorToStringExt kind. The RTL discriminates Boolean exactly this way in
-// GetPropValue (System.TypInfo.pas). A root enumeration's BaseType points at itself,
-// so plain WordBool matches here too (verified by Test_SetProperty_WordBoolWritesAllBitsSet,
-// which would fail if it did not), and Boolean answers FALSE (it keeps its own branch).
-// Deliberately NOT the RTL's `MinValue < 0` shortcut (GetEnumName in System.TypInfo.pas): a normal
-// enumeration may legally carry a negative ordinal — the RTL declares such types itself
-// (UCollationResult in System.Internal.ICU.pas) — and that test would misread them as booleans.
-// Resolves ONE alias level, same as the RTL's own tests; an alias of an alias is not covered.
+{ Mirror of the VCL twin's IsBoolFamilyType.
+  TRUE for the ByteBool / WordBool / LongBool family, INCLUDING a strong alias (`type TFlag = type WordBool`): an alias gets its own typeinfo, so a plain handle comparison misses it and the property stays unwritable.
+  BaseType resolves the alias, and it is a plain record field reached through GetTypeData (TTypeData.BaseType in System.TypInfo.pas) — present in every Delphi version, not a version-gated RTL routine of the ColorToStringExt kind.
+  The RTL discriminates Boolean exactly this way in GetPropValue (System.TypInfo.pas).
+  A root enumeration's BaseType points at itself, so plain WordBool matches here too (verified by Test_SetProperty_WordBoolWritesAllBitsSet, which would fail if it did not), and Boolean answers FALSE (it keeps its own branch).
+  Deliberately NOT the RTL's `MinValue < 0` shortcut (GetEnumName in System.TypInfo.pas): a normal enumeration may legally carry a negative ordinal — the RTL declares such types itself (UCollationResult in System.Internal.ICU.pas) — and that test would misread them as booleans.
+  Resolves ONE alias level, same as the RTL's own tests; an alias of an alias is not covered. }
 function IsBoolFamilyType(ATypeInfo: PTypeInfo): Boolean;
 var
   Base: PTypeInfo;
@@ -495,9 +490,10 @@ begin
 end;
 
 
-// TAlphaColor as the AI reads it: 'claRed' for a named color, '#AARRGGBB' otherwise. Not AlphaColorToString:
-// it strips the 'cla' prefix and returns 'Red' (System.UIConsts.pas, AlphaColorToString). AlphaColorToIdent
-// returns the full 'claName', or 'x' + 8 hex digits for an unnamed color. TryParseAlphaColor accepts both forms.
+{ TAlphaColor as the AI reads it: 'claRed' for a named color, '#AARRGGBB' otherwise.
+  Not AlphaColorToString: it strips the 'cla' prefix and returns 'Red' (System.UIConsts.pas, AlphaColorToString).
+  AlphaColorToIdent returns the full 'claName', or 'x' + 8 hex digits for an unnamed color.
+  TryParseAlphaColor accepts both forms. }
 function AlphaColorToText(AColor: TAlphaColor): String;
 begin
   AlphaColorToIdent(Integer(AColor), Result);
@@ -617,8 +613,7 @@ begin
           tkInt64:                                    KindName := 'int64';
           tkEnumeration:
             // The ByteBool/WordBool/LongBool family reads back as 'True'/'False' through GetEnumName (System.TypInfo.pas) and set_property takes it as a boolean, so tag it 'boolean': 'enum' would send the AI hunting for enum identifiers this family does not have.
-            if (Prop.PropertyType.Handle = TypeInfo(Boolean))
-            or IsBoolFamilyType(Prop.PropertyType.Handle) then
+            if (Prop.PropertyType.Handle = TypeInfo(Boolean)) or IsBoolFamilyType(Prop.PropertyType.Handle) then
               KindName := 'boolean'
             else
               KindName := 'enum';
@@ -652,7 +647,8 @@ begin
 end;
 
 
-{ AI-friendly TAlphaColor parser. Accepts:
+{ AI-friendly TAlphaColor parser.
+  Accepts:
     '#FF8000'        - 6 hex digits, alpha assumed $FF (fully opaque)
     '#80FF8000'      - 8 hex digits, full ARGB
     'claSkyBlue'     - System.UIConsts cla* constant
@@ -754,8 +750,7 @@ begin
       if Prop.PropertyType.TypeKind <> tkClass then
       begin
         AErrCode := ErrUnsupportedAction;
-        AErrMsg := AInstance.ClassName + '.' + OuterName +
-                   ' is not a class-typed property (dotted propName requires tkClass outer)';
+        AErrMsg := AInstance.ClassName + '.' + OuterName + ' is not a class-typed property (dotted propName requires tkClass outer)';
         exit;
       end;
       if not Prop.IsReadable then
@@ -891,14 +886,15 @@ begin
           Lower := LowerCase(AStrValue);
           if (Lower = 'true') or (Lower = '1') then
             BoolVal := TRUE
-          else if (Lower = 'false') or (Lower = '0') then
-            BoolVal := FALSE
           else
-          begin
-            AErrCode := ErrUnsupportedAction;
-            AErrMsg := APropName + ' expects boolean (true/false); got "' + AStrValue + '"';
-            exit;
-          end;
+            if (Lower = 'false') or (Lower = '0') then
+              BoolVal := FALSE
+            else
+            begin
+              AErrCode := ErrUnsupportedAction;
+              AErrMsg := APropName + ' expects boolean (true/false); got "' + AStrValue + '"';
+              exit;
+            end;
           if CanRead and (CurVal.AsBoolean = BoolVal) then
           begin
             AElided := TRUE;
@@ -907,73 +903,65 @@ begin
           Prop.SetValue(AInstance, BoolVal);
           exit(TRUE);
         end
-        else if IsBoolFamilyType(Prop.PropertyType.Handle) then
-        begin
-          // ByteBool/WordBool/LongBool are tkEnumeration, and the generic enum path below
-          // cannot write TRUE to them: GetEnumValue answers 'True' with -1, which is also its
-          // not-found result, so the EnumOrd<0 fallback runs Val('True'), fails, and reports
-          // -32005; any other non-numeric string reaches a bare StrToInt inside GetEnumValue
-          // and raises EConvertError (GetEnumValue in System.TypInfo.pas, Delphi 13), escaping as
-          // -32603. Reachable on a shipped component: TADOCommand.Prepared is a published
-          // WordBool (Data.Win.ADODB.pas). It is also the read/write round trip -
-          // read_property renders this family through GetEnumName, which returns
-          // BooleanIdents[Value <> 0] = 'True'/'False' (System.TypInfo.pas).
-          // Matched by BaseType (see IsBoolFamilyType), which also catches a strong alias
-          // such as `type TFlag = type WordBool`, NOT by the RTL's own MinValue < 0 test:
-          // a normal enumeration may legally carry a negative ordinal (the RTL declares
-          // such types itself - UCollationResult in System.Internal.ICU.pas), and catching those here would
-          // turn set_property(<that enum>, '1') into a silent write of -1.
-          Lower := LowerCase(AStrValue);
-          if (Lower = 'true') or (Lower = '1') or (Lower = '-1') then
-            BoolVal := TRUE
-          else if (Lower = 'false') or (Lower = '0') then
-            BoolVal := FALSE
+        else
+          if IsBoolFamilyType(Prop.PropertyType.Handle) then
+          begin
+            { ByteBool/WordBool/LongBool are tkEnumeration, and the generic enum path below cannot write TRUE to them: GetEnumValue answers 'True' with -1, which is also its not-found result, so the EnumOrd<0 fallback runs Val('True'), fails, and reports -32005; any other non-numeric string reaches a bare StrToInt inside GetEnumValue and raises EConvertError (GetEnumValue in System.TypInfo.pas, Delphi 13), escaping as -32603.
+              Reachable on a shipped component: TADOCommand.Prepared is a published WordBool (Data.Win.ADODB.pas).
+              It is also the read/write round trip - read_property renders this family through GetEnumName, which returns BooleanIdents[Value <> 0] = 'True'/'False' (System.TypInfo.pas).
+              Matched by BaseType (see IsBoolFamilyType), which also catches a strong alias such as `type TFlag = type WordBool`, NOT by the RTL's own MinValue < 0 test: a normal enumeration may legally carry a negative ordinal (the RTL declares such types itself - UCollationResult in System.Internal.ICU.pas), and catching those here would turn set_property(<that enum>, '1') into a silent write of -1. }
+            Lower := LowerCase(AStrValue);
+            if (Lower = 'true') or (Lower = '1') or (Lower = '-1') then
+              BoolVal := TRUE
+            else
+              if (Lower = 'false') or (Lower = '0') then
+                BoolVal := FALSE
+              else
+              begin
+                AErrCode := ErrUnsupportedAction;
+                AErrMsg := APropName + ' expects boolean (true/false); got "' + AStrValue + '"';
+                exit;
+              end;
+            if CanRead and ((CurVal.AsOrdinal <> 0) = BoolVal) then
+            begin
+              AElided := TRUE;
+              exit(TRUE);
+            end;
+            // TRUE is all-bits-set (-1) for this family, not 1 - the OLE VARIANT_BOOL convention the COM consumers of these properties compare against.
+            if BoolVal
+            then Prop.SetValue(AInstance, TValue.FromOrdinal(Prop.PropertyType.Handle, -1))
+            else Prop.SetValue(AInstance, TValue.FromOrdinal(Prop.PropertyType.Handle, 0));
+            exit(TRUE);
+          end
           else
           begin
-            AErrCode := ErrUnsupportedAction;
-            AErrMsg := APropName + ' expects boolean (true/false); got "' + AStrValue + '"';
-            exit;
-          end;
-          if CanRead and ((CurVal.AsOrdinal <> 0) = BoolVal) then
-          begin
-            AElided := TRUE;
-            exit(TRUE);
-          end;
-          // TRUE is all-bits-set (-1) for this family, not 1 - the OLE VARIANT_BOOL convention the COM consumers of these properties compare against.
-          if BoolVal
-          then Prop.SetValue(AInstance, TValue.FromOrdinal(Prop.PropertyType.Handle, -1))
-          else Prop.SetValue(AInstance, TValue.FromOrdinal(Prop.PropertyType.Handle, 0));
-          exit(TRUE);
-        end
-        else
-        begin
-          { GetEnumValue is not exception-free: for an enumeration whose MinValue is negative it skips the name list and runs a bare StrToInt on the string (System.TypInfo.pas, Delphi 13), which raises EConvertError on any identifier.
-            That is treated as "no such identifier" and the ordinal fallback decides, so the coercion lane answers -32005 instead of leaking -32603. }
-          try
-            EnumOrd := GetEnumValue(Prop.PropertyType.Handle, AStrValue);
-          except
-            on EConvertError do
-              EnumOrd := -1;
-          end;
-          if EnumOrd < 0 then
-          begin
-            Val(AStrValue, IntVal, Code);
-            if Code <> 0 then
-            begin
-              AErrCode := ErrUnsupportedAction;
-              AErrMsg := APropName + ' expects an enum identifier or ordinal; got "' + AStrValue + '"';
-              exit;
+            { GetEnumValue is not exception-free: for an enumeration whose MinValue is negative it skips the name list and runs a bare StrToInt on the string (System.TypInfo.pas, Delphi 13), which raises EConvertError on any identifier.
+              That is treated as "no such identifier" and the ordinal fallback decides, so the coercion lane answers -32005 instead of leaking -32603. }
+            try
+              EnumOrd := GetEnumValue(Prop.PropertyType.Handle, AStrValue);
+            except
+              on EConvertError do
+                EnumOrd := -1;
             end;
-            EnumOrd := IntVal;
-          end;
-          if CanRead and (CurVal.AsOrdinal = EnumOrd) then
-          begin
-            AElided := TRUE;
+            if EnumOrd < 0 then
+            begin
+              Val(AStrValue, IntVal, Code);
+              if Code <> 0 then
+              begin
+                AErrCode := ErrUnsupportedAction;
+                AErrMsg := APropName + ' expects an enum identifier or ordinal; got "' + AStrValue + '"';
+                exit;
+              end;
+              EnumOrd := IntVal;
+            end;
+            if CanRead and (CurVal.AsOrdinal = EnumOrd) then
+            begin
+              AElided := TRUE;
+              exit(TRUE);
+            end;
+            Prop.SetValue(AInstance, TValue.FromOrdinal(Prop.PropertyType.Handle, EnumOrd));
             exit(TRUE);
           end;
-          Prop.SetValue(AInstance, TValue.FromOrdinal(Prop.PropertyType.Handle, EnumOrd));
-          exit(TRUE);
-        end;
 
       tkSet:
       begin
@@ -1037,8 +1025,7 @@ begin
       end;
     else
       AErrCode := ErrUnsupportedAction;
-      AErrMsg := APropName + ' has unsupported type kind (' + IntToStr(Ord(Prop.PropertyType.TypeKind)) +
-                 ' — use a dotted propName like "Outer.Inner" if this is a class-typed property)';
+      AErrMsg := APropName + ' has unsupported type kind (' + IntToStr(Ord(Prop.PropertyType.TypeKind)) + ' — use a dotted propName like "Outer.Inner" if this is a class-typed property)';
       exit;
     end;
   finally
@@ -1149,8 +1136,7 @@ begin
       Candidates := Candidates + ReferenceFor(TComponent(Matches[i]));
     end;
     AResp.ErrorCode := ErrAmbiguousPath;
-    AResp.ErrorMessage := APath + ' is ambiguous: ' + IntToStr(Matches.Count) +
-                          ' controls shown there match it (' + Candidates + '). Use one of these paths instead.';
+    AResp.ErrorMessage := APath + ' is ambiguous: ' + IntToStr(Matches.Count) + ' controls shown there match it (' + Candidates + '). Use one of these paths instead.';
   finally
     FreeAndNil(Matches);
   end;
@@ -1375,15 +1361,13 @@ begin
     if not TryStrToInt(TJSONNumber(CountVal).Value, RequestedCount) then
     begin
       Result.Ok := FALSE; Result.ErrorCode := ErrInvalidRequest;
-      Result.ErrorMessage := 'click args.count must be an integer 1..' + IntToStr(MaxClickCount) +
-                             ' (got ' + TJSONNumber(CountVal).Value + ')';
+      Result.ErrorMessage := 'click args.count must be an integer 1..' + IntToStr(MaxClickCount) + ' (got ' + TJSONNumber(CountVal).Value + ')';
       exit;
     end;
     if (RequestedCount < 1) or (RequestedCount > MaxClickCount) then
     begin
       Result.Ok := FALSE; Result.ErrorCode := ErrInvalidRequest;
-      Result.ErrorMessage := 'click args.count must be 1..' + IntToStr(MaxClickCount) +
-                             ' (got ' + IntToStr(RequestedCount) + ')';
+      Result.ErrorMessage := 'click args.count must be 1..' + IntToStr(MaxClickCount) + ' (got ' + IntToStr(RequestedCount) + ')';
       exit;
     end;
   end;
@@ -1404,15 +1388,13 @@ begin
     if Mode = 'message' then
     begin
       Result.Ok := FALSE; Result.ErrorCode := ErrUnsupportedAction;
-      Result.ErrorMessage := 'click mode=message is VCL-on-Windows only (FMX controls have no window ' +
-                             'handle); omit mode to use the OnClick dispatch';
+      Result.ErrorMessage := 'click mode=message is VCL-on-Windows only (FMX controls have no window ' + 'handle); omit mode to use the OnClick dispatch';
       exit;
     end;
     if (Mode <> '') and (Mode <> 'auto') then
     begin
       Result.Ok := FALSE; Result.ErrorCode := ErrInvalidRequest;
-      Result.ErrorMessage := 'click args.mode must be "auto" or "message" (got "' +
-                             TJSONString(ModeVal).Value + '")';
+      Result.ErrorMessage := 'click args.mode must be "auto" or "message" (got "' + TJSONString(ModeVal).Value + '")';
       exit;
     end;
   end;
@@ -1497,8 +1479,7 @@ begin
         on E: Exception do
         begin
           StoppedReason := 'exception:' + E.ClassName;
-          BridgeLogWarn('bridge', 'click loop stopped at iter ' + IntToStr(ClicksDone + 1) +
-                                  ': ' + E.ClassName + ': ' + E.Message);
+          BridgeLogWarn('bridge', 'click loop stopped at iter ' + IntToStr(ClicksDone + 1) + ': ' + E.ClassName + ': ' + E.Message);
           Break;
         end;
       end;
@@ -1565,8 +1546,8 @@ begin
     exit;
   end;
 
-  // OnExecute that closes the app / frees forms is the same hazard as a click
-  // that does so. Don't touch Comp after Execute returns.
+  { OnExecute that closes the app / frees forms is the same hazard as a click that does so.
+    Don't touch Comp after Execute returns. }
   try
     Executed := TBasicAction(Comp).Execute;
   except
@@ -1731,9 +1712,9 @@ begin
 
   Comp := ResolvePathOrFail(Path, Result);
   if Comp = NIL then exit;
-  // A disabled control refuses every property (-32003) except 'Enabled' itself (exact name, any case, no dotted
-  // path; TRUE and FALSE). Without that exception a control disabled through set_property could never be enabled
-  // again by any tool (Gabriel, 2026-10-07). click, set_text and set_checked keep their own disabled check.
+  { A disabled control refuses every property (-32003) except 'Enabled' itself (exact name, any case, no dotted path; TRUE and FALSE).
+    Without that exception a control disabled through set_property could never be enabled again by any tool (Gabriel, 2026-10-07).
+    click, set_text and set_checked keep their own disabled check. }
   if TryGetEnabled(Comp, Enabled) and not Enabled and not SameText(PropName, 'Enabled') then
   begin
     Result.Ok := FALSE; Result.ErrorCode := ErrControlDisabled;
@@ -1783,8 +1764,9 @@ begin
   begin
     if Application.MainForm <> NIL then
       Result := Application.MainForm
-    else if Screen.FormCount > 0 then
-      Result := Screen.Forms[0];
+    else
+      if Screen.FormCount > 0 then
+        Result := Screen.Forms[0];
     exit;
   end;
   for i := 0 to Screen.FormCount - 1 do
@@ -1872,7 +1854,8 @@ end;
 
 
 { A new bitmap of ASource drawn at AWidth x AHeight with DrawBitmap's HighSpeed = FALSE (linear interpolation on the Direct2D canvas, FMX.Canvas.D2D.pas), so small text stays readable.
-  FALSE (AScaled = NIL) when the canvas cannot begin a scene. The caller frees AScaled. }
+  FALSE (AScaled = NIL) when the canvas cannot begin a scene.
+  The caller frees AScaled. }
 function TryScaleBitmap(ASource: FMX.Graphics.TBitmap; AWidth, AHeight: Integer; OUT AScaled: FMX.Graphics.TBitmap): Boolean;
 begin
   AScaled := FMX.Graphics.TBitmap.Create(AWidth, AHeight);
@@ -2075,8 +2058,7 @@ begin
           tkInt64:                                    KindName := 'int64';
           tkEnumeration:
             // The ByteBool/WordBool/LongBool family reads back as 'True'/'False' through GetEnumName (System.TypInfo.pas) and set_property takes it as a boolean, so tag it 'boolean': 'enum' would send the AI hunting for enum identifiers this family does not have.
-            if (Prop.PropertyType.Handle = TypeInfo(Boolean))
-            or IsBoolFamilyType(Prop.PropertyType.Handle) then
+            if (Prop.PropertyType.Handle = TypeInfo(Boolean)) or IsBoolFamilyType(Prop.PropertyType.Handle) then
               KindName := 'boolean'
             else
               KindName := 'enum';
@@ -2165,8 +2147,7 @@ begin
       if Prop.PropertyType.TypeKind <> tkClass then
       begin
         AErrCode := ErrUnsupportedAction;
-        AErrMsg := AInstance.ClassName + '.' + OuterName +
-                   ' is not a class-typed property (dotted propName requires tkClass outer)';
+        AErrMsg := AInstance.ClassName + '.' + OuterName + ' is not a class-typed property (dotted propName requires tkClass outer)';
         exit;
       end;
       if not Prop.IsReadable then
@@ -2226,10 +2207,8 @@ begin
           AKind := 'integer';
       tkInt64:                                    AKind := 'int64';
       tkEnumeration:
-        // Same bool-family rule as ListReadableProperties above — the two must agree,
-        // or the AI sees 'boolean' in availableProperties and 'enum' on the read.
-        if (Prop.PropertyType.Handle = TypeInfo(Boolean))
-        or IsBoolFamilyType(Prop.PropertyType.Handle) then
+        // Same bool-family rule as ListReadableProperties above — the two must agree, or the AI sees 'boolean' in availableProperties and 'enum' on the read.
+        if (Prop.PropertyType.Handle = TypeInfo(Boolean)) or IsBoolFamilyType(Prop.PropertyType.Handle) then
           AKind := 'boolean'
         else
           AKind := 'enum';
@@ -2238,8 +2217,7 @@ begin
       tkClass:
       begin
         AErrCode := ErrUnsupportedAction;
-        AErrMsg := AInstance.ClassName + '.' + APropName +
-                   ' is a class-typed property — use dotted propName (e.g. "' + APropName + '.Inner") to read a leaf';
+        AErrMsg := AInstance.ClassName + '.' + APropName + ' is a class-typed property — use dotted propName (e.g. "' + APropName + '.Inner") to read a leaf';
         exit;
       end;
     else
@@ -2550,13 +2528,15 @@ begin
     begin
       Part := UpperCase(Parts[i]);
       if Part = 'CTRL' then Chord.Ctrl := TRUE
-      else if Part = 'SHIFT' then Chord.Shift := TRUE
-      else if Part = 'ALT' then Chord.Alt := TRUE
       else
-      begin
-        AError := 'unknown modifier "' + Parts[i] + '" in "' + Token + '" (use Ctrl, Shift, Alt)';
-        exit(FALSE);
-      end;
+        if Part = 'SHIFT' then Chord.Shift := TRUE
+        else
+          if Part = 'ALT' then Chord.Alt := TRUE
+          else
+          begin
+            AError := 'unknown modifier "' + Parts[i] + '" in "' + Token + '" (use Ctrl, Shift, Alt)';
+            exit(FALSE);
+          end;
     end;
     Chord.Key := KeyNameToVk(Parts[High(Parts)]);
     if Chord.Key = 0 then
@@ -2572,7 +2552,8 @@ end;
 
 
 { Keys go through FMX's own form keyboard routine, TCommonCustomForm.KeyDown / KeyUp (FMX.Forms.pas), the routine the platform layer calls for a real key on Windows and on Android: accelerator keys, dialog keys (Default / Cancel buttons), Tab focus moves, the focused control's KeyDown (OnKeyDown, an edit inserting KeyChar), then the form's OnKeyDown.
-  The FMX Windows platform sends the virtual key and the character as two KeyDown calls (key with #0, then 0 with the character); this does the same for a chord whose key types a character. No window is activated. }
+  The FMX Windows platform sends the virtual key and the character as two KeyDown calls (key with #0, then 0 with the character); this does the same for a chord whose key types a character.
+  No window is activated. }
 procedure SendChordToForm(AForm: TCommonCustomForm; const AChord: TKeyChord);
 var
   Shift: TShiftState;
@@ -2595,10 +2576,12 @@ begin
       if AChord.Shift
       then Ch := Char(AChord.Key)
       else Ch := Char(AChord.Key + 32)
-    else if (AChord.Key >= Ord('0')) and (AChord.Key <= Ord('9')) and not AChord.Shift then
-      Ch := Char(AChord.Key)
-    else if AChord.Key = vkSpace then
-      Ch := ' ';
+    else
+      if (AChord.Key >= Ord('0')) and (AChord.Key <= Ord('9')) and not AChord.Shift then
+        Ch := Char(AChord.Key)
+      else
+        if AChord.Key = vkSpace then
+          Ch := ' ';
     if Ch <> #0 then
     begin
       Key := 0;
@@ -2652,9 +2635,7 @@ begin
     PathVal := AReq.Args.GetValue('path');
     KeysVal := AReq.Args.GetValue('keys');
     TextVal := AReq.Args.GetValue('text');
-    if ((PathVal <> NIL) and not (PathVal is TJSONString))
-    or ((KeysVal <> NIL) and not (KeysVal is TJSONString))
-    or ((TextVal <> NIL) and not (TextVal is TJSONString)) then
+    if ((PathVal <> NIL) and not (PathVal is TJSONString)) or ((KeysVal <> NIL) and not (KeysVal is TJSONString)) or ((TextVal <> NIL) and not (TextVal is TJSONString)) then
     begin
       Result.ErrorMessage := 'send_keys args.path, args.keys and args.text must be strings';
       exit;
@@ -2689,8 +2670,7 @@ begin
       Form := TCommonCustomForm(Comp)
     else
     begin
-      if not (Comp is TControl) or not TControl(Comp).CanFocus or (TControl(Comp).Root = NIL)
-      or not (TControl(Comp).Root.GetObject is TCommonCustomForm) then
+      if not (Comp is TControl) or not TControl(Comp).CanFocus or (TControl(Comp).Root = NIL) or not (TControl(Comp).Root.GetObject is TCommonCustomForm) then
       begin
         Result.ErrorCode := ErrUnsupportedAction;
         Result.ErrorMessage := Comp.ClassName + ' cannot take the keyboard focus';
@@ -2776,36 +2756,47 @@ begin
   end;
   if SameText(AReq.Cmd, 'list_tree') then
     Result := HandleListTree(AReq)
-  else if SameText(AReq.Cmd, 'click') then
-    Result := HandleClick(AReq)
-  else if SameText(AReq.Cmd, 'get_text') then
-    Result := HandleGetText(AReq)
-  else if SameText(AReq.Cmd, 'set_text') then
-    Result := HandleSetText(AReq)
-  else if SameText(AReq.Cmd, 'set_checked') then
-    Result := HandleSetChecked(AReq)
-  else if SameText(AReq.Cmd, 'set_property') then
-    Result := HandleSetProperty(AReq)
-  else if SameText(AReq.Cmd, 'read_property') then
-    Result := HandleReadProperty(AReq)
-  else if SameText(AReq.Cmd, 'screenshot') then
-    Result := HandleScreenshot(AReq)
-  else if SameText(AReq.Cmd, 'execute_action') then
-    Result := HandleExecuteAction(AReq)
-  else if SameText(AReq.Cmd, 'set_keep_awake') then
-    Result := HandleSetKeepAwake(AReq)
-  else if SameText(AReq.Cmd, 'dismiss_dialog') then
-    Result := HandleDismissDialog(AReq)
-  else if SameText(AReq.Cmd, 'send_keys') then
-    Result := HandleSendKeys(AReq)
   else
-  begin
-    Result := Default(TBridgeResponse);
-    Result.Id := AReq.Id;
-    Result.Ok := FALSE;
-    Result.ErrorCode := ErrUnsupportedAction;
-    Result.ErrorMessage := 'unknown cmd: ' + AReq.Cmd;
-  end;
+    if SameText(AReq.Cmd, 'click') then
+      Result := HandleClick(AReq)
+    else
+      if SameText(AReq.Cmd, 'get_text') then
+        Result := HandleGetText(AReq)
+      else
+        if SameText(AReq.Cmd, 'set_text') then
+          Result := HandleSetText(AReq)
+        else
+          if SameText(AReq.Cmd, 'set_checked') then
+            Result := HandleSetChecked(AReq)
+          else
+            if SameText(AReq.Cmd, 'set_property') then
+              Result := HandleSetProperty(AReq)
+            else
+              if SameText(AReq.Cmd, 'read_property') then
+                Result := HandleReadProperty(AReq)
+              else
+                if SameText(AReq.Cmd, 'screenshot') then
+                  Result := HandleScreenshot(AReq)
+                else
+                  if SameText(AReq.Cmd, 'execute_action') then
+                    Result := HandleExecuteAction(AReq)
+                  else
+                    if SameText(AReq.Cmd, 'set_keep_awake') then
+                      Result := HandleSetKeepAwake(AReq)
+                    else
+                      if SameText(AReq.Cmd, 'dismiss_dialog') then
+                        Result := HandleDismissDialog(AReq)
+                      else
+                        if SameText(AReq.Cmd, 'send_keys') then
+                          Result := HandleSendKeys(AReq)
+                        else
+                        begin
+                          Result := Default(TBridgeResponse);
+                          Result.Id := AReq.Id;
+                          Result.Ok := FALSE;
+                          Result.ErrorCode := ErrUnsupportedAction;
+                          Result.ErrorMessage := 'unknown cmd: ' + AReq.Cmd;
+                        end;
 end;
 
 

@@ -4,43 +4,37 @@ unit Autopilot.Mcp.JsonRpc;
    2026.11.01
    www.GabrielMoraru.com
 --------------------------------------------------------------------------------------------------------------
-   Single-line JSON-RPC 2.0 dispatcher for the Autopilot MCP server. Implements the minimum MCP
-   surface Claude Code needs: initialize, notifications/initialized (notification), ping, tools/list,
-   tools/call. Everything else returns -32601 Method not found.
+   Single-line JSON-RPC 2.0 dispatcher for the Autopilot MCP server.
+   Implements the minimum MCP surface Claude Code needs: initialize, notifications/initialized (notification), ping, tools/list, tools/call.
+   Everything else returns -32601 Method not found.
 
-   A tools/call result is one text block, or - for a tool whose IMCPTool.ExtractImage hands over a
-   picture (screenshot) - an image block followed by a text block with the rest of the answer.
-   Errors of a tools/call follow MCP 2025-11-25, section "Error Handling" of
-   https://modelcontextprotocol.io/specification/2025-11-25/server/tools : an unknown tool, and params
-   that break the CallToolRequest shape (no "name" string, "arguments" not an object) are the protocol
-   error -32602; everything the tool itself raises, its argument value checks included (a missing
-   required argument, a wrong type, a value out of range), is a result with isError: true.
+   A tools/call result is one text block, or - for a tool whose IMCPTool.ExtractImage hands over a picture (screenshot) - an image block followed by a text block with the rest of the answer.
+   Errors of a tools/call follow MCP 2025-11-25, section "Error Handling" of https://modelcontextprotocol.io/specification/2025-11-25/server/tools : an unknown tool, and params that break the CallToolRequest shape (no "name" string, "arguments" not an object) are the protocol error -32602; everything the tool itself raises, its argument value checks included (a missing required argument, a wrong type, a value out of range), is a result with isError: true.
 
    No threads, no transport here — the caller (Autopilot.Mcp.Stdio) drives the readln loop.
    Pure JSON in -> JSON out (or '' for notifications).
 
-   Tool instance caching: each tool name maps to one IMCPTool, created via TMCPRegistry on first
-   use and held until shutdown.
+   Tool instance caching: each tool name maps to one IMCPTool, created via TMCPRegistry on first use and held until shutdown.
 
-   id handling: every JSON-RPC response must echo the request's id verbatim, preserving its JSON
-   type (number, string, nil). We clone the raw TJSONValue so a number stays a number and a string
-   stays a string.
+   id handling: every JSON-RPC response must echo the request's id verbatim, preserving its JSON type (number, string, nil).
+   We clone the raw TJSONValue so a number stays a number and a string stays a string.
 =============================================================================================================}
 
 interface
 
 const
-  /// The version of Autopilot.Mcp.exe: serverInfo.version in the initialize answer, the startup log line and
-  /// the Version field of a crash report. Keep it equal to FileVersion in Autopilot.Mcp.dproj (Win32).
-  /// Separate from Autopilot.Bridge.Core.BridgeVersion, which the bridge sends in its hello frame.
+  { The version of Autopilot.Mcp.exe: serverInfo.version in the initialize answer, the startup log line and the Version field of a crash report.
+    Keep it equal to FileVersion in Autopilot.Mcp.dproj (Win32).
+    Separate from Autopilot.Bridge.Core.BridgeVersion, which the bridge sends in its hello frame. }
   McpServerVersion = '3.1.4';
 
 
-/// Process one JSON-RPC line. Returns the response line (no trailing newline)
-/// or '' if the request was a notification (no response expected).
+{ Process one JSON-RPC line.
+  Returns the response line (no trailing newline) or '' if the request was a notification (no response expected). }
 function DispatchLine(const ALine: String): String;
 
-/// Drop the cached tool instances. Used by unit tests; production never calls.
+{ Drop the cached tool instances.
+  Used by unit tests; production never calls. }
 procedure ResetToolCache;
 
 
@@ -64,33 +58,17 @@ const
   ServerName = 'Autopilot.Mcp';
 
 const
-  /// Sent as the optional top-level "instructions" field of the initialize result. The MCP spec
-  /// defines it (https://modelcontextprotocol.io/specification/2025-06-18/basic/lifecycle - the
-  /// server response example carries "instructions": "Optional instructions for the client"), and
-  /// hosts place it in the model's system prompt.
-  /// Claude Code loads it into EVERY session, also one that never drives a Delphi app
-  /// (https://code.claude.com/docs/en/mcp: "Only tool names and server instructions load at session
-  /// start"), so it says only what the tools are for and how to drive them. The bridge-wiring steps
-  /// ride the -32099 target_not_running error instead (Autopilot.Mcp.ToolBase.BridgeWiringRecipe),
-  /// the one moment the AI needs them. Keep it short and pure ASCII (Tests.Mcp.Tools checks both).
-  ServerInstructions =
-      'Autopilot drives a RUNNING Delphi VCL or FMX application: click controls, set and read text, '
-    + 'read and write published properties via RTTI, dismiss native dialogs, screenshot a form.' + sLineBreak
-    + sLineBreak
-    + 'The app must be running and built with the Autopilot bridge. If it is not, the tools answer '
-    + '-32099 target_not_running with the steps to fix it. To link the bridge into a project, call attach: '
-    + 'its answer always carries those steps.' + sLineBreak
-    + sLineBreak
-    + 'Never ask the user for a path, a port or a process id: a target announces itself and the tools '
-    + 'attach on their own. Only when several targets run at once do you pass the pid you want.' + sLineBreak
-    + sLineBreak
-    + 'Control paths are dotted, FormName.ControlName (for example frmMain.btnSave). Call list_tree once '
-    + 'to learn them, then act - do not re-list before every action. To verify a result prefer get_text '
-    + 'over screenshot: it is faster and costs no image tokens.';
+  { Sent as the optional top-level "instructions" field of the initialize result.
+    The MCP spec defines it (https://modelcontextprotocol.io/specification/2025-06-18/basic/lifecycle - the server response example carries "instructions": "Optional instructions for the client"), and hosts place it in the model's system prompt.
+    Claude Code loads it into EVERY session, also one that never drives a Delphi app (https://code.claude.com/docs/en/mcp: "Only tool names and server instructions load at session start"), so it says only what the tools are for and how to drive them.
+    The bridge-wiring steps ride the -32099 target_not_running error instead (Autopilot.Mcp.ToolBase.BridgeWiringRecipe), the one moment the AI needs them.
+    Keep it short and pure ASCII (Tests.Mcp.Tools checks both). }
+  ServerInstructions = 'Autopilot drives a RUNNING Delphi VCL or FMX application: click controls, set and read text, ' + 'read and write published properties via RTTI, dismiss native dialogs, screenshot a form.' + sLineBreak + sLineBreak + 'The app must be running and built with the Autopilot bridge. If it is not, the tools answer ' + '-32099 target_not_running with the steps to fix it. To link the bridge into a project, call attach: ' + 'its answer always carries those steps.' + sLineBreak + sLineBreak + 'Never ask the user for a path, a port or a process id: a target announces itself and the tools ' + 'attach on their own. Only when several targets run at once do you pass the pid you want.' + sLineBreak + sLineBreak + 'Control paths are dotted, FormName.ControlName (for example frmMain.btnSave). Call list_tree once ' + 'to learn them, then act - do not re-list before every action. To verify a result prefer get_text ' + 'over screenshot: it is faster and costs no image tokens.';
 
 const
-  /// Versions we accept verbatim on initialize. Anything else negotiates down
-  /// to MCP_PROTOCOL_VERSION. Order matters for readability only — lookup is linear.
+  { Versions we accept verbatim on initialize.
+    Anything else negotiates down to MCP_PROTOCOL_VERSION.
+    Order matters for readability only — lookup is linear. }
   GSupportedVersions: array[0..3] of String = (
     '2025-11-25',   // current per spec
     '2025-06-18',
@@ -99,14 +77,13 @@ const
   );
 
 type
-  /// A tools/call that names no registered tool, or whose params break the CallToolRequest shape.
-  /// DispatchLine answers it with the JSON-RPC error -32602.
+  { A tools/call that names no registered tool, or whose params break the CallToolRequest shape.
+    DispatchLine answers it with the JSON-RPC error -32602. }
   EMcpInvalidParams = class(Exception);
 
-  /// Holder for the singleton tool-instance cache. Wrapped in a class so we can
-  /// hang a class destructor on it (no finalization section, per project rule).
-  /// One IMCPTool per tool name, built lazily on first tools/list or tools/call,
-  /// reused for the rest of the server's lifetime.
+  { Holder for the singleton tool-instance cache.
+    Wrapped in a class so we can hang a class destructor on it (no finalization section, per project rule).
+    One IMCPTool per tool name, built lazily on first tools/list or tools/call, reused for the rest of the server's lifetime. }
   TToolCache = class
   strict private
     class var FMap: TDictionary<String, IMCPTool>;
@@ -153,22 +130,23 @@ begin
 end;
 
 
-/// Look up (or create-and-cache) the tool by name. Returns nil if not registered.
+{ Look up (or create-and-cache) the tool by name.
+  Returns nil if not registered. }
 function ResolveCachedTool(const AName: String): IMCPTool;
 begin
   Result := TToolCache.Resolve(AName);
 end;
 
 
-/// TRUE when ANode is a JSON string. Up to Delphi 12 TJSONNumber descends from TJSONString, so a test with
-/// 'is TJSONString' alone also lets a number through there.
+{ TRUE when ANode is a JSON string.
+  Up to Delphi 12 TJSONNumber descends from TJSONString, so a test with 'is TJSONString' alone also lets a number through there. }
 function IsJsonText(ANode: TJSONValue): Boolean;
 begin
   Result := (ANode is TJSONString) and not (ANode is TJSONNumber);
 end;
 
 
-/// True iff AVersion is one we accept verbatim during initialize negotiation.
+// True iff AVersion is one we accept verbatim during initialize negotiation.
 function IsSupportedVersion(const AVersion: String): Boolean;
 var
   V: String;
@@ -179,10 +157,9 @@ begin
 end;
 
 
-/// Clone the request id into the response. The MUST-preserve-type rule of
-/// JSON-RPC 2.0 §5: a number response id matches a number request id, etc.
-/// AIdNode may be nil (request had no id field, but we shouldn't get here in
-/// that case — notifications are handled earlier) or any TJSONValue subtype.
+{ Clone the request id into the response.
+  The MUST-preserve-type rule of JSON-RPC 2.0 §5: a number response id matches a number request id, etc.
+  AIdNode may be nil (request had no id field, but we shouldn't get here in that case — notifications are handled earlier) or any TJSONValue subtype. }
 function CloneIdOrNull(AIdNode: TJSONValue): TJSONValue;
 begin
   if AIdNode = nil
@@ -191,8 +168,8 @@ begin
 end;
 
 
-/// Build the {jsonrpc:'2.0', id, result:<inner>} envelope. Takes ownership of
-/// AInner and ACloneOfId.
+// Build the {jsonrpc:'2.0', id, result:<inner>} envelope.
+// Takes ownership of AInner and ACloneOfId.
 function BuildOkEnvelope(ACloneOfId: TJSONValue; AInner: TJSONValue): String;
 var
   Resp: TJSONObject;
@@ -209,8 +186,8 @@ begin
 end;
 
 
-/// Build the {jsonrpc:'2.0', id, error:{code,message}} envelope. Takes ownership
-/// of ACloneOfId.
+// Build the {jsonrpc:'2.0', id, error:{code,message}} envelope.
+// Takes ownership of ACloneOfId.
 function BuildErrorEnvelope(ACloneOfId: TJSONValue; ACode: Integer; const AMsg: String): String;
 var
   Resp, Err: TJSONObject;
@@ -231,8 +208,8 @@ begin
 end;
 
 
-/// Negotiate the protocolVersion the client sent against our supported list.
-/// AParams may be nil (no params on initialize is unusual but legal).
+{ Negotiate the protocolVersion the client sent against our supported list.
+  AParams may be nil (no params on initialize is unusual but legal). }
 function NegotiateVersion(AParams: TJSONObject): String;
 var
   Node: TJSONValue;
@@ -245,7 +222,7 @@ begin
 end;
 
 
-/// Build the result object for the initialize request.
+// Build the result object for the initialize request.
 function BuildInitializeResult(AParams: TJSONObject): TJSONObject;
 var
   Caps, ToolsCap, ServerInfo: TJSONObject;
@@ -266,7 +243,7 @@ begin
 end;
 
 
-/// Build the tools/list result: {tools:[ {name,description,inputSchema}, ... ]}.
+// Build the tools/list result: {tools:[ {name,description,inputSchema}, ... ]}.
 function BuildToolListResult: TJSONObject;
 var
   ToolsArr: TJSONArray;
@@ -295,11 +272,9 @@ begin
 end;
 
 
-/// True iff the tool's response string represents an error. Tries to parse it
-/// as JSON and looks at the conventional shape {ok:false} or {error:{...}}.
-/// Falls back to the heuristic of "starts with Error:" if the string is not
-/// parseable JSON — that catches exception messages we wrap with that prefix
-/// in BuildToolCallResult.
+// True iff the tool's response string represents an error.
+// Tries to parse it as JSON and looks at the conventional shape {ok:false} or {error:{...}}.
+// Falls back to the heuristic of "starts with Error:" if the string is not parseable JSON — that catches exception messages we wrap with that prefix in BuildToolCallResult.
 function DetectIsError(const AText: String): Boolean;
 var
   Parsed: TJSONValue;
@@ -327,8 +302,7 @@ begin
 end;
 
 
-/// Wrap a plain text payload (the tool's return string) in the MCP tools/call
-/// content[] structure: {content:[{type:'text', text:<s>}], isError:<bool>}.
+// Wrap a plain text payload (the tool's return string) in the MCP tools/call content[] structure: {content:[{type:'text', text:<s>}], isError:<bool>}.
 function WrapToolCallContent(const AText: String; AIsError: Boolean): TJSONObject;
 var
   Item, Outer: TJSONObject;
@@ -349,12 +323,11 @@ begin
 end;
 
 
-/// The tools/call result of a tool that returned a picture:
-///   {content:[{type:'image', data:<base64>, mimeType:<m>}, {type:'text', text:<rest of the answer>}]}
-/// The image block is the MCP "Image Content" shape. It exists in every protocol version we negotiate:
-/// https://modelcontextprotocol.io/specification/2024-11-05/server/tools and .../2025-06-18/server/tools,
-/// section "Image Content" (read 2026-10-06). A host shows that block as a picture; base64 inside a text
-/// block reaches the model as text.
+// The tools/call result of a tool that returned a picture:
+//   {content:[{type:'image', data:<base64>, mimeType:<m>}, {type:'text', text:<rest of the answer>}]}
+// The image block is the MCP "Image Content" shape.
+// It exists in every protocol version we negotiate: https://modelcontextprotocol.io/specification/2024-11-05/server/tools and .../2025-06-18/server/tools, section "Image Content" (read 2026-10-06).
+// A host shows that block as a picture; base64 inside a text block reaches the model as text.
 function WrapToolCallImage(const AImageBase64, AMimeType, AText: String): TJSONObject;
 var
   Arr      : TJSONArray;
@@ -382,12 +355,11 @@ begin
 end;
 
 
-/// Build the tools/call result. Reads name + arguments from AParams, resolves the tool, runs it, and wraps
-/// the output. AParams may be nil (no params, or params that are not an object).
-/// Raises EMcpInvalidParams when "name" is not a non-empty string, when "arguments" is there but is not an
-/// object (a JSON null counts as absent), and when no tool has that name: the protocol errors of
-/// https://modelcontextprotocol.io/specification/2025-11-25/server/tools section "Error Handling".
-/// A bad argument VALUE is not one of them: it raises inside Tool.Execute and comes back as an isError result.
+{ Build the tools/call result.
+  Reads name + arguments from AParams, resolves the tool, runs it, and wraps the output.
+  AParams may be nil (no params, or params that are not an object).
+  Raises EMcpInvalidParams when "name" is not a non-empty string, when "arguments" is there but is not an object (a JSON null counts as absent), and when no tool has that name: the protocol errors of https://modelcontextprotocol.io/specification/2025-11-25/server/tools section "Error Handling".
+  A bad argument VALUE is not one of them: it raises inside Tool.Execute and comes back as an isError result. }
 function BuildToolCallResult(AParams: TJSONObject): TJSONObject;
 var
   ToolName  : String;
@@ -437,9 +409,8 @@ begin
       Text := Tool.Execute(Args);
       HasImage := Tool.ExtractImage(Text, ImageData, MimeType);
     except
-      // A tool execution error, an argument the params class refuses included (TMCPSerializer raises
-      // EArgumentException for it): a result with isError: true, never a JSON-RPC error.
-      // https://modelcontextprotocol.io/specification/2025-11-25/server/tools section "Error Handling".
+      { A tool execution error, an argument the params class refuses included (TMCPSerializer raises EArgumentException for it): a result with isError: true, never a JSON-RPC error.
+        https://modelcontextprotocol.io/specification/2025-11-25/server/tools section "Error Handling". }
       on E: Exception do
         Exit(WrapToolCallContent('Error executing tool: ' + E.Message, true));
     end;
@@ -476,8 +447,7 @@ begin
 
     MethodVal := Req.GetValue('method');
     if not IsJsonText(MethodVal) then
-      Exit(BuildErrorEnvelope(CloneIdOrNull(Req.GetValue('id')),
-                              ErrInvalidRequest, 'Invalid request: missing "method"'));
+      Exit(BuildErrorEnvelope(CloneIdOrNull(Req.GetValue('id')), ErrInvalidRequest, 'Invalid request: missing "method"'));
     Method := MethodVal.Value;
 
     IdNode := Req.GetValue('id');  // owned by Parsed — do not free
@@ -498,14 +468,17 @@ begin
     try
       if Method = 'initialize' then
         Inner := BuildInitializeResult(Params)
-      else if Method = 'ping' then
-        Inner := TJSONObject.Create
-      else if Method = 'tools/list' then
-        Inner := BuildToolListResult
-      else if Method = 'tools/call' then
-        Inner := BuildToolCallResult(Params)
       else
-        Exit(BuildErrorEnvelope(CloneIdOrNull(IdNode), ErrMethodNotFound, 'Method not found: ' + Method));
+        if Method = 'ping' then
+          Inner := TJSONObject.Create
+        else
+          if Method = 'tools/list' then
+            Inner := BuildToolListResult
+          else
+            if Method = 'tools/call' then
+              Inner := BuildToolCallResult(Params)
+            else
+              Exit(BuildErrorEnvelope(CloneIdOrNull(IdNode), ErrMethodNotFound, 'Method not found: ' + Method));
 
       Result := BuildOkEnvelope(CloneIdOrNull(IdNode), Inner);
     except

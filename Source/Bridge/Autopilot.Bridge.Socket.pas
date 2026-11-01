@@ -20,10 +20,9 @@ uses
   Autopilot.Bridge.Transport;
 
 type
-  /// POSIX AF_UNIX abstract-socket transport. All methods except WakeAndStop
-  /// run on the bridge worker thread; WakeAndStop runs on the owner thread.
-  /// The destructor runs after the worker is joined (worker releases the
-  /// transport after `inherited`/WaitFor), so it cannot race the worker.
+  { POSIX AF_UNIX abstract-socket transport.
+    All methods except WakeAndStop run on the bridge worker thread; WakeAndStop runs on the owner thread.
+    The destructor runs after the worker is joined (worker releases the transport after `inherited`/WaitFor), so it cannot race the worker. }
   TSocketTransport = class(TInterfacedObject, IBridgeTransport)
   strict private
     FEndpoint : String;            // abstract-socket name, e.g. 'Autopilot.12345' (no NUL, no 'localabstract:' prefix)
@@ -32,8 +31,8 @@ type
     FWakePipe : TPipeDescriptors;  // self-pipe; ReadDes is select()ed alongside the listener
     FStopping : Boolean;           // set by WakeAndStop before the wake byte
   public
-    /// AEndpoint: the abstract name to bind. Callers use 'Autopilot.<pid>' -
-    /// per-process and unguessable enough for a debug feature.
+    { AEndpoint: the abstract name to bind.
+      Callers use 'Autopilot.<pid>' - per-process and unguessable enough for a debug feature. }
     constructor Create(const AEndpoint: String);
     destructor Destroy; override;
 
@@ -70,7 +69,8 @@ end;
 
 destructor TSocketTransport.Destroy;
 begin
-  { Backstop + normal teardown. Runs after the worker thread exited, so no close-vs-accept race is possible here.
+  { Backstop + normal teardown.
+    Runs after the worker thread exited, so no close-vs-accept race is possible here.
     The abstract name vanishes from the kernel namespace when the listen fd closes. }
   if FConnFd >= 0 then
   begin
@@ -118,11 +118,11 @@ begin
     end;
 
   NameBytes := TEncoding.UTF8.GetBytes(FEndpoint);
-  { Abstract form: sun_path[0] = NUL, the name in sun_path[1..]. Max name length is therefore UNIX_PATH_MAX-1 bytes.
+  { Abstract form: sun_path[0] = NUL, the name in sun_path[1..].
+    Max name length is therefore UNIX_PATH_MAX-1 bytes.
     'Autopilot.<pid>' is tiny; this guards a caller-supplied endpoint. }
   if Length(NameBytes) > UNIX_PATH_MAX - 1 then
-    raise EArgumentException.Create('Bridge socket: abstract name longer than ' +
-                                    IntToStr(UNIX_PATH_MAX - 1) + ' bytes: ' + FEndpoint);
+    raise EArgumentException.Create('Bridge socket: abstract name longer than ' + IntToStr(UNIX_PATH_MAX - 1) + ' bytes: ' + FEndpoint);
   if Length(NameBytes) = 0 then
     raise EArgumentException.Create('Bridge socket: empty abstract name');
 
@@ -142,8 +142,9 @@ begin
   Flags := fcntl(FListenFd, F_GETFL);
   if Flags = -1 then
     BridgeLogWarn('bridge', 'fcntl(F_GETFL) failed: ' + IntToStr(errno) + '; listener stays blocking')
-  else if fcntl(FListenFd, F_SETFL, Flags or O_NONBLOCK) = -1 then
-    BridgeLogWarn('bridge', 'fcntl(F_SETFL,O_NONBLOCK) failed: ' + IntToStr(errno) + '; listener stays blocking');
+  else
+    if fcntl(FListenFd, F_SETFL, Flags or O_NONBLOCK) = -1 then
+      BridgeLogWarn('bridge', 'fcntl(F_SETFL,O_NONBLOCK) failed: ' + IntToStr(errno) + '; listener stays blocking');
 
   FillChar(Addr, SizeOf(Addr), 0);
   Addr.sun_family := AF_UNIX;
@@ -191,7 +192,8 @@ begin
   begin
     if FStopping then exit(FALSE);
 
-    { Park in select() on the listener and the self-pipe. The self-pipe readying is the clean shutdown signal - no phantom connection to filter, unlike the Windows self-connect wake.
+    { Park in select() on the listener and the self-pipe.
+      The self-pipe readying is the clean shutdown signal - no phantom connection to filter, unlike the Windows self-connect wake.
       (No Posix.Poll binding exists in the D13 RTL; select() over 2 fds is equivalent here.) }
     repeat
       __FD_ZERO(ReadSet);
@@ -224,7 +226,8 @@ begin
 
     if FConnFd >= 0 then Break;   // a real client is connected
 
-    { accept() failed with no client. EAGAIN/EWOULDBLOCK = the pending connection vanished between select() and accept() (or a spurious readiness) - re-arm select() rather than treat it as a hard failure.
+    { accept() failed with no client.
+      EAGAIN/EWOULDBLOCK = the pending connection vanished between select() and accept() (or a spurious readiness) - re-arm select() rather than treat it as a hard failure.
       Any other errno is transient: return FALSE and let the worker loop back through StartListening. }
     Err := errno;
     FConnFd := -1;

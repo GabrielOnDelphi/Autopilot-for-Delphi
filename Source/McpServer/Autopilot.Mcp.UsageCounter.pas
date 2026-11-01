@@ -7,24 +7,20 @@ unit Autopilot.Mcp.UsageCounter;
    - Cross-session nudges, both one-shot, both flagged in %APPDATA%\Autopilot\usage.ini:
        1. the licence notice, on the very first tool call ever (ClaimLicenseNotice)
        2. a Book 5 cross-promotion once the user has run Autopilot more than five times
-   - Deliberately NOT a dialog and NOT a browser launch: the MCP server is headless (stdout is the
-     JSON-RPC channel) and the operator is often away during an unattended AI run.
+   - Deliberately NOT a dialog and NOT a browser launch: the MCP server is headless (stdout is the JSON-RPC channel) and the operator is often away during an unattended AI run.
    - Stdlib only (System.IniFiles), so the MCP server stays dependency-clean.
 =============================================================================================================}
 
 interface
 
-/// Increment the cross-session launch count and, the first time it passes the
-/// threshold, log the Book 5 link once. Call once per MCP-server startup.
-/// Never raises: a promo counter must not take down the server.
+{ Increment the cross-session launch count and, the first time it passes the threshold, log the Book 5 link once.
+  Call once per MCP-server startup.
+  Never raises: a promo counter must not take down the server. }
 procedure TrackUsageAndMaybePromoteBook;
 
-/// TRUE exactly once per installation — the first call that finds the flag unset
-/// sets it and returns TRUE; every later call returns FALSE. The caller then attaches
-/// Autopilot.Bridge.Core.LicenseNoticeText to a tool response, which is the only place
-/// the driving AI reliably reads (the startup log line is written where nobody looks).
-/// Never raises: on any INI failure it returns FALSE, so a broken counter costs a
-/// reminder rather than a tool call.
+{ TRUE exactly once per installation — the first call that finds the flag unset sets it and returns TRUE; every later call returns FALSE.
+  The caller then attaches Autopilot.Bridge.Core.LicenseNoticeText to a tool response, which is the only place the driving AI reliably reads (the startup log line is written where nobody looks).
+  Never raises: on any INI failure it returns FALSE, so a broken counter costs a reminder rather than a tool call. }
 function ClaimLicenseNotice: Boolean;
 
 
@@ -70,8 +66,8 @@ begin
       FreeAndNil(Ini);
     end;
   except
-    // Same contract as TrackUsageAndMaybePromoteBook: a cosmetic nudge must never
-    // break a tool call. Staying FALSE simply drops the reminder.
+    { Same contract as TrackUsageAndMaybePromoteBook: a cosmetic nudge must never break a tool call.
+      Staying FALSE simply drops the reminder. }
     on E: Exception do
       BridgeLogWarn('license', 'notice skipped: ' + E.ClassName + ': ' + E.Message);
   end;
@@ -89,8 +85,8 @@ begin
       Count := Ini.ReadInteger('Usage', 'Count', 0) + 1;
       Ini.WriteInteger('Usage', 'Count', Count);
 
-      if (Count > BookPromoAfterUses) and (not Ini.ReadBool('Usage', 'BookPromoShown', FALSE))
-      then begin
+      if (Count > BookPromoAfterUses) and (not Ini.ReadBool('Usage', 'BookPromoShown', FALSE)) then
+      begin
         BridgeLogInfo('book', Book5Hint);
         Ini.WriteBool('Usage', 'BookPromoShown', TRUE);
       end;
@@ -100,8 +96,8 @@ begin
       FreeAndNil(Ini);
     end;
   except
-    // Same contract as the logger (Autopilot.Bridge.Log): a cosmetic add-on must
-    // never crash the host. Log and carry on instead of reraising.
+    { Same contract as the logger (Autopilot.Bridge.Log): a cosmetic add-on must never crash the host.
+      Log and carry on instead of reraising. }
     on E: Exception do
       BridgeLogWarn('book', 'usage counter skipped: ' + E.ClassName + ': ' + E.Message);
   end;

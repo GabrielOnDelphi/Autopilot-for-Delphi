@@ -53,9 +53,7 @@ constructor TSetCheckedTool.Create;
 begin
   inherited;
   FName := 'set_checked';
-  FDescription := 'Set the Checked property of a TCheckBox / TRadioButton / similar. ' +
-                  'A VCL TDBCheckBox is clicked like a user, so the value reaches the field buffer ' +
-                  '(dataBound=true); a refused toggle fails with -32005.';
+  FDescription := 'Set the Checked property of a TCheckBox / TRadioButton / similar. ' + 'A VCL TDBCheckBox is clicked like a user, so the value reaches the field buffer ' + '(dataBound=true); a refused toggle fails with -32005.';
 end;
 
 

@@ -17,10 +17,10 @@ uses
   Autopilot.Bridge.Transport;
 
 type
-  /// Windows named-pipe transport. Owns the pipe handle and the discovery file.
-  /// All methods except WakeAndStop run on the bridge worker thread; WakeAndStop
-  /// runs on the owner thread (TBridgeWorker.Destroy). The destructor runs after
-  /// the worker has been joined, so its backstop cleanup cannot race the worker.
+  { Windows named-pipe transport.
+    Owns the pipe handle and the discovery file.
+    All methods except WakeAndStop run on the bridge worker thread; WakeAndStop runs on the owner thread (TBridgeWorker.Destroy).
+    The destructor runs after the worker has been joined, so its backstop cleanup cannot race the worker. }
   TPipeTransport = class(TInterfacedObject, IBridgeTransport)
   strict private
     FPipeName       : String;
@@ -33,7 +33,7 @@ type
     procedure DeleteDiscoveryFile;
     function  CreatePipeInstance: THandle;
   public
-    /// APipeName: full `\\.\pipe\...` form.
+    // APipeName: full `\\.\pipe\...` form.
     constructor Create(const APipeName: String);
     destructor Destroy; override;
 
@@ -47,11 +47,13 @@ type
   end;
 
 
-/// Returns the canonical pipe name for the current process.
-/// Form: `\\.\pipe\Autopilot.<ExeBaseName>.<PID>`. Dots, not backslashes: a backslash hierarchy is valid Win32 but parses oddly in some tooling.
+{ Returns the canonical pipe name for the current process.
+  Form: `\\.\pipe\Autopilot.<ExeBaseName>.<PID>`.
+  Dots, not backslashes: a backslash hierarchy is valid Win32 but parses oddly in some tooling. }
 function ComputePipeName: String;
 
-/// Returns the discovery folder path. Created on demand.
+{ Returns the discovery folder path.
+  Created on demand. }
 function DiscoveryFolder: String;
 
 
@@ -68,11 +70,7 @@ const
   AdvApi32 = 'advapi32.dll';
   SDDL_REVISION_1 = 1;
 
-function ConvertStringSecurityDescriptorToSecurityDescriptorW(
-  StringSecurityDescriptor: PWideChar;
-  StringSDRevision: DWORD;
-  OUT SecurityDescriptor: PSecurityDescriptor;
-  SecurityDescriptorSize: PCardinal): BOOL; stdcall;
+function ConvertStringSecurityDescriptorToSecurityDescriptorW(StringSecurityDescriptor: PWideChar; StringSDRevision: DWORD; OUT SecurityDescriptor: PSecurityDescriptor; SecurityDescriptorSize: PCardinal): BOOL; stdcall;
   external AdvApi32 NAME 'ConvertStringSecurityDescriptorToSecurityDescriptorW';
 
 function ConvertSidToStringSidW(Sid: PSID; OUT StringSid: PWideChar): BOOL; stdcall;
@@ -176,8 +174,7 @@ begin
     // Fall back to a direct write so the bridge stays discoverable even if rename fails.
     TFile.Delete(TempPath);
     TFile.WriteAllText(FDiscoveryPath, FPipeName, TEncoding.UTF8);
-    BridgeLogWarn('bridge', 'discovery file atomic rename failed (' + IntToStr(MoveErr) +
-                            '); fell back to direct write');
+    BridgeLogWarn('bridge', 'discovery file atomic rename failed (' + IntToStr(MoveErr) + '); fell back to direct write');
   end;
 end;
 
@@ -203,7 +200,8 @@ var
   SAPtr: PSecurityAttributes;
   LastErr: DWORD;
 begin
-  { Owner-only ACL: only the current user can connect. The MCP server must run as the same OS user as the target.
+  { Owner-only ACL: only the current user can connect.
+    The MCP server must run as the same OS user as the target.
     Do not use the well-known SID `OW` ("Owner Rights") instead: it fails silently, because no owner is set in the descriptor.
     Pulling the user's actual SID out of the process token and embedding it in the SDDL string works. }
   SD     := NIL;
@@ -222,8 +220,7 @@ begin
     end
     else
       // Fall back to default ACL but record why. The bridge stays usable; admins can audit.
-      BridgeLogWarn('bridge', 'owner-only SD conversion failed (' + IntToStr(GetLastError) +
-                              '); falling back to default ACL');
+      BridgeLogWarn('bridge', 'owner-only SD conversion failed (' + IntToStr(GetLastError) + '); falling back to default ACL');
   end
   else
     BridgeLogWarn('bridge', 'could not resolve current user SID; falling back to default ACL');
@@ -265,9 +262,7 @@ begin
       WriteDiscoveryFile;
     except
       on E: Exception do
-        BridgeLogError('bridge',
-          'WriteDiscoveryFile failed: ' + E.ClassName + ': ' + E.Message +
-          ' — bridge will not auto-discover; attach(pid) still works');
+        BridgeLogError('bridge', 'WriteDiscoveryFile failed: ' + E.ClassName + ': ' + E.Message + ' — bridge will not auto-discover; attach(pid) still works');
     end;
   end;
 
@@ -282,7 +277,8 @@ var
   Connected: BOOL;
 begin
   Connected := ConnectNamedPipe(FPipeHandle, NIL);
-  { ConnectNamedPipe returns FALSE with ERROR_PIPE_CONNECTED if a client connected between CreateNamedPipe and ConnectNamedPipe. That's actually success.
+  { ConnectNamedPipe returns FALSE with ERROR_PIPE_CONNECTED if a client connected between CreateNamedPipe and ConnectNamedPipe.
+    That's actually success.
     Returns FALSE with ERROR_OPERATION_ABORTED if WakeAndStop called CancelSynchronousIo. }
   if (not Connected) and (GetLastError <> ERROR_PIPE_CONNECTED) then
   begin
@@ -332,13 +328,15 @@ begin
   { Order matters: FStopping FIRST, so the self-connect below is recognized as a phantom inside AcceptConnection regardless of which wake mechanism lands. }
   FStopping := TRUE;
 
-  { Wake the worker. Two cooperating mechanisms cover the small race window where the worker is between CreatePipeInstance and ConnectNamedPipe (CSI is a no-op there) and the larger window where it's blocked inside ConnectNamedPipe:
+  { Wake the worker.
+    Two cooperating mechanisms cover the small race window where the worker is between CreatePipeInstance and ConnectNamedPipe (CSI is a no-op there) and the larger window where it's blocked inside ConnectNamedPipe:
       (1) CSI cancels in-flight sync I/O.
       (2) Self-connect via CreateFileW satisfies ConnectNamedPipe. }
   if (AWorkerThread <> NIL) and (AWorkerThread.Handle <> 0) then
     CancelSynchronousIo(AWorkerThread.Handle);
 
-  { Retry briefly. The pipe is in one of three states:
+  { Retry briefly.
+    The pipe is in one of three states:
       (a) Worker already exited via CSI - pipe gone (ERROR_FILE_NOT_FOUND), no wake needed.
       (b) Worker is past CreatePipeInstance but not yet inside ConnectNamedPipe - pipe exists but transiently busy (ERROR_PIPE_BUSY).
       (c) Worker is between iterations and CreatePipeInstance hasn't run yet for this loop - pipe gone briefly (ERROR_FILE_NOT_FOUND), comes back within tens of ms.
@@ -346,17 +344,14 @@ begin
     If the worker is genuinely gone, the owner's WaitFor returns immediately anyway. }
   for Attempts := 1 to 20 do
   begin
-    WakeClient := CreateFileW(PWideChar(FPipeName), GENERIC_READ or GENERIC_WRITE,
-                              0, NIL, OPEN_EXISTING, 0, 0);
+    WakeClient := CreateFileW(PWideChar(FPipeName), GENERIC_READ or GENERIC_WRITE, 0, NIL, OPEN_EXISTING, 0, 0);
     if WakeClient <> INVALID_HANDLE_VALUE then
     begin
       CloseHandle(WakeClient);
       Break;
     end;
     Err := GetLastError;
-    if (Err <> ERROR_PIPE_BUSY)
-       and (Err <> ERROR_ACCESS_DENIED)
-       and (Err <> ERROR_FILE_NOT_FOUND) then Break;
+    if (Err <> ERROR_PIPE_BUSY) and (Err <> ERROR_ACCESS_DENIED) and (Err <> ERROR_FILE_NOT_FOUND) then Break;
     Sleep(5);
   end;
 

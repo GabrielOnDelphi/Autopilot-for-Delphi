@@ -6,9 +6,10 @@ unit Autopilot.Mcp.CrashReport;
 --------------------------------------------------------------------------------------------------------------
    - The command-line switches that decide whether the MCP server uploads its madExcept crash report.
      By default a crash report is only saved to a file beside the server's log and never uploaded.
-     '--crash-report' allows the upload. '--no-crash-report' keeps the default and wins over '--crash-report'.
-   - Only the parsing lives here. The madExcept settings are changed in Autopilot.Mcp.dpr, in the code that
-     compiles only with the madshi define, so this unit builds without madExcept (the MCP test project).
+     '--crash-report' allows the upload.
+     '--no-crash-report' keeps the default and wins over '--crash-report'.
+   - Only the parsing lives here.
+     The madExcept settings are changed in Autopilot.Mcp.dpr, in the code that compiles only with the madshi define, so this unit builds without madExcept (the MCP test project).
    - Stdlib only.
 =============================================================================================================}
 
@@ -18,17 +19,17 @@ const
   CrashReportSwitch   = '--crash-report';
   NoCrashReportSwitch = '--no-crash-report';
 
-/// TRUE when Args holds Switch as one whole argument, in any letter case, at any position.
+// TRUE when Args holds Switch as one whole argument, in any letter case, at any position.
 function HasSwitch(const Args: array of string; const Switch: string): Boolean;
 
-/// TRUE only when Args holds CrashReportSwitch and does not hold NoCrashReportSwitch.
+// TRUE only when Args holds CrashReportSwitch and does not hold NoCrashReportSwitch.
 function CrashReportUploadAllowed(const Args: array of string): Boolean;
 
-/// CrashReportUploadAllowed applied to the command line of this process (ParamStr(1)..ParamStr(ParamCount)).
+// CrashReportUploadAllowed applied to the command line of this process (ParamStr(1)..ParamStr(ParamCount)).
 function CrashReportUploadRequested: Boolean;
 
-/// The file a crash report is saved to when the upload is not allowed: 'bugreport Autopilot.Mcp.txt' in the
-/// folder of LogPath, the server's log file. An empty LogPath gives the bare file name.
+{ The file a crash report is saved to when the upload is not allowed: 'bugreport Autopilot.Mcp.txt' in the folder of LogPath, the server's log file.
+  An empty LogPath gives the bare file name. }
 function CrashReportFile(const LogPath: string): string;
 
 

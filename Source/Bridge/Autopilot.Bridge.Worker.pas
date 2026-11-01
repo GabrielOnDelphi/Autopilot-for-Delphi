@@ -17,8 +17,9 @@ uses
   Autopilot.Bridge.Core, Autopilot.Bridge.Transport;
 
 type
-  /// One worker thread per bridge instance. Owns the transport (released after the thread is joined). Cooperates with the dispatcher (which lives in
-  /// Autopilot.Bridge.Vcl / .Fmx) via the callback.
+  { One worker thread per bridge instance.
+    Owns the transport (released after the thread is joined).
+    Cooperates with the dispatcher (which lives in Autopilot.Bridge.Vcl / .Fmx) via the callback. }
   TBridgeWorker = class(TThread)
   strict private
     FTransport : IBridgeTransport;
@@ -30,9 +31,9 @@ type
   protected
     procedure Execute; override;
   public
-    /// ATransport: the listener/connection provider (pipe on Windows, socket on Android).
-    /// ADispatch must run a TBridgeRequest on the main thread.
-    /// AExeName: short exe filename used in the hello frame.
+    { ATransport: the listener/connection provider (pipe on Windows, socket on Android).
+      ADispatch must run a TBridgeRequest on the main thread.
+      AExeName: short exe filename used in the hello frame. }
     constructor Create(const ATransport: IBridgeTransport; const AExeName: String; ADispatch: TBridgeDispatcher);
     destructor Destroy; override;
   end;
@@ -59,7 +60,8 @@ begin
 end;
 
 
-{ Writes one answer frame. FALSE, with one log line, when the client already closed the connection.
+{ Writes one answer frame.
+  FALSE, with one log line, when the client already closed the connection.
   AWhat names the request in that line. }
 function TryWriteAnswer(AStream: TStream; const AFrame, AWhat: String): Boolean;
 begin
@@ -91,7 +93,8 @@ begin
   if FTransport <> NIL then
     FTransport.WakeAndStop(Self);
 
-  { WaitFor inside `inherited` runs FIRST. The worker is guaranteed to have exited its loop before the transport reference drops.
+  { WaitFor inside `inherited` runs FIRST.
+    The worker is guaranteed to have exited its loop before the transport reference drops.
     The transport's destructor holds the backstop cleanup (closing a handle/fd the worker's own exit path left open after an unhandled exception) - releasing it BEFORE the join would race the worker. }
   inherited;
   FTransport := NIL;
@@ -100,7 +103,8 @@ end;
 
 type
   { Heap-allocated, reference-counted slot shared between the worker and the queued dispatcher.
-    ServeOneRequest creates one slot per request. Each side holds one ref; whoever drops the last ref frees the slot and the embedded Done event, so the worker can return from the request without waiting for the late-firing queued procedure to settle.
+    ServeOneRequest creates one slot per request.
+    Each side holds one ref; whoever drops the last ref frees the slot and the embedded Done event, so the worker can return from the request without waiting for the late-firing queued procedure to settle.
     Ownership transfer of the response payload is atomic (TInterlocked.CompareExchange on State).
     A stack-captured Resp instead could be written by the late-firing queued proc after the worker had already moved on, leaking the produced ResultJson. }
   TDispatchSlot = class
@@ -110,7 +114,8 @@ type
   public
     Resp: TBridgeResponse;
     Done: TEvent;
-    { Deep copy of the request's Args, owned by the slot. The queued dispatcher reads THIS (not the worker's parsed Root) so the timeout path can FreeAndNil(Root) without dangling the Args the late-firing proc still dereferences.
+    { Deep copy of the request's Args, owned by the slot.
+      The queued dispatcher reads THIS (not the worker's parsed Root) so the timeout path can FreeAndNil(Root) without dangling the Args the late-firing proc still dereferences.
       Freed in Destroy when the last ref drops - outlives both the worker's return and a late proc run. }
     ArgsClone: TJSONObject;
     constructor Create;
@@ -214,9 +219,7 @@ begin
       if not (AckPV is TJSONNumber) then
         raise EParserError.Create('Bridge: handshake reply missing protocolVersion');
       if TJSONNumber(AckPV).AsInt <> ProtocolVersion then
-        raise EParserError.Create('Bridge: protocol mismatch (server wants ' +
-                                  IntToStr(TJSONNumber(AckPV).AsInt) +
-                                  ', we speak ' + IntToStr(ProtocolVersion) + ')');
+        raise EParserError.Create('Bridge: protocol mismatch (server wants ' + IntToStr(TJSONNumber(AckPV).AsInt) + ', we speak ' + IntToStr(ProtocolVersion) + ')');
     finally
       FreeAndNil(AckRoot);
     end;
@@ -276,17 +279,16 @@ begin
         The 5000 ms bucket is every command that runs USER code on the main thread: click/set_text/set_checked/set_property fire setters + OnChange/OnClick handlers; execute_action fires OnExecute; send_keys fires the key handlers and ShortCuts; dismiss_dialog's SendMessageTimeout alone can block up to 4000 ms on a cross-thread dialog - all of them can overrun the 2000 ms list/get default. }
       if Req.TimeoutMs > 0 then
         Timeout := Req.TimeoutMs
-      else if (Req.Cmd = 'click') or (Req.Cmd = 'set_text') or (Req.Cmd = 'set_checked')
-           or (Req.Cmd = 'set_property') or (Req.Cmd = 'execute_action') or (Req.Cmd = 'dismiss_dialog')
-           or (Req.Cmd = 'send_keys') then
-        Timeout := DefaultTimeoutClickMs
-      else if Req.Cmd = 'screenshot' then
-        Timeout := DefaultTimeoutScreenshotMs
       else
-        Timeout := DefaultTimeoutListMs;
+        if (Req.Cmd = 'click') or (Req.Cmd = 'set_text') or (Req.Cmd = 'set_checked') or (Req.Cmd = 'set_property') or (Req.Cmd = 'execute_action') or (Req.Cmd = 'dismiss_dialog') or (Req.Cmd = 'send_keys') then
+          Timeout := DefaultTimeoutClickMs
+        else
+          if Req.Cmd = 'screenshot' then
+            Timeout := DefaultTimeoutScreenshotMs
+          else
+            Timeout := DefaultTimeoutListMs;
 
-      BridgeLogInfo('bridge', 'in  id=' + IntToStr(Req.Id) + ' cmd=' + Req.Cmd +
-                              ' timeoutMs=' + IntToStr(Timeout));
+      BridgeLogInfo('bridge', 'in  id=' + IntToStr(Req.Id) + ' cmd=' + Req.Cmd + ' timeoutMs=' + IntToStr(Timeout));
       T0 := TThread.GetTickCount64;
 
       { Marshal dispatcher to main thread via a heap-allocated slot shared with the queued proc.
@@ -296,7 +298,8 @@ begin
       Slot := TDispatchSlot.Create;     // refcount = 1 (worker)
       try
         Slot.Resp.Id := Req.Id;
-        { Deep-copy Args into the slot BEFORE queuing. The queued dispatcher reads the clone, not the worker's Root: on the timeout path the worker frees Root (line FreeAndNil(Root) below) and moves on while the late-firing proc may still run - dereferencing the original Args then would be a use-after-free.
+        { Deep-copy Args into the slot BEFORE queuing.
+          The queued dispatcher reads the clone, not the worker's Root: on the timeout path the worker frees Root (line FreeAndNil(Root) below) and moves on while the late-firing proc may still run - dereferencing the original Args then would be a use-after-free.
           Clone (if it raises) does so before AddRef, so the finally's single Release still frees the slot. }
         if Req.Args <> NIL then
           Slot.ArgsClone := TJSONObject(Req.Args.Clone);
@@ -322,9 +325,7 @@ begin
                 on E: Exception do
                 begin
                   { Log on the target side too - the client gets the error in its frame, but without this, the bridge's own log file shows no trace of what failed. }
-                  BridgeLogError('bridge', 'dispatcher raised: id=' + IntToStr(CapturedReq.Id) +
-                                           ' cmd=' + CapturedReq.Cmd +
-                                           ' ' + E.ClassName + ': ' + E.Message);
+                  BridgeLogError('bridge', 'dispatcher raised: id=' + IntToStr(CapturedReq.Id) + ' cmd=' + CapturedReq.Cmd + ' ' + E.ClassName + ': ' + E.Message);
                   LocalResp := Default(TBridgeResponse);
                   LocalResp.Id := CapturedReq.Id;
                   LocalResp.Ok := FALSE;
@@ -341,7 +342,8 @@ begin
               end
               else
               begin
-                { Loser: worker already timed out. Free anything we produced.
+                { Loser: worker already timed out.
+                  Free anything we produced.
                   Both owned members must go: success responses carry ResultJson, but set_property / read_property error responses (ErrRttiPropertyMissing) carry an ErrorData object (availableProperties).
                   The worker's own timeout response is what reaches SerializeResponse, so this LocalResp is never serialized - freeing only ResultJson would leak that ErrorData on a dispatch-timeout race. }
                 if LocalResp.ResultJson <> NIL then
@@ -354,7 +356,8 @@ begin
             end;
           end);
 
-        { EINTR-safe timed wait. On Android a stray signal interrupts sem_timedwait and TEvent.WaitFor maps every non-ETIMEDOUT failure - EINTR included - to wrError, with no retry (TEvent.WaitFor in System.SyncObjs.pas); treating wrError as a timeout here would produce a spurious -32004 long before the deadline.
+        { EINTR-safe timed wait.
+          On Android a stray signal interrupts sem_timedwait and TEvent.WaitFor maps every non-ETIMEDOUT failure - EINTR included - to wrError, with no retry (TEvent.WaitFor in System.SyncObjs.pas); treating wrError as a timeout here would produce a spurious -32004 long before the deadline.
           Re-wait for the time still remaining, deadline anchored at T0 so retries never extend the budget.
           On Windows the non-alertable wait on a valid event never returns wrError, so the loop body never runs. }
         WaitRes := Slot.Done.WaitFor(Timeout);
@@ -375,38 +378,36 @@ begin
           Resp := Slot.Resp;
           Slot.Resp.ResultJson := NIL;     // ownership moved out of slot
         end
-        else if Slot.TryClaim(2) then
-        begin
-          { Worker won the claim with a timeout error. Queued proc, if it eventually fires, will see state<>0, lose the claim, and free what it produced. }
-          Resp := Default(TBridgeResponse);
-          Resp.Id := Req.Id;
-          Resp.Ok := FALSE;
-          Resp.ErrorCode := ErrMainThreadBlocked;
-          Resp.ErrorMessage := 'main thread did not respond within ' + IntToStr(Timeout) + ' ms';
-        end
         else
-        begin
-          { Race: queued proc claimed between our WaitFor expiry and TryClaim(2).
-            The winner writes Slot.Resp only AFTER its claim and sets Done right after the write - so wait for Done before reading, or this branch can copy a half-written record (a garbage ok=false/code=0 response goes out and the winner's ResultJson/ErrorData leak).
-            The wait is bounded: the winner is two straight-line assignments away from SetEvent and nothing in between can raise.
-            Loop: on Android a signal can interrupt sem_wait (EINTR) and TEvent.WaitFor returns wrError without re-arming - the event is refcount-held, so re-wait.
-            On Windows the non-alertable wait on a valid event only returns wrSignaled. }
-          while Slot.Done.WaitFor(INFINITE) <> wrSignaled do
-            ; // re-arm
-          Resp := Slot.Resp;
-          Slot.Resp.ResultJson := NIL;
-        end;
+          if Slot.TryClaim(2) then
+          begin
+            { Worker won the claim with a timeout error. Queued proc, if it eventually fires, will see state<>0, lose the claim, and free what it produced. }
+            Resp := Default(TBridgeResponse);
+            Resp.Id := Req.Id;
+            Resp.Ok := FALSE;
+            Resp.ErrorCode := ErrMainThreadBlocked;
+            Resp.ErrorMessage := 'main thread did not respond within ' + IntToStr(Timeout) + ' ms';
+          end
+          else
+          begin
+            { Race: queued proc claimed between our WaitFor expiry and TryClaim(2).
+              The winner writes Slot.Resp only AFTER its claim and sets Done right after the write - so wait for Done before reading, or this branch can copy a half-written record (a garbage ok=false/code=0 response goes out and the winner's ResultJson/ErrorData leak).
+              The wait is bounded: the winner is two straight-line assignments away from SetEvent and nothing in between can raise.
+              Loop: on Android a signal can interrupt sem_wait (EINTR) and TEvent.WaitFor returns wrError without re-arming - the event is refcount-held, so re-wait.
+              On Windows the non-alertable wait on a valid event only returns wrSignaled. }
+            while Slot.Done.WaitFor(INFINITE) <> wrSignaled do
+              ; // re-arm
+            Resp := Slot.Resp;
+            Slot.Resp.ResultJson := NIL;
+          end;
       finally
         Slot.Release;     // worker drops its ref. Slot survives if queued proc still holds one.
       end;
 
       if Resp.Ok then
-        BridgeLogInfo('bridge', 'out id=' + IntToStr(Resp.Id) + ' cmd=' + Req.Cmd + ' ok' +
-                                ' elapsedMs=' + IntToStr(TThread.GetTickCount64 - T0))
+        BridgeLogInfo('bridge', 'out id=' + IntToStr(Resp.Id) + ' cmd=' + Req.Cmd + ' ok' + ' elapsedMs=' + IntToStr(TThread.GetTickCount64 - T0))
       else
-        BridgeLogWarn('bridge', 'out id=' + IntToStr(Resp.Id) + ' cmd=' + Req.Cmd +
-                                ' err=' + IntToStr(Resp.ErrorCode) + ' "' + Resp.ErrorMessage + '"' +
-                                ' elapsedMs=' + IntToStr(TThread.GetTickCount64 - T0));
+        BridgeLogWarn('bridge', 'out id=' + IntToStr(Resp.Id) + ' cmd=' + Req.Cmd + ' err=' + IntToStr(Resp.ErrorCode) + ' "' + Resp.ErrorMessage + '"' + ' elapsedMs=' + IntToStr(TThread.GetTickCount64 - T0));
       { FALSE when the client already gave up (e.g. it timed out while the app sat at a breakpoint): the caller then recycles the connection. }
       Result := TryWriteAnswer(Stream, SerializeResponse(Resp), 'id=' + IntToStr(Req.Id) + ' cmd=' + Req.Cmd);
     finally
@@ -425,7 +426,8 @@ begin
   try
     while not Terminated do
     begin
-      { (Re-)arm the listener. Pipe: a fresh instance per client session.
+      { (Re-)arm the listener.
+        Pipe: a fresh instance per client session.
         Socket: created once, no-op afterwards. }
       try
         FTransport.StartListening;
@@ -433,7 +435,8 @@ begin
         on E: Exception do
         begin
           BridgeLogError('bridge', 'StartListening failed: ' + E.ClassName + ': ' + E.Message);
-          { Can't arm the listener. Sleep briefly and try again so we don't busy-loop on a transient error.
+          { Can't arm the listener.
+            Sleep briefly and try again so we don't busy-loop on a transient error.
             If the error is persistent (someone else owns the endpoint), it'll keep failing - which is fine, the worker just stays idle until terminated. }
           if Terminated then exit;
           TThread.Sleep(500);

@@ -6,9 +6,8 @@ unit MCPServer.Schema.Generator;
    2026.11.01
    www.GabrielMoraru.com
 --------------------------------------------------------------------------------------------------------------
-   JSON Schema generator from a Delphi class via RTTI. One public class method builds a
-   {type:'object', properties:{...}, required:[...]} object that the MCP server hands back inside
-   tools/list under each tool's inputSchema.
+   JSON Schema generator from a Delphi class via RTTI.
+   One public class method builds a {type:'object', properties:{...}, required:[...]} object that the MCP server hands back inside tools/list under each tool's inputSchema.
 
    Mapping:
      - Walk every public property that is readable and writable (writable means it has a setter).
@@ -18,14 +17,12 @@ unit MCPServer.Schema.Generator;
      - tkUString / tkString / tkLString / tkWString -> 'string'
      - Boolean (tkEnumeration with TypeInfo(Boolean)) -> 'boolean'
      - Other enumerations -> 'string', plus 'enum' = the value names in ordinal order
-     - Any other type kind (record, class, set, array, char, variant...) raises EArgumentException naming
-       the property: MCPServer.Serializer cannot fill it, so publishing it would invite an argument that is lost.
+     - Any other type kind (record, class, set, array, char, variant...) raises EArgumentException naming the property: MCPServer.Serializer cannot fill it, so publishing it would invite an argument that is lost.
      - Skip the property entry in the required[] array iff it carries [Optional].
      - If it carries [SchemaDescription], write its text into description.
 
-   Stdlib only. Generics: the only thing borderline here is TArray<String> inside
-   System.Rtti.GetProperties (returned by the RTL — not ours), so we don't introduce any new
-   generics.
+   Stdlib only.
+   Generics: the only thing borderline here is TArray<String> inside System.Rtti.GetProperties (returned by the RTL — not ours), so we don't introduce any new generics.
 *=================================================================================================================*)
 
 interface
@@ -36,7 +33,8 @@ uses
 type
   TMCPSchemaGenerator = class
   public
-    /// Build the JSON Schema object for ACls. Caller owns the result.
+    { Build the JSON Schema object for ACls.
+      Caller owns the result. }
     class function GenerateSchema(ACls: TClass): TJSONObject;
   end;
 
@@ -48,8 +46,9 @@ uses
   MCPServer.Types;
 
 
-/// Returns the JSON Schema "type" string for the type of AProp. See header comment for the mapping table.
-/// Raises EArgumentException for a type kind outside that table.
+{ Returns the JSON Schema "type" string for the type of AProp.
+  See header comment for the mapping table.
+  Raises EArgumentException for a type kind outside that table. }
 function JsonTypeOf(AProp: TRttiProperty): String;
 var
   PropType: TRttiType;
@@ -64,14 +63,14 @@ begin
         then Result := 'boolean'
         else Result := 'string';
   else
-    raise EArgumentException.Create('Parameter "' + LowerCase(AProp.Name) + '": its type ' + PropType.Name
-                                  + ' is not supported in a tool params class.');
+    raise EArgumentException.Create('Parameter "' + LowerCase(AProp.Name) + '": its type ' + PropType.Name + ' is not supported in a tool params class.');
   end;
 end;
 
 
-/// The 'enum' list of an enumeration property: its value names. NIL for every other type, Boolean included.
-/// The caller owns the result.
+{ The 'enum' list of an enumeration property: its value names.
+  NIL for every other type, Boolean included.
+  The caller owns the result. }
 function EnumListOf(AType: TRttiType): TJSONArray;
 var
   Name: String;
@@ -85,7 +84,7 @@ begin
 end;
 
 
-/// Returns the [SchemaDescription] text, or '' if absent.
+// Returns the [SchemaDescription] text, or '' if absent.
 function DescriptionOf(AProp: TRttiProperty): String;
 var
   Attr: TCustomAttribute;

@@ -8,8 +8,7 @@
    - Stdlib-only: no VCL, no FMX, no LightSaber — usable by both the pipe and socket transports
    - Defines TBridgeRequest, TBridgeResponse, TBridgeDispatcher, TBridgeWire, and JSON-RPC error codes
    - The screenshot argument and scale-size helpers that the VCL and FMX bridges share
-   - How the bridge links your app to the AI: the book "Delphi in All Its Glory" Part 5, "AI-Assisted Development for Delphi",
-     chapter "We Need a Hero - Enter Autopilot for Delphi", sections "The Bridge" and "How it Works?".
+   - How the bridge links your app to the AI: the book "Delphi in All Its Glory" Part 5, "AI-Assisted Development for Delphi", chapter "We Need a Hero - Enter Autopilot for Delphi", sections "The Bridge" and "How it Works?".
      https://gabrielmoraru.com/the-delphi-in-all-its-glory-book-5-ai-assisted-development-for-delphi/
 =============================================================================================================}
 
@@ -22,8 +21,8 @@ const
   ProtocolVersion = 1;
   BridgeVersion   = '3.1.4';
 
-  { Licence terms: the LICENSE file at LicenseURL. The texts only link to it and never say what it allows,
-    so the licence can change without a change here.
+  { Licence terms: the LICENSE file at LicenseURL.
+    The texts only link to it and never say what it allows, so the licence can change without a change here.
     The bridge exists only in AUTOPILOT (debug) builds, so these reminders reach the developer, never an end user. }
   LicenseURL  = 'https://github.com/GabrielOnDelphi/Autopilot-for-Delphi/blob/main/LICENSE';
   LicenseHint = 'Autopilot for Delphi - license: ' + LicenseURL;
@@ -55,22 +54,17 @@ const
   ErrInternalError       = -32603;
 
 type
-  /// Raised by the MCP server's pipe and socket clients when the
-  /// I/O deadline expires AFTER a connection was established: the target accepted the
-  /// connection but stopped servicing the wire (typical case: the whole target is
-  /// frozen on an IDE breakpoint, so even its worker thread is suspended).
-  /// Also raised BEFORE any connection, when the target's pipe stays busy
-  /// (ERROR_PIPE_BUSY, 231) for the whole connect retry window (the pipe client's open loop).
-  /// The MCP server catches this and emits the ErrTargetNotResponding envelope.
+  { Raised by the MCP server's pipe and socket clients when the I/O deadline expires AFTER a connection was established: the target accepted the connection but stopped servicing the wire (typical case: the whole target is frozen on an IDE breakpoint, so even its worker thread is suspended).
+    Also raised BEFORE any connection, when the target's pipe stays busy (ERROR_PIPE_BUSY, 231) for the whole connect retry window (the pipe client's open loop).
+    The MCP server catches this and emits the ErrTargetNotResponding envelope. }
   ETargetNotResponding = class(Exception);
 
-  /// Raised on the MCP side when no target can be reached at all: no discovery file, no target with the
-  /// requested pid, or nothing listening on the adb-forwarded port. The MCP server catches this
-  /// and emits the ErrTargetNotRunning envelope, which carries the bridge-wiring steps.
+  { Raised on the MCP side when no target can be reached at all: no discovery file, no target with the requested pid, or nothing listening on the adb-forwarded port.
+    The MCP server catches this and emits the ErrTargetNotRunning envelope, which carries the bridge-wiring steps. }
   ETargetNotRunning = class(Exception);
 
-  /// Owned-result record returned by the main-thread dispatcher.
-  /// Caller frees ResultJson / ErrorMessage strings normally; the JSON is owned.
+  { Owned-result record returned by the main-thread dispatcher.
+    Caller frees ResultJson / ErrorMessage strings normally; the JSON is owned. }
   TBridgeResponse = record
     Id           : Int64;
     Ok           : Boolean;
@@ -80,7 +74,7 @@ type
     ErrorData    : TJSONObject;   // optional, when Ok=FALSE — JSON-RPC error.data. Bridge owns; serializer frees.
   end;
 
-  /// Parsed request as the worker thread sees it before handing off to the dispatcher.
+  // Parsed request as the worker thread sees it before handing off to the dispatcher.
   TBridgeRequest = record
     Id        : Int64;
     Cmd       : String;
@@ -88,53 +82,55 @@ type
     TimeoutMs : Cardinal;          // 0 = caller didn't specify, use per-command default
   end;
 
-  /// Signature the worker thread calls (already on the main thread) to do the actual work.
-  /// Implementations live in Autopilot.Bridge.Vcl (VCL) and Autopilot.Bridge.Fmx (FMX).
+  { Signature the worker thread calls (already on the main thread) to do the actual work.
+    Implementations live in Autopilot.Bridge.Vcl (VCL) and Autopilot.Bridge.Fmx (FMX). }
   TBridgeDispatcher = reference to function(const Req: TBridgeRequest): TBridgeResponse;
 
-  /// Wire framing helpers — 4-byte little-endian length + UTF-8 payload.
-  /// Exposed here (rather than buried in NamedPipe) so the test suite can reuse them.
+  { Wire framing helpers — 4-byte little-endian length + UTF-8 payload.
+    Exposed here (rather than buried in NamedPipe) so the test suite can reuse them. }
   TBridgeWire = class
   public
-    /// Read one length-prefixed UTF-8 frame from the stream. Blocks until full frame arrives.
-    /// Returns FALSE on EOF/broken pipe (so caller can recycle the connection).
-    /// On success, S contains the decoded UTF-8 JSON payload (no trailing newline).
+    { Read one length-prefixed UTF-8 frame from the stream.
+      Blocks until full frame arrives.
+      Returns FALSE on EOF/broken pipe (so caller can recycle the connection).
+      On success, S contains the decoded UTF-8 JSON payload (no trailing newline). }
     class function TryReadFrame(AStream: TStream; OUT S: String): Boolean; static;
 
-    /// Write one length-prefixed UTF-8 frame to the stream. Raises on I/O failure.
+    { Write one length-prefixed UTF-8 frame to the stream.
+      Raises on I/O failure. }
     class procedure WriteFrame(AStream: TStream; const S: String); static;
 
-    /// Same frame as WriteFrame, but returns FALSE instead of raising when the stream accepts no more bytes
-    /// (the client closed the connection). The bridge worker uses this: a raise there, even a caught one,
-    /// stops a debugger that halts on language exceptions, and with it the whole app.
+    { Same frame as WriteFrame, but returns FALSE instead of raising when the stream accepts no more bytes (the client closed the connection).
+      The bridge worker uses this: a raise there, even a caught one, stops a debugger that halts on language exceptions, and with it the whole app. }
     class function TryWriteFrame(AStream: TStream; const S: String): Boolean; static;
   end;
 
-  /// Build a hello frame (target-side handshake). Caller owns the returned object.
+  { Build a hello frame (target-side handshake).
+    Caller owns the returned object. }
   function BuildHelloJson(const AExeName: String; APid: Cardinal): TJSONObject;
 
-  /// Parse a top-level frame into a TBridgeRequest. Caller owns ARoot (must not be freed
-  /// until the response is built — Req.Args is a weak reference into it).
-  /// Returns FALSE if the frame doesn't look like a valid request (id/cmd missing).
+  { Parse a top-level frame into a TBridgeRequest.
+    Caller owns ARoot (must not be freed until the response is built — Req.Args is a weak reference into it).
+    Returns FALSE if the frame doesn't look like a valid request (id/cmd missing). }
   function TryParseRequest(ARoot: TJSONObject; OUT Req: TBridgeRequest): Boolean;
 
-  /// Build a response frame as a JSON string ready for WriteFrame.
-  /// Consumes Resp.ResultJson (frees it after serialization) so callers don't have to track ownership.
+  { Build a response frame as a JSON string ready for WriteFrame.
+    Consumes Resp.ResultJson (frees it after serialization) so callers don't have to track ownership. }
   function SerializeResponse(var Resp: TBridgeResponse): String;
 
-  /// Parse a JSON value as an Int64 WITHOUT raising. TRUE only when AVal is a TJSONNumber whose
-  /// text is a valid integer; FALSE for nil / non-number / fractional / out-of-range. Use for
-  /// caller-supplied numeric args so a malformed value lands in ErrInvalidRequest instead of
-  /// escaping as the EConvertError that TJSONNumber.AsInt64 (= StrToInt64) would raise.
+  { Parse a JSON value as an Int64 WITHOUT raising.
+    TRUE only when AVal is a TJSONNumber whose text is a valid integer; FALSE for nil / non-number / fractional / out-of-range.
+    Use for caller-supplied numeric args so a malformed value lands in ErrInvalidRequest instead of escaping as the EConvertError that TJSONNumber.AsInt64 (= StrToInt64) would raise. }
   function TryJsonInt64(AVal: TJSONValue; OUT AOut: Int64): Boolean;
 
-  /// Reads the optional arguments of the screenshot command, shared by the VCL and FMX bridges.
-  /// APath: args.path ('' when absent). AMaxWidth: args.maxWidth (0 when absent = no scaling; a value above High(Integer) becomes High(Integer)).
-  /// FALSE, with AError set, for a path that is not a string or a maxWidth that is not a whole number >= 0: the caller answers ErrInvalidRequest.
+  { Reads the optional arguments of the screenshot command, shared by the VCL and FMX bridges.
+    APath: args.path ('' when absent).
+    AMaxWidth: args.maxWidth (0 when absent = no scaling; a value above High(Integer) becomes High(Integer)).
+    FALSE, with AError set, for a path that is not a string or a maxWidth that is not a whole number >= 0: the caller answers ErrInvalidRequest. }
   function TryParseScreenshotArgs(AArgs: TJSONObject; OUT APath: String; OUT AMaxWidth: Integer; OUT AError: String): Boolean;
 
-  /// The size of an AWidth x AHeight image scaled down to exactly AMaxWidth pixels wide, aspect ratio kept (height rounded, at least 1).
-  /// FALSE, with the size unchanged, when AMaxWidth is 0 or not smaller than AWidth: an image is never scaled up.
+  { The size of an AWidth x AHeight image scaled down to exactly AMaxWidth pixels wide, aspect ratio kept (height rounded, at least 1).
+    FALSE, with the size unchanged, when AMaxWidth is 0 or not smaller than AWidth: an image is never scaled up. }
   function ScreenshotScaledSize(AWidth, AHeight, AMaxWidth: Integer; OUT ANewWidth, ANewHeight: Integer): Boolean;
 
 
@@ -339,8 +335,7 @@ begin
   { timeoutMs is optional.
     An out-of-range, negative or unparseable value becomes 0 ("use the per-command default"), so one malformed value can never end the pipe session. }
   Req.TimeoutMs := 0;
-  if TryJsonInt64(ARoot.GetValue('timeoutMs'), Int64Val)
-     and (Int64Val >= 0) and (Int64Val <= Int64(High(Cardinal))) then
+  if TryJsonInt64(ARoot.GetValue('timeoutMs'), Int64Val) and (Int64Val >= 0) and (Int64Val <= Int64(High(Cardinal))) then
     Req.TimeoutMs := Cardinal(Int64Val);
 
   Result := TRUE;

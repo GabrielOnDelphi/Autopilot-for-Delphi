@@ -5,9 +5,8 @@ unit Autopilot.Mcp.Tool.ExecuteAction;
    www.GabrielMoraru.com
 --------------------------------------------------------------------------------------------------------------
    - MCP tool: execute_action
-   - Fires TBasicAction.Execute by path. Use when the command is bound to a TAction whose OnExecute (not a
-     control's OnClick) carries the logic — shortcut-only actions like actFileExit (no menu item or toolbar
-     button) are otherwise unreachable through the bridge.
+   - Fires TBasicAction.Execute by path.
+     Use when the command is bound to a TAction whose OnExecute (not a control's OnClick) carries the logic — shortcut-only actions like actFileExit (no menu item or toolbar button) are otherwise unreachable through the bridge.
    - For plain controls (TButton, TCheckBox, etc.) use 'click' instead.
    - Inherits the click timeout budget (DefaultTimeoutClickMs, 5000 ms) because OnExecute is user code.
    - Runs in Autopilot.Mcp.exe (Windows PC-side MCP server); target may be any platform.
@@ -26,8 +25,7 @@ type
     FPath: String;
     FPid : Integer;
   public
-    [SchemaDescription('Path to a TAction (any TBasicAction), e.g. "MainForm.actFileExit". ' +
-                       'list_tree shows it with class "TAction".')]
+    [SchemaDescription('Path to a TAction (any TBasicAction), e.g. "MainForm.actFileExit". ' + 'list_tree shows it with class "TAction".')]
     property Path: String read FPath write FPath;
 
     [Optional]
@@ -53,10 +51,7 @@ constructor TExecuteActionTool.Create;
 begin
   inherited;
   FName := 'execute_action';
-  FDescription := 'Fire a TAction''s OnExecute by path. Use it for shortcut-only actions that no ' +
-                  'control clicks. For plain controls use click. Refuses a disabled action (-32003) ' +
-                  'and a non-action (-32005). executed=false in the result means the action has ' +
-                  'no OnExecute handler.';
+  FDescription := 'Fire a TAction''s OnExecute by path. Use it for shortcut-only actions that no ' + 'control clicks. For plain controls use click. Refuses a disabled action (-32003) ' + 'and a non-action (-32005). executed=false in the result means the action has ' + 'no OnExecute handler.';
 end;
 
 

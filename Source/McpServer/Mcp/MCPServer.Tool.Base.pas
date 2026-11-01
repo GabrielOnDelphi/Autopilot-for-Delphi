@@ -6,28 +6,26 @@ unit MCPServer.Tool.Base;
 --------------------------------------------------------------------------------------------------------------
    The two base shapes our tool units inherit from:
 
-     TMCPToolBase                — non-generic. Tools that don't have a typed params class can
-                                   subclass this and override BuildSchema and Execute by hand.
-                                   Unused by the bridge tools today, kept for future tools that
-                                   take no parameters.
+     TMCPToolBase                — non-generic.
+                                   Tools that don't have a typed params class can subclass this and override BuildSchema and Execute by hand.
+                                   Unused by the bridge tools today, kept for future tools that take no parameters.
 
      TMCPToolBase<T: class,
-                  constructor>   — generic. Inherits IMCPTool, owns a T-shaped params class with
-                                   RTTI annotations. Override ExecuteWithParams to do the work.
-                                   Execute() does the deserialize->dispatch->return-string wiring
-                                   on your behalf.
+                  constructor>   — generic.
+                                   Inherits IMCPTool, owns a T-shaped params class with RTTI annotations.
+                                   Override ExecuteWithParams to do the work.
+                                   Execute() does the deserialize->dispatch->return-string wiring on your behalf.
 
-   IMCPTool.Execute returns a plain String (a JSON string in practice — the dispatcher wraps it
-   into the MCP tools/call content[] array). GDK had a TValue return because of an unused second
-   generic variant; we dropped that. None of the nine tool units reference Execute or TValue
-   directly — they only override ExecuteWithParams — so this is a safe simplification.
+   IMCPTool.Execute returns a plain String (a JSON string in practice — the dispatcher wraps it into the MCP tools/call content[] array).
+   GDK had a TValue return because of an unused second generic variant; we dropped that.
+   None of the nine tool units reference Execute or TValue directly — they only override ExecuteWithParams — so this is a safe simplification.
 
-   IMCPTool.ExtractImage lets a tool whose answer carries a picture (screenshot) hand it over
-   separately: the dispatcher then sends an MCP image content block plus a text block with the
-   rest of the answer. Both base classes return FALSE (text only).
+   IMCPTool.ExtractImage lets a tool whose answer carries a picture (screenshot) hand it over separately: the dispatcher then sends an MCP image content block plus a text block with the rest of the answer.
+   Both base classes return FALSE (text only).
 
-   No threads. RTTI walking happens on whatever thread DispatchLine runs on (the stdio thread
-   today). Tool instances are cached by the dispatcher.
+   No threads.
+   RTTI walking happens on whatever thread DispatchLine runs on (the stdio thread today).
+   Tool instances are cached by the dispatcher.
 
    Stdlib only.
 =============================================================================================================}
@@ -38,8 +36,8 @@ uses
   System.JSON;
 
 type
-  /// What the JSON-RPC dispatcher sees. Each tool advertises Name / Description /
-  /// InputSchema (used by tools/list) and runs via Execute (used by tools/call).
+  { What the JSON-RPC dispatcher sees.
+    Each tool advertises Name / Description / InputSchema (used by tools/list) and runs via Execute (used by tools/call). }
   IMCPTool = interface
     ['{F1E2D3C4-B5A6-4798-8901-234567890ABC}']
     function GetName: String;
@@ -47,9 +45,9 @@ type
     function GetDescription: String;
     function GetInputSchema: TJSONObject;
     function Execute(const AArguments: TJSONObject): String;
-    /// Called by the dispatcher with the string Execute returned. TRUE: the picture was moved out of
-    /// AText into AImageBase64 (no line breaks) and AMimeType, and AText holds the rest of the answer.
-    /// FALSE: AText is untouched and goes out as one text block.
+    { Called by the dispatcher with the string Execute returned.
+      TRUE: the picture was moved out of AText into AImageBase64 (no line breaks) and AMimeType, and AText holds the rest of the answer.
+      FALSE: AText is untouched and goes out as one text block. }
     function ExtractImage(var AText: String; OUT AImageBase64, AMimeType: String): Boolean;
 
     property Name        : String       read GetName;
@@ -58,9 +56,9 @@ type
     property InputSchema : TJSONObject  read GetInputSchema;
   end;
 
-  /// Non-generic base. For tools without a typed params class. Override
-  /// BuildSchema (returns the inputSchema JSON object) and Execute (does
-  /// the work and returns the result string).
+  { Non-generic base.
+    For tools without a typed params class.
+    Override BuildSchema (returns the inputSchema JSON object) and Execute (does the work and returns the result string). }
   TMCPToolBase = class(TInterfacedObject, IMCPTool)
   protected
     FName        : String;
@@ -78,11 +76,9 @@ type
     function ExtractImage(var AText: String; OUT AImageBase64, AMimeType: String): Boolean; virtual;
   end;
 
-  /// Generic base used by all nine bridge tools. T is the params class — a plain
-  /// TObject descendant with published / public writable properties marked with
-  /// [Optional] and [SchemaDescription]. Schema and deserialization both come for
-  /// free; the subclass only needs to set FName/FDescription in its constructor
-  /// and override ExecuteWithParams.
+  { Generic base used by all nine bridge tools.
+    T is the params class — a plain TObject descendant with published / public writable properties marked with [Optional] and [SchemaDescription].
+    Schema and deserialization both come for free; the subclass only needs to set FName/FDescription in its constructor and override ExecuteWithParams. }
   TMCPToolBase<T: class, constructor> = class(TInterfacedObject, IMCPTool)
   protected
     FName        : String;
@@ -123,8 +119,7 @@ end;
 
 function TMCPToolBase.GetTitle: String;
 begin
-  // If the subclass didn't set a separate title, fall back to the name so the
-  // tools/list response always has a usable label.
+  // If the subclass didn't set a separate title, fall back to the name so the tools/list response always has a usable label.
   if FTitle <> ''
     then Result := FTitle
     else Result := FName;
@@ -181,8 +176,8 @@ function TMCPToolBase<T>.Execute(const AArguments: TJSONObject): String;
 var
   Params: T;
 begin
-  // GDK invariant: a fresh params instance per call. Each tool unit's
-  // ExecuteWithParams just reads fields, no shared state.
+  { GDK invariant: a fresh params instance per call.
+    Each tool unit's ExecuteWithParams just reads fields, no shared state. }
   Params := TMCPSerializer.Deserialize<T>(AArguments);
   try
     Result := ExecuteWithParams(Params);

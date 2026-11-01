@@ -5,8 +5,8 @@ unit Autopilot.Mcp.Tool.SetProperty;
    www.GabrielMoraru.com
 --------------------------------------------------------------------------------------------------------------
    - MCP tool: set_property
-   - Writes any published, writable property of a control via RTTI. Supersedes set_text and set_checked for
-     everything else (Tag, Color, Position, BorderStyle, AlphaBlendValue, ItemIndex, etc.).
+   - Writes any published, writable property of a control via RTTI.
+     Supersedes set_text and set_checked for everything else (Tag, Color, Position, BorderStyle, AlphaBlendValue, ItemIndex, etc.).
    - Value is passed as a string and coerced by the bridge against the property's declared TypeKind.
    - Supports: string, integer, int64, boolean, enum, set-of-enum, float, TAlphaColor, TColor.
    - Dotted propName ('Font.Size', 'Lines.Text') addresses a nested simple property one level deep.
@@ -32,17 +32,10 @@ type
     [SchemaDescription('Control path from list_tree: "Form", "Form.Leaf", "Form.A.B.C" or "@TButton#N".')]
     property Path: String read FPath write FPath;
 
-    [SchemaDescription('Published property name, case-sensitive ("Tag", "Caption", "ItemIndex"). One ' +
-                       'nesting level via "Outer.Inner" when Outer is a class property ("Font.Size", ' +
-                       '"Lines.Text"). Unknown name -> error.data.availableProperties: name, kind, ' +
-                       'currentValue; kind="class" entries can be the Outer.')]
+    [SchemaDescription('Published property name, case-sensitive ("Tag", "Caption", "ItemIndex"). One ' + 'nesting level via "Outer.Inner" when Outer is a class property ("Font.Size", ' + '"Lines.Text"). Unknown name -> error.data.availableProperties: name, kind, ' + 'currentValue; kind="class" entries can be the Outer.')]
     property PropName: String read FPropName write FPropName;
 
-    [SchemaDescription('Value as a string, converted to the property''s RTTI type. Boolean: ' +
-                       '"true"/"false"/"1"/"0". Enum: identifier ("poDesigned") or ordinal. Set: "[a,b]", ' +
-                       '"a,b", "[]" or ordinal. Float: period as decimal separator. TAlphaColor (FMX): ' +
-                       '"#RRGGBB" (alpha FF), "#AARRGGBB", "claSkyBlue", "SkyBlue", decimal or "$hex". ' +
-                       'TColor (VCL): "clRed", "#RRGGBB", "$00BBGGRR" or decimal.')]
+    [SchemaDescription('Value as a string, converted to the property''s RTTI type. Boolean: ' + '"true"/"false"/"1"/"0". Enum: identifier ("poDesigned") or ordinal. Set: "[a,b]", ' + '"a,b", "[]" or ordinal. Float: period as decimal separator. TAlphaColor (FMX): ' + '"#RRGGBB" (alpha FF), "#AARRGGBB", "claSkyBlue", "SkyBlue", decimal or "$hex". ' + 'TColor (VCL): "clRed", "#RRGGBB", "$00BBGGRR" or decimal.')]
     property Value: String read FValue write FValue;
 
     [Optional]
@@ -68,10 +61,7 @@ constructor TSetPropertyTool.Create;
 begin
   inherited;
   FName := 'set_property';
-  FDescription := 'Set a writable published property of a control via RTTI, for anything set_text / ' +
-                  'set_checked do not cover (Tag, Color, Left, ItemIndex, Visible...). ' +
-                  'Result elided:true = the value was already equal, so the setter was skipped ' +
-                  'and OnChange did not fire.';
+  FDescription := 'Set a writable published property of a control via RTTI, for anything set_text / ' + 'set_checked do not cover (Tag, Color, Left, ItemIndex, Visible...). ' + 'Result elided:true = the value was already equal, so the setter was skipped ' + 'and OnChange did not fire.';
 end;
 
 

@@ -5,10 +5,9 @@ unit Autopilot.Mcp.Tool.SendKeys;
    www.GabrielMoraru.com
 --------------------------------------------------------------------------------------------------------------
    - MCP tool: send_keys
-   - Presses keys and shortcuts, or types text, inside the target app: OnKeyDown/OnKeyPress/OnKeyUp, KeyPreview,
-     action ShortCuts, Default/Cancel buttons. No global input injection, no window activation.
-   - Optional path (the control gets the focus inside the app first; omitted = the focused control), keys
-     (chords like "Ctrl+S Enter"), text (typed one character at a time; sent before keys), pid.
+   - Presses keys and shortcuts, or types text, inside the target app: OnKeyDown/OnKeyPress/OnKeyUp, KeyPreview, action ShortCuts, Default/Cancel buttons.
+     No global input injection, no window activation.
+   - Optional path (the control gets the focus inside the app first; omitted = the focused control), keys (chords like "Ctrl+S Enter"), text (typed one character at a time; sent before keys), pid.
    - Runs in Autopilot.Mcp.exe (Windows PC-side MCP server); target may be any platform.
 =============================================================================================================}
 
@@ -32,8 +31,7 @@ type
     property Path: String read FPath write FPath;
 
     [Optional]
-    [SchemaDescription('Chords separated by spaces: "Ctrl+S", "Enter", "Ctrl+A Delete". Modifiers Ctrl Shift Alt; ' +
-                       'keys A-Z 0-9 F1-F12 Enter Esc Tab Space Backspace Delete Insert Home End PageUp PageDown Up Down Left Right.')]
+    [SchemaDescription('Chords separated by spaces: "Ctrl+S", "Enter", "Ctrl+A Delete". Modifiers Ctrl Shift Alt; ' + 'keys A-Z 0-9 F1-F12 Enter Esc Tab Space Backspace Delete Insert Home End PageUp PageDown Up Down Left Right.')]
     property Keys: String read FKeys write FKeys;
 
     [Optional]
@@ -64,9 +62,7 @@ constructor TSendKeysTool.Create;
 begin
   inherited;
   FName := 'send_keys';
-  FDescription := 'Press keys or type text inside the app, firing OnKeyDown/OnKeyPress, shortcuts and ' +
-                  'Default/Cancel buttons. Use it to test keyboard behaviour; use set_text to just set a value. ' +
-                  'A key that opens a modal dialog gives -32004: then call dismiss_dialog.';
+  FDescription := 'Press keys or type text inside the app, firing OnKeyDown/OnKeyPress, shortcuts and ' + 'Default/Cancel buttons. Use it to test keyboard behaviour; use set_text to just set a value. ' + 'A key that opens a modal dialog gives -32004: then call dismiss_dialog.';
 end;
 
 
@@ -79,9 +75,7 @@ begin
   if Params.Keys <> '' then Args.AddPair('keys', Params.Keys);
   if Params.Text <> '' then Args.AddPair('text', Params.Text);
   // The bridge's per-command default is 2000 ms for a command it does not list; key handlers run user code like a click, so ask for the click budget.
-  Result := RunCommandOnTarget(Cardinal(Params.Pid),
-                               BuildRequest(1, 'send_keys', Args, DefaultTimeoutClickMs),
-                               DefaultTimeoutClickMs);
+  Result := RunCommandOnTarget(Cardinal(Params.Pid), BuildRequest(1, 'send_keys', Args, DefaultTimeoutClickMs), DefaultTimeoutClickMs);
 end;
 
 

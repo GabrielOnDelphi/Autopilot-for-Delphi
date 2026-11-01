@@ -4,17 +4,17 @@ unit Autopilot.Client;
    2026.10.13
    www.GabrielMoraru.com
 --------------------------------------------------------------------------------------------------------------
-   - Delphi client for the Autopilot bridge: a DUnitX test (or a DUnit test, or a console program) drives a
-     running VCL or FMX app with no AI. TAutopilotApp starts the app (Start) or finds a running one (Attach),
-     sends one bridge command per call and turns an error answer into an exception
-   - One pipe connection per command: open, hello/helloAck, one request, one answer, close. Every read and
-     write has a deadline (the command's timeout + IoDeadlineGraceMs), so a frozen app fails the call instead
-     of hanging the test run
-   - Never call it from the main thread of the process whose bridge answers: the bridge runs every command on
-     that main thread, so the call would wait for itself. A separate test EXE is the normal case; a worker
-     thread of the app's own process works too. A main-thread call to its own process raises EInvalidOpException
+   - Delphi client for the Autopilot bridge: a DUnitX test (or a DUnit test, or a console program) drives a running VCL or FMX app with no AI.
+     TAutopilotApp starts the app (Start) or finds a running one (Attach), sends one bridge command per call and turns an error answer into an exception
+   - One pipe connection per command: open, hello/helloAck, one request, one answer, close.
+     Every read and write has a deadline (the command's timeout + IoDeadlineGraceMs), so a frozen app fails the call instead of hanging the test run
+   - Never call it from the main thread of the process whose bridge answers: the bridge runs every command on that main thread, so the call would wait for itself.
+     A separate test EXE is the normal case; a worker thread of the app's own process works too.
+     A main-thread call to its own process raises EInvalidOpException
    - The test EXE and the app must run as the same Windows user: the bridge pipe accepts only its owner
-   - One TAutopilotApp per thread. Windows only. No VCL, no FMX, no DUnitX
+   - One TAutopilotApp per thread.
+     Windows only.
+     No VCL, no FMX, no DUnitX
 =============================================================================================================}
 
 interface
@@ -33,15 +33,11 @@ const
 
 type
   { The bridge answered ok:false.
-    Code: the error code of the answer (ErrNotFound -32001, ErrControlDisabled -32003, ErrMainThreadBlocked -32004,
-    ErrUnsupportedAction -32005, ErrRttiPropertyMissing -32006, ErrInternalError -32603 ... in Autopilot.Bridge.Core).
+    Code: the error code of the answer (ErrNotFound -32001, ErrControlDisabled -32003, ErrMainThreadBlocked -32004, ErrUnsupportedAction -32005, ErrRttiPropertyMissing -32006, ErrInternalError -32603 ... in Autopilot.Bridge.Core).
     Data: error.data as JSON text, '' when absent (for a wrong property name: the availableProperties list).
-    After -32004 the message also names the native dialogs that are open in the app, because a modal box is the
-    usual reason for a blocked main thread.
-    The client raises it itself with Code ErrProtocolMismatch (-32097) when the bridge speaks another protocol
-    version or sends an answer that is not a JSON object with the request's id.
-    A raising event handler or property setter that the bridge catches arrives as Code ErrInternalError (-32603):
-    measured for execute_action (OnExecute), set_property (the setter) and set_checked (OnClick). }
+    After -32004 the message also names the native dialogs that are open in the app, because a modal box is the usual reason for a blocked main thread.
+    The client raises it itself with Code ErrProtocolMismatch (-32097) when the bridge speaks another protocol version or sends an answer that is not a JSON object with the request's id.
+    A raising event handler or property setter that the bridge catches arrives as Code ErrInternalError (-32603): measured for execute_action (OnExecute), set_property (the setter) and set_checked (OnClick). }
   EAutopilotError = class(Exception)
   public
     Code: Integer;
@@ -49,23 +45,21 @@ type
     constructor CreateCode(ACode: Integer; const AMessage: String; const AData: String = '');
   end;
 
-  { Click only: the control's OnClick raised. The bridge caught the exception and answered ok with stoppedReason
-    'exception:<ClassName>'. Code is ErrInternalError (-32603); Data is the click answer as JSON text.
-    Derived from EAutopilotError: DUnitX's Assert.WillRaise(..., EAutopilotError) wants the exact class, so use
-    Assert.WillRaiseDescendant to accept both. }
+  { Click only: the control's OnClick raised.
+    The bridge caught the exception and answered ok with stoppedReason 'exception:<ClassName>'.
+    Code is ErrInternalError (-32603); Data is the click answer as JSON text.
+    Derived from EAutopilotError: DUnitX's Assert.WillRaise(..., EAutopilotError) wants the exact class, so use Assert.WillRaiseDescendant to accept both. }
   EAutopilotHandlerError = class(EAutopilotError);
 
   { Re-exported from Autopilot.Bridge.Core, so a test needs only this unit in its uses clause to catch them.
     ETargetNotRunning: there is no app to talk to - Start failed, no discovery file, the app ended, its pipe is gone.
-    ETargetNotResponding: the app accepted the connection but did not answer in time, its pipe stayed busy, or
-    Close had to kill it. }
+    ETargetNotResponding: the app accepted the connection but did not answer in time, its pipe stayed busy, or Close had to kill it. }
   ETargetNotRunning    = Autopilot.Bridge.Core.ETargetNotRunning;
   ETargetNotResponding = Autopilot.Bridge.Core.ETargetNotResponding;
 
   { How Start shows the app's main window.
-    swMinimizedNoFocus asks Windows for a start without the focus, but the app decides: measured 2026-10-13, the FMX demo
-    held the foreground window for about 170 ms after Start, and the minimized VCL demo stayed the foreground window from
-    Start until Close. So keys a person types during a test run can reach the app under test. }
+    swMinimizedNoFocus asks Windows for a start without the focus, but the app decides: measured 2026-10-13, the FMX demo held the foreground window for about 170 ms after Start, and the minimized VCL demo stayed the foreground window from Start until Close.
+    So keys a person types during a test run can reach the app under test. }
   TStartWindow = (
     swMinimizedNoFocus,   // SW_SHOWMINNOACTIVE: minimized; the app may still take the foreground (see above)
     swNormal);            // SW_SHOWNORMAL: shown and activated, for an app that does not work when it starts minimized
@@ -94,53 +88,53 @@ type
     function  Kill: String;
     procedure DeleteDiscoveryFileIfEnded;
   protected
-    { Aims the client at a known pipe. The client's own tests use it; Start and Attach build on it.
+    { Aims the client at a known pipe.
+      The client's own tests use it; Start and Attach build on it.
       APid: the process that owns the pipe; 0 = unknown (no liveness check while opening, no pid check of the hello). }
     constructor CreateForPipe(const APipeName: String; APid: Cardinal);
   public
-    { Starts ExePath (a full path) in its own folder, with Params as its command line, and waits until its bridge
-      writes %TEMP%\Autopilot\active\<pid>.pipe. The app joins a job object, so it ends together with the test EXE,
-      however the test EXE ends. Window: swMinimizedNoFocus (default) or swNormal.
-      Raises ETargetNotRunning when ExePath does not exist, when the app ends first (the message has its exit code),
-      or after StartTimeoutMs (the message has the text of any dialog box the app shows, e.g. a startup error);
-      in the last case the app is killed.
+    { Starts ExePath (a full path) in its own folder, with Params as its command line, and waits until its bridge writes %TEMP%\Autopilot\active\<pid>.pipe.
+      The app joins a job object, so it ends together with the test EXE, however the test EXE ends.
+      Window: swMinimizedNoFocus (default) or swNormal.
+      Raises ETargetNotRunning when ExePath does not exist, when the app ends first (the message has its exit code), or after StartTimeoutMs (the message has the text of any dialog box the app shows, e.g. a startup error); in the last case the app is killed.
       In a DUnitX [SetupFixture] make Start the last statement: DUnitX runs no [TearDownFixture] after a setup that raised. }
     class function Start(const ExePath: String; const Params: String = ''; StartTimeoutMs: Cardinal = ClientStartTimeoutMs; Window: TStartWindow = swMinimizedNoFocus): TAutopilotApp;
 
-    { Connects to a running app. Pid = 0 takes the only running target.
-      Raises ETargetNotRunning when no target (or none with that pid) runs, and when Pid = 0 while several run
-      (the message lists their pids). }
+    { Connects to a running app.
+      Pid = 0 takes the only running target.
+      Raises ETargetNotRunning when no target (or none with that pid) runs, and when Pid = 0 while several run (the message lists their pids). }
     class function Attach(Pid: Cardinal = 0): TAutopilotApp;
 
-    { Never raises. Kills the app when Start started it and it still runs (call Close first for a clean end).
+    { Never raises.
+      Kills the app when Start started it and it still runs (call Close first for a clean end).
       An attached app keeps running. }
     destructor Destroy; override;
 
-    { Posts WM_CLOSE to the app's TApplication (VCL) or TFMAppClass (FMX) window and waits until the app ends, so
-      OnCloseQuery, OnClose and the bridge's own shutdown run. If the app still runs after TimeoutMs (a "Save
-      changes?" box, a hang), Close kills it and raises ETargetNotResponding with the text of any dialog box it
-      shows. Does nothing when the app has already ended. }
+    { Posts WM_CLOSE to the app's TApplication (VCL) or TFMAppClass (FMX) window and waits until the app ends, so OnCloseQuery, OnClose and the bridge's own shutdown run.
+      If the app still runs after TimeoutMs (a "Save changes?" box, a hang), Close kills it and raises ETargetNotResponding with the text of any dialog box it shows.
+      Does nothing when the app has already ended. }
     procedure Close(TimeoutMs: Cardinal = ClientCloseTimeoutMs);
 
-    { The commands. Path: 'Form', 'Form.Control' or 'Form.A.B' (the paths list_tree shows).
-      Each one raises EAutopilotError when the bridge answers ok:false, ETargetNotResponding or ETargetNotRunning
-      when the app cannot answer. Default timeouts (the bridge's own): 5000 ms for the commands that run event
-      handlers, 30000 ms for Screenshot, 2000 ms for the rest.
+    { The commands.
+      Path: 'Form', 'Form.Control' or 'Form.A.B' (the paths list_tree shows).
+      Each one raises EAutopilotError when the bridge answers ok:false, ETargetNotResponding or ETargetNotRunning when the app cannot answer.
+      Default timeouts (the bridge's own): 5000 ms for the commands that run event handlers, 30000 ms for Screenshot, 2000 ms for the rest.
       An event handler that raises (measured on the VCL bridge, 2026-10-13):
       - Click: EAutopilotHandlerError (the bridge catches the exception and reports stoppedReason).
       - ExecuteAction (OnExecute), SetProperty (the property setter), SetChecked (OnClick): EAutopilotError -32603.
-      - SetText (OnChange of a TEdit) and SendKeys (OnKeyDown): NOT reported to the client. The exception is raised
-        inside a window message, so the VCL hands it to Application.HandleException: the app's
-        Application.OnException (or madExcept) sees it, and the command answers ok. With no handler the VCL shows
-        its error box, which blocks the app's main thread, so a command then ends in -32004 and its message names
-        the box [not measured]. Check the effect of such a command with GetText. }
+      - SetText (OnChange of a TEdit) and SendKeys (OnKeyDown): NOT reported to the client.
+        The exception is raised inside a window message, so the VCL hands it to Application.HandleException: the app's Application.OnException (or madExcept) sees it, and the command answers ok.
+        With no handler the VCL shows its error box, which blocks the app's main thread, so a command then ends in -32004 and its message names the box [not measured].
+        Check the effect of such a command with GetText. }
 
     { Returns clicksDispatched: less than Count when the control became disabled or was freed by a click.
-      Raises EAutopilotHandlerError when OnClick raised. TimeoutMs = 0: 5000 ms + 100 ms per extra click.
+      Raises EAutopilotHandlerError when OnClick raised.
+      TimeoutMs = 0: 5000 ms + 100 ms per extra click.
       A short TimeoutMs + the -32004 it gives + DismissDialog is the modal-dialog recipe for FMX. }
     function  Click(const Path: String; Count: Integer = 1; TimeoutMs: Cardinal = 0): Integer;
-    { click mode='message': returns before the click runs. For a VCL button-class control (TButton, TBitBtn,
-      TCheckBox, TRadioButton) whose OnClick opens a modal dialog; then call DismissDialog. FMX answers -32005. }
+    { click mode='message': returns before the click runs.
+      For a VCL button-class control (TButton, TBitBtn, TCheckBox, TRadioButton) whose OnClick opens a modal dialog; then call DismissDialog.
+      FMX answers -32005. }
     procedure ClickAsync(const Path: String);
     procedure SetText(const Path, Text: String);
     function  GetText(const Path: String): String;
@@ -149,27 +143,25 @@ type
     procedure SetProperty(const Path, PropName, Value: String);
     { FALSE when the action has no OnExecute handler }
     function  ExecuteAction(const Path: String): Boolean;
-    { Keys: chords separated by spaces ('Ctrl+S', 'Enter', 'Ctrl+A Delete'). Text: typed one character at a time,
-      before the keys. Path '' = the focused control of the active form. }
+    { Keys: chords separated by spaces ('Ctrl+S', 'Enter', 'Ctrl+A Delete').
+      Text: typed one character at a time, before the keys.
+      Path '' = the focused control of the active form. }
     procedure SendKeys(const Path, Keys: String; const Text: String = '');
-    { Clicks a button of a native dialog (MessageBox, ShowMessage, MessageDlg, a file dialog): Button is a role
-      ('ok', 'cancel', 'yes', 'no', 'retry', 'abort', 'ignore', 'close'), a button caption or a control id.
-      Waits for the dialog: while the bridge answers that no dialog is open (reason 'no_dialog'), it asks again every
-      50 ms until TimeoutMs has passed. Needed after ClickAsync, which returns before the click runs, so the dialog
-      the click opens may not exist yet (measured: 1 ms after ClickAsync it did not).
-      TRUE only when the dialog is gone: the bridge clicked the button's own window (BM_CLICK), or, after a blind
-      WM_COMMAND, the dialog left the list within 1000 ms. FALSE when no dialog appeared within TimeoutMs, at once
-      when the open dialog has no such button or the click was not delivered, and when the dialog stayed. }
+    { Clicks a button of a native dialog (MessageBox, ShowMessage, MessageDlg, a file dialog): Button is a role ('ok', 'cancel', 'yes', 'no', 'retry', 'abort', 'ignore', 'close'), a button caption or a control id.
+      Waits for the dialog: while the bridge answers that no dialog is open (reason 'no_dialog'), it asks again every 50 ms until TimeoutMs has passed.
+      Needed after ClickAsync, which returns before the click runs, so the dialog the click opens may not exist yet (measured: 1 ms after ClickAsync it did not).
+      TRUE only when the dialog is gone: the bridge clicked the button's own window (BM_CLICK), or, after a blind WM_COMMAND, the dialog left the list within 1000 ms.
+      FALSE when no dialog appeared within TimeoutMs, at once when the open dialog has no such button or the click was not delivered, and when the dialog stayed. }
     function  DismissDialog(const Button: String; TimeoutMs: Cardinal = ClientDialogTimeoutMs): Boolean;
     { Saves a PNG of a form ('frmMain') or of one control ('frmMain.pnlTop'). Path '' = the main form. }
     procedure Screenshot(const Path, PngFileName: String);
     { Polls get_text every ClientPollIntervalMs until the text equals Expected (TRUE) or TimeoutMs passes (FALSE).
-      An error answer (a control that does not exist yet) does not end the wait; ETargetNotRunning,
-      ETargetNotResponding and a protocol mismatch end it at once. }
+      An error answer (a control that does not exist yet) does not end the wait; ETargetNotRunning, ETargetNotResponding and a protocol mismatch end it at once. }
     function  WaitForText(const Path, Expected: String; TimeoutMs: Cardinal = ClientWaitTimeoutMs): Boolean;
-    { Any bridge command. Args is consumed (Call frees it, also when it raises); NIL = no arguments.
-      Returns the answer's 'result' object, which the caller frees. Raises like the commands above, but checks no
-      stoppedReason. }
+    { Any bridge command.
+      Args is consumed (Call frees it, also when it raises); NIL = no arguments.
+      Returns the answer's 'result' object, which the caller frees.
+      Raises like the commands above, but checks no stoppedReason. }
     function  Call(const Cmd: String; Args: TJSONObject; TimeoutMs: Cardinal = 0): TJSONObject;
 
     property Pid: Cardinal read FPid;
@@ -237,12 +229,11 @@ begin
 end;
 
 
-{ The bridge's per-command timeouts. They are decided in Autopilot.Bridge.Worker (ServeOneRequest); the client sends
-  the value in every request and builds its own deadline from the same number. }
+{ The bridge's per-command timeouts.
+  They are decided in Autopilot.Bridge.Worker (ServeOneRequest); the client sends the value in every request and builds its own deadline from the same number. }
 function DefaultTimeoutFor(const ACmd: String): Cardinal;
 begin
-  if (ACmd = 'click') or (ACmd = 'set_text') or (ACmd = 'set_checked') or (ACmd = 'set_property')
-  or (ACmd = 'execute_action') or (ACmd = 'dismiss_dialog') or (ACmd = 'send_keys')
+  if (ACmd = 'click') or (ACmd = 'set_text') or (ACmd = 'set_checked') or (ACmd = 'set_property') or (ACmd = 'execute_action') or (ACmd = 'dismiss_dialog') or (ACmd = 'send_keys')
   then Result := DefaultTimeoutClickMs
   else
     if ACmd = 'screenshot'
@@ -282,8 +273,7 @@ begin
   H := OpenProcess(SYNCHRONIZE, FALSE, APid);
   if H = 0 then
     { ERROR_INVALID_PARAMETER (87) is what Windows answers when no process has this pid - the only failure that means dead.
-      Anything else (ERROR_ACCESS_DENIED, 5) means a process with that pid exists but may not be opened: reporting it
-      dead would delete a live target's discovery file, which its bridge writes only once.
+      Anything else (ERROR_ACCESS_DENIED, 5) means a process with that pid exists but may not be opened: reporting it dead would delete a live target's discovery file, which its bridge writes only once.
       Measured 2026-08-11: a free pid gives 87, a live SYSTEM-owned process gives 5. }
     EXIT(GetLastError <> ERROR_INVALID_PARAMETER);
   try
@@ -296,8 +286,9 @@ begin
 end;
 
 
-{ Reads the pipe name from a discovery file. FALSE when the file cannot be read now (the caller tries again later)
-  or is empty. The bridge writes the file through a rename, so a failed read is a race with a delete. }
+{ Reads the pipe name from a discovery file.
+  FALSE when the file cannot be read now (the caller tries again later) or is empty.
+  The bridge writes the file through a rename, so a failed read is a race with a delete. }
 function TryReadPipeName(const AFile: String; OUT APipeName: String): Boolean;
 var
   Stream: TFileStream;
@@ -549,10 +540,8 @@ end;
 { The pipe stream ---------------------------------------------------------- }
 
 type
-  { THandleStream cannot serve an overlapped pipe handle (its ReadFile passes no OVERLAPPED, which is invalid on a
-    FILE_FLAG_OVERLAPPED handle). This stream does the same job with a deadline per operation: each Read/Write is an
-    overlapped I/O plus an event wait; when the deadline passes, the operation is cancelled (CancelIoEx) and
-    ETargetNotResponding raised, so a frozen app (a breakpoint, a hang) cannot block the caller for ever.
+  { THandleStream cannot serve an overlapped pipe handle (its ReadFile passes no OVERLAPPED, which is invalid on a FILE_FLAG_OVERLAPPED handle).
+    This stream does the same job with a deadline per operation: each Read/Write is an overlapped I/O plus an event wait; when the deadline passes, the operation is cancelled (CancelIoEx) and ETargetNotResponding raised, so a frozen app (a breakpoint, a hang) cannot block the caller for ever.
     It does not own the pipe handle: Exchange closes it. }
   TDeadlinePipeStream = class(TStream)
   strict private
@@ -618,9 +607,8 @@ begin
       else RaiseLastOSError(Err);
     end;
 
-    { TRAP: from here to GetOverlappedResult the kernel may still write into Ov and Buffer. Only Win32 calls that
-      cannot raise may stand here: a statement that raises (a log line, a check) would leave this routine while the
-      I/O is pending, and the kernel would then write into freed memory. }
+    { TRAP: from here to GetOverlappedResult the kernel may still write into Ov and Buffer.
+      Only Win32 calls that cannot raise may stand here: a statement that raises (a log line, a check) would leave this routine while the I/O is pending, and the kernel would then write into freed memory. }
     if WaitForSingleObject(FEvent, FTimeoutMs) <> WAIT_OBJECT_0 then
       // Deadline hit: cancel the pending operation. ERROR_NOT_FOUND (it completed in the race window) is fine - GetOverlappedResult below resolves either way.
       CancelIoEx(FPipe, @Ov);
@@ -636,8 +624,7 @@ begin
       if AIsRead
       then OpWord := 'reply'
       else OpWord := 'accept data';
-      raise ETargetNotResponding.Create('Autopilot: the app accepted the pipe connection but did not ' + OpWord +
-                                        ' within ' + UIntToStr(FTimeoutMs) + ' ms - stopped on a breakpoint, or hung?');
+      raise ETargetNotResponding.Create('Autopilot: the app accepted the pipe connection but did not ' + OpWord + ' within ' + UIntToStr(FTimeoutMs) + ' ms - stopped on a breakpoint, or hung?');
     end;
     if AIsRead and ((Err = ERROR_BROKEN_PIPE) or (Err = ERROR_PIPE_NOT_CONNECTED)) then
       EXIT(0);
@@ -909,14 +896,10 @@ begin
     if FileExists(ADiscoveryFile) and TryReadPipeName(ADiscoveryFile, Result) then
       EXIT;
     if ProcessEnded(ExitInfo) then
-      raise ETargetNotRunning.Create('Autopilot.Start: ' + ExtractFileName(AExePath) + ' (pid ' + UIntToStr(FPid) + ') ended' +
-                                     ExitInfo + ' before its bridge came up');
+      raise ETargetNotRunning.Create('Autopilot.Start: ' + ExtractFileName(AExePath) + ' (pid ' + UIntToStr(FPid) + ') ended' + ExitInfo + ' before its bridge came up');
     Sleep(PipeRetryMs);
   until GetTickCount64 >= Deadline;
-  raise ETargetNotRunning.Create('Autopilot.Start: ' + ExtractFileName(AExePath) + ' (pid ' + UIntToStr(FPid) + ') runs, but no bridge wrote ' +
-                                 ADiscoveryFile + ' within ' + UIntToStr(ATimeoutMs) + ' ms. Likely causes: the app was built without the ' +
-                                 'AUTOPILOT define, it never calls StartBridge, or it waits in a startup error box' + DialogBoxesNote(FPid) +
-                                 '. The app was killed');
+  raise ETargetNotRunning.Create('Autopilot.Start: ' + ExtractFileName(AExePath) + ' (pid ' + UIntToStr(FPid) + ') runs, but no bridge wrote ' + ADiscoveryFile + ' within ' + UIntToStr(ATimeoutMs) + ' ms. Likely causes: the app was built without the ' + 'AUTOPILOT define, it never calls StartBridge, or it waits in a startup error box' + DialogBoxesNote(FPid) + '. The app was killed');
 end;
 
 
@@ -949,8 +932,7 @@ begin
           Pids := Pids + ', ';
         Pids := Pids + UIntToStr(Targets[i].Pid);
       end;
-      raise ETargetNotRunning.Create('Autopilot.Attach: ' + IntToStr(Length(Targets)) + ' Autopilot targets are running (pids ' + Pids +
-                                     '); pass the pid of the app to Attach');
+      raise ETargetNotRunning.Create('Autopilot.Attach: ' + IntToStr(Length(Targets)) + ' Autopilot targets are running (pids ' + Pids + '); pass the pid of the app to Attach');
     end;
     Chosen := 0;
   end;
@@ -985,8 +967,7 @@ begin
   begin
     Boxes  := DialogBoxesNote(FPid);
     Killed := Kill;
-    raise ETargetNotResponding.Create('Autopilot.Close: the app (pid ' + UIntToStr(FPid) + ') has no TApplication or TFMAppClass window ' +
-                                      'that takes WM_CLOSE' + Boxes + '; ' + Killed);
+    raise ETargetNotResponding.Create('Autopilot.Close: the app (pid ' + UIntToStr(FPid) + ') has no TApplication or TFMAppClass window ' + 'that takes WM_CLOSE' + Boxes + '; ' + Killed);
   end;
 
   if WaitForEnd(TimeoutMs) then
@@ -999,8 +980,7 @@ begin
 
   Boxes  := DialogBoxesNote(FPid);   // read while the app still runs
   Killed := Kill;
-  raise ETargetNotResponding.Create('Autopilot.Close: the app (pid ' + UIntToStr(FPid) + ') did not end within ' + UIntToStr(TimeoutMs) +
-                                    ' ms of WM_CLOSE (a "Save changes?" box, an OnCloseQuery that refuses, or a hang)' + Boxes + '; ' + Killed);
+  raise ETargetNotResponding.Create('Autopilot.Close: the app (pid ' + UIntToStr(FPid) + ') did not end within ' + UIntToStr(TimeoutMs) + ' ms of WM_CLOSE (a "Save changes?" box, an OnCloseQuery that refuses, or a hang)' + Boxes + '; ' + Killed);
 end;
 
 
@@ -1040,17 +1020,13 @@ begin
     Tick := GetTickCount64;
     if Tick >= Deadline then Break;
 
-    { How the bridge moves from one connection to the next (measured 2026-10-13, a command sent right after the previous
-      one): the open finds the pipe busy (the old instance still exists); the bridge closes that instance about 0.1 ms
-      later (the pipe is gone: ERROR_FILE_NOT_FOUND) and creates the next one within about 0.2 ms. A Sleep(25) at either
-      step lasts about 33 ms on Windows, because of the timer tick. }
+    { How the bridge moves from one connection to the next (measured 2026-10-13, a command sent right after the previous one): the open finds the pipe busy (the old instance still exists); the bridge closes that instance about 0.1 ms later (the pipe is gone: ERROR_FILE_NOT_FOUND) and creates the next one within about 0.2 ms.
+      A Sleep(25) at either step lasts about 33 ms on Windows, because of the timer tick. }
     if Err = ERROR_PIPE_BUSY then
     begin
-      { WaitNamedPipe returns as soon as the bridge waits for a client again (a pending ConnectNamedPipe), at once when
-        the bridge closes the instance (measured: FALSE with ERROR_FILE_NOT_FOUND), and at the latest after the slice, so
-        the liveness check above runs at least once per slice. Its TRUE reserves nothing (another client may open the
-        instance first), so the loop opens again whatever it returns. Never pass 0: that is NMPWAIT_USE_DEFAULT_WAIT, the
-        server's default time-out. https://learn.microsoft.com/en-us/windows/win32/api/namedpipeapi/nf-namedpipeapi-waitnamedpipew }
+      { WaitNamedPipe returns as soon as the bridge waits for a client again (a pending ConnectNamedPipe), at once when the bridge closes the instance (measured: FALSE with ERROR_FILE_NOT_FOUND), and at the latest after the slice, so the liveness check above runs at least once per slice.
+        Its TRUE reserves nothing (another client may open the instance first), so the loop opens again whatever it returns.
+        Never pass 0: that is NMPWAIT_USE_DEFAULT_WAIT, the server's default time-out. https://learn.microsoft.com/en-us/windows/win32/api/namedpipeapi/nf-namedpipeapi-waitnamedpipew }
       Left := Deadline - Tick;
       if Left > BusyWaitSliceMs then
         Left := BusyWaitSliceMs;
@@ -1065,20 +1041,16 @@ begin
   until GetTickCount64 >= Deadline;
 
   if Err = ERROR_PIPE_BUSY then
-    raise ETargetNotResponding.Create('Autopilot: pipe ' + FPipeName + ' stayed busy for ' + UIntToStr(ATimeoutMs) +
-                                      ' ms: the app serves another client, or it is frozen (stopped on a breakpoint, or hung)');
+    raise ETargetNotResponding.Create('Autopilot: pipe ' + FPipeName + ' stayed busy for ' + UIntToStr(ATimeoutMs) + ' ms: the app serves another client, or it is frozen (stopped on a breakpoint, or hung)');
   if Err = ERROR_FILE_NOT_FOUND then
-    raise ETargetNotRunning.Create('Autopilot: pipe ' + FPipeName + ' did not appear within ' + UIntToStr(ATimeoutMs) +
-                                   ' ms: the app has stopped its bridge (StopBridge), or it is closing');
-  E := EOSError.Create('Autopilot: cannot open pipe ' + FPipeName + ': ' + SysErrorMessage(Err) + ' (code ' + UIntToStr(Err) +
-                       '). The pipe accepts only the Windows user that runs the app: run the test as that user');
+    raise ETargetNotRunning.Create('Autopilot: pipe ' + FPipeName + ' did not appear within ' + UIntToStr(ATimeoutMs) + ' ms: the app has stopped its bridge (StopBridge), or it is closing');
+  E := EOSError.Create('Autopilot: cannot open pipe ' + FPipeName + ': ' + SysErrorMessage(Err) + ' (code ' + UIntToStr(Err) + '). The pipe accepts only the Windows user that runs the app: run the test as that user');
   E.ErrorCode := Err;
   raise E;
 end;
 
 
-{ Checks the bridge's hello: a JSON object with hello.protocolVersion = ProtocolVersion, and (rule 9) not the bridge
-  of this process when this is the main thread. }
+{ Checks the bridge's hello: a JSON object with hello.protocolVersion = ProtocolVersion, and (rule 9) not the bridge of this process when this is the main thread. }
 procedure TAutopilotApp.ReadHello(AStream: TStream);
 var
   Raw: String;
@@ -1099,15 +1071,11 @@ begin
     if not TryJsonInt64(Hello.GetValue('protocolVersion'), HelloVersion) then
       raise EAutopilotError.CreateCode(ErrProtocolMismatch, 'Autopilot: the hello on ' + FPipeName + ' has no protocolVersion: ' + Copy(Raw, 1, 200));
     if HelloVersion <> ProtocolVersion then
-      raise EAutopilotError.CreateCode(ErrProtocolMismatch, 'Autopilot: protocol mismatch on ' + FPipeName + ': the bridge speaks protocol ' +
-                                       IntToStr(HelloVersion) + ', this client speaks protocol ' + IntToStr(ProtocolVersion) +
-                                       '. Use the client unit of the same Autopilot release as the bridge');
+      raise EAutopilotError.CreateCode(ErrProtocolMismatch, 'Autopilot: protocol mismatch on ' + FPipeName + ': the bridge speaks protocol ' + IntToStr(HelloVersion) + ', this client speaks protocol ' + IntToStr(ProtocolVersion) + '. Use the client unit of the same Autopilot release as the bridge');
     if TryJsonInt64(Hello.GetValue('pid'), HelloPid) then
     begin
       if (HelloPid = GetCurrentProcessId) and (GetCurrentThreadId = MainThreadID) then
-        raise EInvalidOpException.Create('Autopilot: called from the main thread of the process whose bridge answers (pid ' + IntToStr(HelloPid) +
-                                         '). The bridge runs every command on that main thread, so this call would wait for itself and ' +
-                                         'fail with -32004 after its timeout. Call the client from a worker thread, or from a separate test EXE');
+        raise EInvalidOpException.Create('Autopilot: called from the main thread of the process whose bridge answers (pid ' + IntToStr(HelloPid) + '). The bridge runs every command on that main thread, so this call would wait for itself and ' + 'fail with -32004 after its timeout. Call the client from a worker thread, or from a separate test EXE');
       if (FPid <> 0) and (HelloPid <> FPid) then
         raise ETargetNotRunning.Create('Autopilot: pipe ' + FPipeName + ' belongs to pid ' + IntToStr(HelloPid) + ', not to the app (pid ' + UIntToStr(FPid) + ')');
     end;
@@ -1118,7 +1086,8 @@ end;
 
 
 { One round trip on a new connection: open, hello, helloAck, the request, the answer, close.
-  Consumes AArgs. Returns the parsed answer (the caller frees it). }
+  Consumes AArgs.
+  Returns the parsed answer (the caller frees it). }
 function TAutopilotApp.Exchange(const ACmd: String; AArgs: TJSONObject; ATimeoutMs: Cardinal): TJSONObject;
 var
   Req: TJSONObject;
@@ -1177,13 +1146,13 @@ begin
   if not TryJsonInt64(Result.GetValue('id'), AnswerId) or (AnswerId <> Id) then
   begin
     FreeAndNil(Result);
-    raise EAutopilotError.CreateCode(ErrProtocolMismatch, 'Autopilot ' + ACmd + ': the answer does not carry the id ' + IntToStr(Id) +
-                                     ' of the request: ' + Copy(Frame, 1, 200));
+    raise EAutopilotError.CreateCode(ErrProtocolMismatch, 'Autopilot ' + ACmd + ': the answer does not carry the id ' + IntToStr(Id) + ' of the request: ' + Copy(Frame, 1, 200));
   end;
 end;
 
 
-{ Sends one command. Returns a copy of the answer's 'result' object (the caller frees it); raises EAutopilotError on ok:false.
+{ Sends one command.
+  Returns a copy of the answer's 'result' object (the caller frees it); raises EAutopilotError on ok:false.
   AListDialogsWhenBlocked: after a -32004, list the open native dialogs into the message (one more round trip). }
 function TAutopilotApp.Request(const ACmd: String; AArgs: TJSONObject; ATimeoutMs: Cardinal; AListDialogsWhenBlocked: Boolean): TJSONObject;
 var
@@ -1236,8 +1205,8 @@ begin
 end;
 
 
-{ After a -32004: which native dialogs are open in the app. The text is added to the message of the -32004 that is
-  raised next, so a failure of this extra round trip is reported there, not hidden. }
+{ After a -32004: which native dialogs are open in the app.
+  The text is added to the message of the -32004 that is raised next, so a failure of this extra round trip is reported there, not hidden. }
 function TAutopilotApp.OpenDialogsNote: String;
 
   function NotListed(E: Exception): String;
@@ -1325,9 +1294,7 @@ begin
     FreeAndNil(R);
   end;
   if Copy(Stopped, 1, Length('exception:')) = 'exception:' then
-    raise EAutopilotHandlerError.CreateCode(ErrInternalError, 'Autopilot click ' + Path + ': the OnClick handler raised ' +
-                                            Copy(Stopped, Length('exception:') + 1, MaxInt) + ' after ' + IntToStr(Result) +
-                                            ' successful clicks (the bridge caught it; the app''s own exception handler never saw it)', Answer);
+    raise EAutopilotHandlerError.CreateCode(ErrInternalError, 'Autopilot click ' + Path + ': the OnClick handler raised ' + Copy(Stopped, Length('exception:') + 1, MaxInt) + ' after ' + IntToStr(Result) + ' successful clicks (the bridge caught it; the app''s own exception handler never saw it)', Answer);
 end;
 
 
@@ -1423,8 +1390,7 @@ var
   Deadline: UInt64;
 begin
   if Trim(Button) = '' then
-    raise EArgumentException.Create('Autopilot.DismissDialog: Button is empty; pass a role (ok, cancel, yes, no, retry, abort, ignore, close), ' +
-                                    'a button caption or a control id');
+    raise EArgumentException.Create('Autopilot.DismissDialog: Button is empty; pass a role (ok, cancel, yes, no, retry, abort, ignore, close), ' + 'a button caption or a control id');
 
   { # Wait for the dialog: after ClickAsync the click, and with it the dialog, comes only after the click's answer }
   Deadline := GetTickCount64 + TimeoutMs;
@@ -1509,8 +1475,7 @@ begin
   until FALSE;
   if LastError <> '' then
     LastError := '; last error: ' + LastError;
-  BridgeLogInfo(LogTag, 'WaitForText ' + Path + ': "' + Expected + '" not seen within ' + UIntToStr(TimeoutMs) + ' ms (' + IntToStr(Polls) +
-                        ' polls); last text "' + Current + '"' + LastError);
+  BridgeLogInfo(LogTag, 'WaitForText ' + Path + ': "' + Expected + '" not seen within ' + UIntToStr(TimeoutMs) + ' ms (' + IntToStr(Polls) + ' polls); last text "' + Current + '"' + LastError);
   Result := FALSE;
 end;
 

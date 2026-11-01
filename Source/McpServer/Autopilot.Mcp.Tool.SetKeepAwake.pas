@@ -5,8 +5,8 @@ unit Autopilot.Mcp.Tool.SetKeepAwake;
    www.GabrielMoraru.com
 --------------------------------------------------------------------------------------------------------------
    - MCP tool: set_keep_awake
-   - Keeps the target device screen on while it is being driven. On Android the bridge sets the
-     FLAG_KEEP_SCREEN_ON window flag, preventing the OS screen-off app freeze that stalls socket accept.
+   - Keeps the target device screen on while it is being driven.
+     On Android the bridge sets the FLAG_KEEP_SCREEN_ON window flag, preventing the OS screen-off app freeze that stalls socket accept.
    - No-op on Windows targets (a Windows app is never OS-frozen while an automation client drives it).
    - The FMX bridge enables this by default on Android at StartBridge; this tool allows runtime toggling.
    - Runs in Autopilot.Mcp.exe (Windows PC-side MCP server); target may be any platform.
