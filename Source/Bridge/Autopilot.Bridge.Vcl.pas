@@ -61,12 +61,6 @@ uses
 
 {$IFDEF AUTOPILOT}
 
-{ Licence reminder in the Messages pane, AUTOPILOT builds only.
-  It fires whenever this unit is compiled.
-  No DCUs ship, so every user compiles the bridge and sees it.
-  A HINT, not a WARN, so it cannot dirty a project that treats warnings as errors. }
-{$MESSAGE HINT 'Autopilot for Delphi: license: https://github.com/GabrielOnDelphi/Autopilot-for-Delphi/blob/main/LICENSE'}
-
 var
   GWorker: TBridgeWorker = NIL;
   GLock  : TCriticalSection = NIL;
