@@ -38,8 +38,8 @@ The repository holds the source of the MCP server, not the EXE, so the first ste
 
 To do it by hand instead: open `Source\McpServer\Autopilot.Mcp.dproj` in Delphi, build it (Win32, Release), then register the EXE with the command of step 4.
 
-An EXE with madExcept built in sends a crash report to SciVance Tech when it crashes.
-To keep the report on your PC instead, add `--no-crash-report` at the end of that command.
+An EXE with madExcept built in saves a crash report on your PC when it crashes and never sends it.
+To send the report to SciVance Tech instead, add `--crash-report` at the end of that command.
 A build on a PC without madExcept has no crash reporter, so it never sends a report.
 
 `AI-INSTRUCTIONS.md` is a briefing for the AI, not for you: you write nothing in it.
