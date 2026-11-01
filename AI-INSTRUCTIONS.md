@@ -34,10 +34,10 @@ The MCP server is registered as `autopilot`.
 Tool names appear in your tool list as `mcp__autopilot__<name>`.
 Every tool accepts an optional `pid` argument when more than one Delphi target is running - omit it when only one target is present: the tools attach to it on their own.
 
-**Crash report of the MCP server.** When `Autopilot.Mcp.exe` crashes, it sends a crash report to SciVance Tech, the maker of Autopilot.
-A user who wants no report to leave the PC registers the server with the parameter `--no-crash-report` (in either order with `--target adb:<port>`): `claude mcp add autopilot -- <path>\Autopilot.Mcp.exe --no-crash-report`.
-A crash report is then only saved to `%TEMP%\Autopilot\bugreport Autopilot.Mcp.txt`, and the first lines of the server's log `%TEMP%\Autopilot\Autopilot.Mcp-<pid>.log` say so.
-It changes nothing in the tools or their answers.
+**Crash report of the MCP server.** When `Autopilot.Mcp.exe` crashes, it saves a crash report to `%TEMP%\Autopilot\bugreport Autopilot.Mcp.txt` and never sends it; the first lines of the server's log `%TEMP%\Autopilot\Autopilot.Mcp-<pid>.log` say so.
+A user who wants the report sent to SciVance Tech, the maker of Autopilot, registers the server with the parameter `--crash-report` (in either order with `--target adb:<port>`): `claude mcp add autopilot -- <path>\Autopilot.Mcp.exe --crash-report`.
+The older parameter `--no-crash-report` is still accepted: it keeps the report on the PC, even beside `--crash-report`.
+None of these changes anything in the tools or their answers.
 
 ### `attach`
 
@@ -463,7 +463,7 @@ Three checks, in order:
    If empty but the discovery file exists: bridge crashed or `StopBridge` was called.
 
 3. **Is the MCP server registered?** Tool names appear in your tool list as `mcp__autopilot__*`.
-   If absent, the user needs to re-register the MCP server with their host (`claude mcp add autopilot ...` on Claude Code; keep `--no-crash-report` at the end if the old registration had it).
+   If absent, the user needs to re-register the MCP server with their host (`claude mcp add autopilot ...` on Claude Code; keep `--crash-report` or `--no-crash-report` at the end if the old registration had it).
    **Registering does NOT help the session you are in right now** - an MCP host reads its server list once at session start, so `mcp__autopilot__*` tools only appear in the *next* session.
    Confirm with `claude mcp list` that it shows `✓ Connected`, then either start a fresh session, or, if you need to act in the current one, drive the pipe directly (next section).
 
