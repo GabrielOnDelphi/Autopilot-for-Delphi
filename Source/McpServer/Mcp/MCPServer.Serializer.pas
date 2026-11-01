@@ -70,7 +70,7 @@ end;
   Returns nil if not present. }
 function FindJsonValueCI(AJson: TJSONObject; const APropName: String): TJSONValue;
 var
-  Pair: TJSONPair;
+  Pair  : TJSONPair;
   Target: String;
 begin
   // Fast path: exact match (the common case for Claude — it sends lower-case keys).
@@ -79,8 +79,7 @@ begin
 
   Target := NormalizeKey(APropName);
   for Pair in AJson do
-    if NormalizeKey(Pair.JsonString.Value) = Target then
-      Exit(Pair.JsonValue);
+    if NormalizeKey(Pair.JsonString.Value) = Target then Exit(Pair.JsonValue);
 
   Result := nil;
 end;
@@ -111,19 +110,18 @@ var
 begin
   Ordinal := -1;
   Found   := FALSE;
-  if AJson is TJSONNumber then   // tested before TJSONString: up to Delphi 12 a number is a TJSONString too
-    Found := TryStrToInt(AJson.Value, Ordinal)
+  if AJson is TJSONNumber   // tested before TJSONString: up to Delphi 12 a number is a TJSONString too
+  then Found := TryStrToInt(AJson.Value, Ordinal)
   else
     if AJson is TJSONString then
-    begin
-      if AJson.Value = '' then
-        EXIT(TValue.Empty);
-      Ordinal := GetEnumValue(AType.Handle, AJson.Value);
-      Found   := (Ordinal >= 0) or TryStrToInt(AJson.Value, Ordinal);
-    end;
+      begin
+        if AJson.Value = '' then EXIT(TValue.Empty);
+        Ordinal := GetEnumValue(AType.Handle, AJson.Value);
+        Found   := (Ordinal >= 0) or TryStrToInt(AJson.Value, Ordinal);
+      end;
 
-  if not Found or (Ordinal < AType.MinValue) or (Ordinal > AType.MaxValue) then
-    raise EArgumentException.Create('invalid value ' + Copy(AJson.ToJSON, 1, 80) + '. Valid values: ' + String.Join(', ', EnumValueNames(AType)) + '.');
+  if not Found or (Ordinal < AType.MinValue) or (Ordinal > AType.MaxValue)
+  then raise EArgumentException.Create('invalid value ' + Copy(AJson.ToJSON, 1, 80) + '. Valid values: ' + String.Join(', ', EnumValueNames(AType)) + '.');
 
   Result := TValue.FromOrdinal(AType.Handle, Ordinal);
 end;
@@ -144,51 +142,50 @@ begin
   case AType.TypeKind of
     tkInteger:
       begin
-        if not (IsNumberOrText(AJson) and TryStrToInt(AJson.Value, IntValue)) then
-          RaiseWrongValue(AJson, 'a whole number in the Integer range');
+        if not (IsNumberOrText(AJson) and TryStrToInt(AJson.Value, IntValue))
+        then RaiseWrongValue(AJson, 'a whole number in the Integer range');
         Result := IntValue;
       end;
 
     tkInt64:
       begin
-        if not (IsNumberOrText(AJson) and TryStrToInt64(AJson.Value, Int64Value)) then
-          RaiseWrongValue(AJson, 'a whole number in the Int64 range');
+        if not (IsNumberOrText(AJson) and TryStrToInt64(AJson.Value, Int64Value))
+        then RaiseWrongValue(AJson, 'a whole number in the Int64 range');
         Result := Int64Value;
       end;
 
     tkFloat:
       if AJson is TJSONNumber
-        then Result := TJSONNumber(AJson).AsDouble
-        else
-          begin
-            if not ((AJson is TJSONString) and TryStrToFloat(AJson.Value, FloatValue, FormatSettings.Invariant)) then
-              RaiseWrongValue(AJson, 'a number');
-            Result := FloatValue;
-          end;
+      then Result := TJSONNumber(AJson).AsDouble
+      else
+        begin
+          if not ((AJson is TJSONString) and TryStrToFloat(AJson.Value, FloatValue, FormatSettings.Invariant))
+          then RaiseWrongValue(AJson, 'a number');
+          Result := FloatValue;
+        end;
 
     tkString, tkLString, tkWString, tkUString:
       begin
-        if not (IsNumberOrText(AJson) or (AJson is TJSONBool)) then
-          RaiseWrongValue(AJson, 'a string');
+        if not (IsNumberOrText(AJson) or (AJson is TJSONBool))
+        then RaiseWrongValue(AJson, 'a string');
         Result := AJson.Value;
       end;
 
     tkEnumeration:
-      if AType.Handle = TypeInfo(Boolean) then
-      begin
-        if AJson is TJSONBool then
-          Result := TJSONBool(AJson).AsBoolean
-        else
-          if (AJson is TJSONString) and SameText(AJson.Value, 'true') then
-            Result := TRUE
+      if AType.Handle = TypeInfo(Boolean)
+      then
+        begin
+          if AJson is TJSONBool
+          then Result := TJSONBool(AJson).AsBoolean
           else
-            if (AJson is TJSONString) and SameText(AJson.Value, 'false') then
-              Result := FALSE
+            if (AJson is TJSONString) and SameText(AJson.Value, 'true')
+            then Result := TRUE
             else
-              RaiseWrongValue(AJson, 'true or false');
-      end
-      else
-        Result := JsonToEnum(AJson, TRttiEnumerationType(AType));
+              if (AJson is TJSONString) and SameText(AJson.Value, 'false')
+              then Result := FALSE
+              else RaiseWrongValue(AJson, 'true or false');
+        end
+      else Result := JsonToEnum(AJson, TRttiEnumerationType(AType));
   else
     raise EArgumentException.Create('its type ' + AType.Name + ' is not supported in a tool params class.');
   end;
@@ -224,42 +221,42 @@ begin
       // First pass: build the accepted-key set.
       for Prop in T.GetProperties do
         if Prop.IsWritable then
-        begin
-          KnownNormSet.Add(NormalizeKey(Prop.Name));
-          KnownNames.Add(LowerCase(Prop.Name));
-        end;
+          begin
+            KnownNormSet.Add(NormalizeKey(Prop.Name));
+            KnownNames.Add(LowerCase(Prop.Name));
+          end;
 
       // Validate every incoming key against the set. Unknown keys = typos = raise early.
       for Pair in AJson do
-      begin
-        KeyNorm := NormalizeKey(Pair.JsonString.Value);
-        if KnownNormSet.IndexOf(KeyNorm) < 0 then
-          raise EArgumentException.CreateFmt('Unknown parameter "%s". Valid parameters: %s.', [Pair.JsonString.Value, String.Join(', ', KnownNames.ToStringArray)]);
-      end;
+        begin
+          KeyNorm := NormalizeKey(Pair.JsonString.Value);
+          if KnownNormSet.IndexOf(KeyNorm) < 0
+          then raise EArgumentException.CreateFmt('Unknown parameter "%s". Valid parameters: %s.', [Pair.JsonString.Value, String.Join(', ', KnownNames.ToStringArray)]);
+        end;
 
       { Second pass: assign each writable property if a matching key is present.
         A JSON null counts as absent.
         A required property (one the schema lists under "required": readable, writable, no [Optional]) must be there. }
       for Prop in T.GetProperties do
-      begin
-        if not Prop.IsWritable then Continue;
-        JsonValue := FindJsonValueCI(AJson, Prop.Name);
-        if (JsonValue = nil) or (JsonValue is TJSONNull) then
         begin
-          if Prop.IsReadable and not IsOptionalProperty(Prop) then
-            raise EArgumentException.Create('Missing required parameter "' + LowerCase(Prop.Name) + '".');
-          Continue;
-        end;
+          if not Prop.IsWritable then Continue;
+          JsonValue := FindJsonValueCI(AJson, Prop.Name);
+          if (JsonValue = nil) or (JsonValue is TJSONNull) then
+            begin
+              if Prop.IsReadable and not IsOptionalProperty(Prop)
+              then raise EArgumentException.Create('Missing required parameter "' + LowerCase(Prop.Name) + '".');
+              Continue;
+            end;
 
-        try
-          PropValue := JsonToValue(JsonValue, Prop.PropertyType);
-        except
-          on E: EArgumentException do
-            raise EArgumentException.Create('Parameter "' + LowerCase(Prop.Name) + '": ' + E.Message);
+          try
+            PropValue := JsonToValue(JsonValue, Prop.PropertyType);
+          except
+            on E: EArgumentException do
+              raise EArgumentException.Create('Parameter "' + LowerCase(Prop.Name) + '": ' + E.Message);
+          end;
+          if not PropValue.IsEmpty
+          then Prop.SetValue(AInstance, PropValue);
         end;
-        if not PropValue.IsEmpty then
-          Prop.SetValue(AInstance, PropValue);
-      end;
     finally
       Ctx.Free;
     end;
@@ -274,8 +271,8 @@ class function TMCPSerializer.Deserialize<T>(AJson: TJSONObject): T;
 begin
   Result := T.Create;
   try
-    if AJson <> nil then
-      TMCPSerializer.FillObject(Result, AJson);
+    if AJson <> nil
+    then TMCPSerializer.FillObject(Result, AJson);
   except
     Result.Free;
     raise;

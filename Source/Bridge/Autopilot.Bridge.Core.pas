@@ -152,11 +152,11 @@ begin
   P := PByte(@Buf);
   Total := 0;
   while Total < ACount do
-  begin
-    Got := AStream.Read(P[Total], ACount - Total);
-    if Got <= 0 then exit(FALSE);
-    Inc(Total, Got);
-  end;
+    begin
+      Got := AStream.Read(P[Total], ACount - Total);
+      if Got <= 0 then exit(FALSE);
+      Inc(Total, Got);
+    end;
   Result := TRUE;
 end;
 
@@ -173,14 +173,14 @@ begin
 
   { A frame over 64 MiB is almost certainly a protocol bug, not a real payload.
     Raise the cap only if a real payload, such as a large screenshot, ever needs more. }
-  if Len > 64 * 1024 * 1024 then
-    raise EReadError.Create('Bridge: refused absurd frame length ' + IntToStr(Len));
+  if Len > 64 * 1024 * 1024
+  then raise EReadError.Create('Bridge: refused absurd frame length ' + IntToStr(Len));
 
   if Len = 0 then
-  begin
-    Result := TRUE;
-    exit;
-  end;
+    begin
+      Result := TRUE;
+      exit;
+    end;
 
   SetLength(Buf, Len);
   if not ReadFully(AStream, Buf[0], Integer(Len)) then exit;
@@ -198,8 +198,8 @@ begin
   Buf := TEncoding.UTF8.GetBytes(S);
   Len := Length(Buf);
   AStream.WriteBuffer(Len, SizeOf(Len));
-  if Len > 0 then
-    AStream.WriteBuffer(Buf[0], Len);
+  if Len > 0
+  then AStream.WriteBuffer(Buf[0], Len);
 end;
 
 
@@ -214,11 +214,11 @@ begin
   P := PByte(@Buf);
   Total := 0;
   while Total < ACount do
-  begin
-    Put := AStream.Write(P[Total], ACount - Total);
-    if Put <= 0 then exit(FALSE);
-    Inc(Total, Put);
-  end;
+    begin
+      Put := AStream.Write(P[Total], ACount - Total);
+      if Put <= 0 then exit(FALSE);
+      Inc(Total, Put);
+    end;
   Result := TRUE;
 end;
 
@@ -231,8 +231,8 @@ begin
   Buf := TEncoding.UTF8.GetBytes(S);
   Len := Length(Buf);
   Result := WriteFully(AStream, Len, SizeOf(Len));
-  if Result and (Len > 0) then
-    Result := WriteFully(AStream, Buf[0], Integer(Len));
+  if Result and (Len > 0)
+  then Result := WriteFully(AStream, Buf[0], Integer(Len));
 end;
 
 
@@ -271,27 +271,27 @@ begin
 
   V := AArgs.GetValue('path');
   if V <> NIL then
-  begin
-    if not (V is TJSONString) then
     begin
-      AError := 'screenshot args.path must be a string';
-      EXIT(FALSE);
+      if not (V is TJSONString) then
+        begin
+          AError := 'screenshot args.path must be a string';
+          EXIT(FALSE);
+        end;
+      APath := TJSONString(V).Value;
     end;
-    APath := TJSONString(V).Value;
-  end;
 
   V := AArgs.GetValue('maxWidth');
   if V <> NIL then
-  begin
-    if not TryJsonInt64(V, N) or (N < 0) then
     begin
-      AError := 'screenshot args.maxWidth must be a whole number >= 0 (got ' + V.ToJSON + ')';
-      EXIT(FALSE);
+      if not TryJsonInt64(V, N) or (N < 0) then
+        begin
+          AError := 'screenshot args.maxWidth must be a whole number >= 0 (got ' + V.ToJSON + ')';
+          EXIT(FALSE);
+        end;
+      if N > High(Integer)
+      then AMaxWidth := High(Integer)
+      else AMaxWidth := Integer(N);
     end;
-    if N > High(Integer)
-    then AMaxWidth := High(Integer)
-    else AMaxWidth := Integer(N);
-  end;
   Result := TRUE;
 end;
 
@@ -303,7 +303,8 @@ begin
   if (AMaxWidth <= 0) or (AWidth <= AMaxWidth) or (AHeight <= 0) then EXIT(FALSE);
   ANewWidth  := AMaxWidth;
   ANewHeight := Integer((Int64(AHeight) * AMaxWidth + AWidth div 2) div AWidth);
-  if ANewHeight < 1 then ANewHeight := 1;
+  if ANewHeight < 1
+  then ANewHeight := 1;
   Result := TRUE;
 end;
 
@@ -327,16 +328,15 @@ begin
   Req.Cmd := TJSONString(CmdVal).Value;
 
   ArgsVal := ARoot.GetValue('args');
-  if ArgsVal is TJSONObject then
-    Req.Args := TJSONObject(ArgsVal)
-  else
-    Req.Args := NIL;   // some commands take no args
+  if ArgsVal is TJSONObject
+  then Req.Args := TJSONObject(ArgsVal)
+  else Req.Args := NIL;   // some commands take no args
 
   { timeoutMs is optional.
     An out-of-range, negative or unparseable value becomes 0 ("use the per-command default"), so one malformed value can never end the pipe session. }
   Req.TimeoutMs := 0;
-  if TryJsonInt64(ARoot.GetValue('timeoutMs'), Int64Val) and (Int64Val >= 0) and (Int64Val <= Int64(High(Cardinal))) then
-    Req.TimeoutMs := Cardinal(Int64Val);
+  if TryJsonInt64(ARoot.GetValue('timeoutMs'), Int64Val) and (Int64Val >= 0) and (Int64Val <= Int64(High(Cardinal)))
+  then Req.TimeoutMs := Cardinal(Int64Val);
 
   Result := TRUE;
 end;
@@ -350,31 +350,32 @@ begin
   try
     Root.AddPair('id', TJSONNumber.Create(Resp.Id));
     Root.AddPair('ok', TJSONBool.Create(Resp.Ok));
-    if Resp.Ok then
-    begin
-      if Resp.ResultJson <> NIL then
+    if Resp.Ok
+    then
       begin
-        Root.AddPair('result', Resp.ResultJson);
-        Resp.ResultJson := NIL;  // ownership transferred to Root
+        if Resp.ResultJson <> NIL
+        then
+          begin
+            Root.AddPair('result', Resp.ResultJson);
+            Resp.ResultJson := NIL;  // ownership transferred to Root
+          end
+        else Root.AddPair('result', TJSONObject.Create);  // empty {} for actions with no payload
       end
-      else
-        Root.AddPair('result', TJSONObject.Create);  // empty {} for actions with no payload
-    end
     else
-    begin
-      ErrObj := TJSONObject.Create;
-      ErrObj.AddPair('code', TJSONNumber.Create(Resp.ErrorCode));
-      ErrObj.AddPair('message', Resp.ErrorMessage);
-      if Resp.ErrorData <> NIL then
       begin
-        ErrObj.AddPair('data', Resp.ErrorData);
-        Resp.ErrorData := NIL;  // ownership transferred to ErrObj
+        ErrObj := TJSONObject.Create;
+        ErrObj.AddPair('code', TJSONNumber.Create(Resp.ErrorCode));
+        ErrObj.AddPair('message', Resp.ErrorMessage);
+        if Resp.ErrorData <> NIL then
+          begin
+            ErrObj.AddPair('data', Resp.ErrorData);
+            Resp.ErrorData := NIL;  // ownership transferred to ErrObj
+          end;
+        Root.AddPair('error', ErrObj);
+        // If caller built a ResultJson by mistake, don't leak it.
+        if Resp.ResultJson <> NIL
+        then FreeAndNil(Resp.ResultJson);
       end;
-      Root.AddPair('error', ErrObj);
-      // If caller built a ResultJson by mistake, don't leak it.
-      if Resp.ResultJson <> NIL then
-        FreeAndNil(Resp.ResultJson);
-    end;
     Result := Root.ToJSON;
   finally
     FreeAndNil(Root);  // also frees ResultJson (now owned) and ErrObj

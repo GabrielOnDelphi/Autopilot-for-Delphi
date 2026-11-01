@@ -57,8 +57,8 @@ uses
 
 class procedure TMCPRegistry.EnsureMap;
 begin
-  if FFactories = nil then
-    FFactories := TDictionary<String, TMCPToolFactory>.Create;
+  if FFactories = nil
+  then FFactories :=TDictionary<String, TMCPToolFactory>.Create;
 end;
 
 
@@ -75,8 +75,8 @@ var
   Factory: TMCPToolFactory;
 begin
   EnsureMap;
-  if not FFactories.TryGetValue(AName, Factory) then
-    raise Exception.CreateFmt('Tool not registered: %s', [AName]);
+  if not FFactories.TryGetValue(AName, Factory)
+  then raise Exception.CreateFmt('Tool not registered: %s', [AName]);
   Result := Factory();
 end;
 
@@ -97,8 +97,8 @@ end;
 
 class procedure TMCPRegistry.Clear;
 begin
-  if FFactories <> nil then
-    FFactories.Clear;
+  if FFactories <> nil
+  then FFactories.Clear;
 end;
 
 

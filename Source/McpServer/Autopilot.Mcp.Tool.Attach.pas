@@ -79,12 +79,12 @@ begin
   Arr := TJSONArray.Create;
   for i := 0 to High(Targets) do
     if (Filter = 0) or (Targets[i].Pid = Filter) then
-    begin
-      Item := TJSONObject.Create;
-      Item.AddPair('pid', TJSONNumber.Create(Targets[i].Pid));
-      Item.AddPair('pipe', Targets[i].PipeName);
-      Arr.AddElement(Item);
-    end;
+      begin
+        Item := TJSONObject.Create;
+        Item.AddPair('pid', TJSONNumber.Create(Targets[i].Pid));
+        Item.AddPair('pipe', Targets[i].PipeName);
+        Arr.AddElement(Item);
+      end;
 
   Root := TJSONObject.Create;
   try
@@ -110,55 +110,3 @@ initialization
 
 
 end.
-
-
-
-//Rule: if/then/else are always on the same column!
-procedure Demo;
-begin
-  if
-  then
-  else
-    if
-    then
-    else
-end;
-
-
-procedure Demo;
-begin
-  if
-  then
-  else
-    if
-    then
-      begin
-
-      end
-    else
-end;
-
-
-procedure Demo;
-begin
-  if
-  then
-    begin
-
-    end
-  else
-    if
-    then
-    else
-end;
-
-
-//Exceptions: short lines:
-
-function AddNullToStr(CONST Path: string): string;
-begin
-  Result:= '';
-  if Path = '' then EXIT;
-  ...
-end;
-

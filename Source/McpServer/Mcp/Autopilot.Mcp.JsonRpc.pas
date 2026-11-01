@@ -1,4 +1,4 @@
-unit Autopilot.Mcp.JsonRpc;
+﻿unit Autopilot.Mcp.JsonRpc;
 
 {=============================================================================================================
    2026.11.01
@@ -20,9 +20,9 @@ unit Autopilot.Mcp.JsonRpc;
    We clone the raw TJSONValue so a number stays a number and a string stays a string.
 =============================================================================================================}
 
-interface
+INTERFACE
 
-const
+CONST
   { The version of Autopilot.Mcp.exe: serverInfo.version in the initialize answer, the startup log line and the Version field of a crash report.
     Keep it equal to FileVersion in Autopilot.Mcp.dproj (Win32).
     Separate from Autopilot.Bridge.Core.BridgeVersion, which the bridge sends in its hello frame. }
@@ -97,8 +97,8 @@ type
 
 class procedure TToolCache.EnsureMap;
 begin
-  if FMap = nil then
-    FMap := TDictionary<String, IMCPTool>.Create;
+  if FMap = nil
+  then FMap := TDictionary<String, IMCPTool>.Create;
 end;
 
 
@@ -152,7 +152,7 @@ var
   V: String;
 begin
   for V in GSupportedVersions do
-    if V = AVersion then Exit(true);
+    if V = AVersion then Exit(TRUE);
   Result := false;
 end;
 
@@ -163,13 +163,13 @@ end;
 function CloneIdOrNull(AIdNode: TJSONValue): TJSONValue;
 begin
   if AIdNode = nil
-    then Result := TJSONNull.Create
-    else Result := AIdNode.Clone as TJSONValue;
+  then Result := TJSONNull.Create
+  else Result := AIdNode.Clone as TJSONValue;
 end;
 
 
-// Build the {jsonrpc:'2.0', id, result:<inner>} envelope.
-// Takes ownership of AInner and ACloneOfId.
+{ Build the (jsonrpc:'2.0', id, result:<inner>) envelope.
+  Takes ownership of AInner and ACloneOfId. }
 function BuildOkEnvelope(ACloneOfId: TJSONValue; AInner: TJSONValue): String;
 var
   Resp: TJSONObject;
@@ -186,8 +186,8 @@ begin
 end;
 
 
-// Build the {jsonrpc:'2.0', id, error:{code,message}} envelope.
-// Takes ownership of ACloneOfId.
+{ Build the (jsonrpc:'2.0', id, error:(code,message)) envelope.
+  Takes ownership of ACloneOfId. }
 function BuildErrorEnvelope(ACloneOfId: TJSONValue; ACode: Integer; const AMsg: String): String;
 var
   Resp, Err: TJSONObject;
@@ -217,8 +217,8 @@ begin
   Result := MCP_PROTOCOL_VERSION;
   if AParams = nil then Exit;
   Node := AParams.GetValue('protocolVersion');
-  if IsJsonText(Node) and IsSupportedVersion(Node.Value) then
-    Result := Node.Value;
+  if IsJsonText(Node) and IsSupportedVersion(Node.Value)
+  then Result := Node.Value;
 end;
 
 
@@ -258,23 +258,23 @@ begin
 
   Names := TMCPRegistry.GetToolNames;
   for Name in Names do
-  begin
-    Tool := ResolveCachedTool(Name);
-    if Tool = nil then Continue; // shouldn't happen — Names came from the registry
+    begin
+      Tool := ResolveCachedTool(Name);
+      if Tool = nil then Continue; // shouldn't happen — Names came from the registry
 
-    Entry := TJSONObject.Create;
-    Entry.AddPair('name', Tool.Name);
-    Entry.AddPair('description', Tool.Description);
-    // Tool.InputSchema returns a fresh TJSONObject — we own it now.
-    Entry.AddPair('inputSchema', Tool.InputSchema);
-    ToolsArr.AddElement(Entry);
-  end;
+      Entry := TJSONObject.Create;
+      Entry.AddPair('name', Tool.Name);
+      Entry.AddPair('description', Tool.Description);
+      // Tool.InputSchema returns a fresh TJSONObject — we own it now.
+      Entry.AddPair('inputSchema', Tool.InputSchema);
+      ToolsArr.AddElement(Entry);
+    end;
 end;
 
 
-// True iff the tool's response string represents an error.
-// Tries to parse it as JSON and looks at the conventional shape {ok:false} or {error:{...}}.
-// Falls back to the heuristic of "starts with Error:" if the string is not parseable JSON — that catches exception messages we wrap with that prefix in BuildToolCallResult.
+{ True iff the tool's response string represents an error.
+  Tries to parse it as JSON and looks at the conventional shape (ok:false) or (error:(...)).
+  Falls back to the heuristic of "starts with Error:" if the string is not parseable JSON — that catches exception messages we wrap with that prefix in BuildToolCallResult. }
 function DetectIsError(const AText: String): Boolean;
 var
   Parsed: TJSONValue;
@@ -284,15 +284,13 @@ begin
   Parsed := TJSONObject.ParseJSONValue(AText);
   try
     if Parsed is TJSONObject then
-    begin
-      Obj := TJSONObject(Parsed);
-      OkVal := Obj.GetValue('ok');
-      if (OkVal is TJSONBool) and (not TJSONBool(OkVal).AsBoolean) then
-        Exit(true);
-      if Obj.GetValue('error') <> nil then
-        Exit(true);
-      Exit(false);
-    end;
+      begin
+        Obj := TJSONObject(Parsed);
+        OkVal := Obj.GetValue('ok');
+        if (OkVal is TJSONBool) and (not TJSONBool(OkVal).AsBoolean) then Exit(true);
+        if Obj.GetValue('error') <> nil then Exit(true);
+        Exit(false);
+      end;
   finally
     Parsed.Free;
   end;
@@ -317,17 +315,17 @@ begin
 
   Outer := TJSONObject.Create;
   Outer.AddPair('content', Arr);
-  if AIsError then
-    Outer.AddPair('isError', TJSONBool.Create(true));
+  if AIsError
+  then Outer.AddPair('isError', TJSONBool.Create(true));
   Result := Outer;
 end;
 
 
-// The tools/call result of a tool that returned a picture:
-//   {content:[{type:'image', data:<base64>, mimeType:<m>}, {type:'text', text:<rest of the answer>}]}
-// The image block is the MCP "Image Content" shape.
-// It exists in every protocol version we negotiate: https://modelcontextprotocol.io/specification/2024-11-05/server/tools and .../2025-06-18/server/tools, section "Image Content" (read 2026-10-06).
-// A host shows that block as a picture; base64 inside a text block reaches the model as text.
+{ The tools/call result of a tool that returned a picture:
+    (content:[(type:'image', data:<base64>, mimeType:<m>), (type:'text', text:<rest of the answer>)])
+  The image block is the MCP "Image Content" shape.
+  It exists in every protocol version we negotiate: https://modelcontextprotocol.io/specification/2024-11-05/server/tools and .../2025-06-18/server/tools, section "Image Content" (read 2026-10-06).
+  A host shows that block as a picture; base64 inside a text block reaches the model as text. }
 function WrapToolCallImage(const AImageBase64, AMimeType, AText: String): TJSONObject;
 var
   Arr      : TJSONArray;
@@ -376,33 +374,34 @@ begin
   NameNode := nil;
   ArgsNode := nil;
   if AParams <> nil then
-  begin
-    NameNode := AParams.GetValue('name');
-    ArgsNode := AParams.GetValue('arguments');
-  end;
+    begin
+      NameNode := AParams.GetValue('name');
+      ArgsNode := AParams.GetValue('arguments');
+    end;
 
-  if not IsJsonText(NameNode) or (NameNode.Value = '') then
-    raise EMcpInvalidParams.Create('Invalid params: tools/call needs "name", the name of a tool as a string');
+  if not IsJsonText(NameNode) or (NameNode.Value = '')
+  then raise EMcpInvalidParams.Create('Invalid params: tools/call needs "name", the name of a tool as a string');
   ToolName := NameNode.Value;
 
-  if (ArgsNode <> nil) and not (ArgsNode is TJSONNull) and not (ArgsNode is TJSONObject) then
-    raise EMcpInvalidParams.Create('Invalid params: tools/call "arguments" must be an object');
+  if (ArgsNode <> nil) and not (ArgsNode is TJSONNull) and not (ArgsNode is TJSONObject)
+  then raise EMcpInvalidParams.Create('Invalid params: tools/call "arguments" must be an object');
 
   Tool := ResolveCachedTool(ToolName);
-  if Tool = nil then
-    raise EMcpInvalidParams.Create('Unknown tool: ' + ToolName);
+  if Tool = nil
+  then raise EMcpInvalidParams.Create('Unknown tool: ' + ToolName);
 
   // A missing "arguments" and a JSON null both mean: no arguments, an empty object.
-  if ArgsNode is TJSONObject then
-  begin
-    Args      := TJSONObject(ArgsNode);
-    ArgsOwned := FALSE;
-  end
+  if ArgsNode is TJSONObject
+  then
+    begin
+      Args      := TJSONObject(ArgsNode);
+      ArgsOwned := FALSE;
+    end
   else
-  begin
-    Args      := TJSONObject.Create;
-    ArgsOwned := TRUE;
-  end;
+    begin
+      Args      := TJSONObject.Create;
+      ArgsOwned := TRUE;
+    end;
 
   try
     try
@@ -418,7 +417,8 @@ begin
     then Result := WrapToolCallImage(ImageData, MimeType, Text)
     else Result := WrapToolCallContent(Text, DetectIsError(Text));
   finally
-    if ArgsOwned then FreeAndNil(Args);
+    if ArgsOwned
+    then FreeAndNil(Args);
   end;
 end;
 
@@ -435,63 +435,59 @@ var
   Inner    : TJSONObject;
 begin
   Parsed := TJSONObject.ParseJSONValue(ALine);
-  if Parsed = nil then
-    Exit(BuildErrorEnvelope(TJSONNull.Create, ErrParseError, 'Parse error'));
+  if Parsed = nil then Exit(BuildErrorEnvelope(TJSONNull.Create, ErrParseError, 'Parse error'));
 
   try
-    if not (Parsed is TJSONObject) then
-      // Batch arrays land here too — MCP doesn't use batches; reject.
-      Exit(BuildErrorEnvelope(TJSONNull.Create, ErrInvalidRequest, 'Invalid request: expected JSON object'));
+    // Batch arrays land here too — MCP doesn't use batches; reject.
+    if not (Parsed is TJSONObject) then Exit(BuildErrorEnvelope(TJSONNull.Create, ErrInvalidRequest, 'Invalid request: expected JSON object'));
 
     Req := TJSONObject(Parsed);
 
     MethodVal := Req.GetValue('method');
-    if not IsJsonText(MethodVal) then
-      Exit(BuildErrorEnvelope(CloneIdOrNull(Req.GetValue('id')), ErrInvalidRequest, 'Invalid request: missing "method"'));
+    if not IsJsonText(MethodVal) then Exit(BuildErrorEnvelope(CloneIdOrNull(Req.GetValue('id')), ErrInvalidRequest, 'Invalid request: missing "method"'));
     Method := MethodVal.Value;
 
     IdNode := Req.GetValue('id');  // owned by Parsed — do not free
 
     ParamsVal := Req.GetValue('params');
     if ParamsVal is TJSONObject
-      then Params := TJSONObject(ParamsVal)
-      else Params := nil;
+    then Params := TJSONObject(ParamsVal)
+    else Params := nil;
 
     // Notifications: no id, no response. Spec uses 'notifications/initialized'.
     if IdNode = nil then
-    begin
-      if Method = 'notifications/initialized' then
-        BridgeLogInfo('mcp', 'client initialized');
-      Exit('');
-    end;
+      begin
+        if Method = 'notifications/initialized'
+        then BridgeLogInfo('mcp', 'client initialized');
+        Exit('');
+      end;
 
     try
-      if Method = 'initialize' then
-        Inner := BuildInitializeResult(Params)
+      if Method = 'initialize'
+      then Inner := BuildInitializeResult(Params)
       else
-        if Method = 'ping' then
-          Inner := TJSONObject.Create
+        if Method = 'ping'
+        then Inner := TJSONObject.Create
         else
-          if Method = 'tools/list' then
-            Inner := BuildToolListResult
+          if Method = 'tools/list'
+          then Inner := BuildToolListResult
           else
-            if Method = 'tools/call' then
-              Inner := BuildToolCallResult(Params)
-            else
-              Exit(BuildErrorEnvelope(CloneIdOrNull(IdNode), ErrMethodNotFound, 'Method not found: ' + Method));
+            if Method = 'tools/call'
+            then Inner := BuildToolCallResult(Params)
+            else Exit(BuildErrorEnvelope(CloneIdOrNull(IdNode), ErrMethodNotFound, 'Method not found: ' + Method));
 
       Result := BuildOkEnvelope(CloneIdOrNull(IdNode), Inner);
     except
       on E: EMcpInvalidParams do
-      begin
-        BridgeLogWarn('mcp', 'dispatch ' + Method + ': invalid params: ' + E.Message);
-        Result := BuildErrorEnvelope(CloneIdOrNull(IdNode), ErrInvalidParams, E.Message);
-      end;
+        begin
+          BridgeLogWarn('mcp', 'dispatch ' + Method + ': invalid params: ' + E.Message);
+          Result := BuildErrorEnvelope(CloneIdOrNull(IdNode), ErrInvalidParams, E.Message);
+        end;
       on E: Exception do
-      begin
-        BridgeLogError('mcp', 'dispatch ' + Method + ': ' + E.ClassName + ': ' + E.Message);
-        Result := BuildErrorEnvelope(CloneIdOrNull(IdNode), ErrInternal, E.ClassName + ': ' + E.Message);
-      end;
+        begin
+          BridgeLogError('mcp', 'dispatch ' + Method + ': ' + E.ClassName + ': ' + E.Message);
+          Result := BuildErrorEnvelope(CloneIdOrNull(IdNode), ErrInternal, E.ClassName + ': ' + E.Message);
+        end;
     end;
   finally
     Parsed.Free;

@@ -86,10 +86,10 @@ begin
       Ini.WriteInteger('Usage', 'Count', Count);
 
       if (Count > BookPromoAfterUses) and (not Ini.ReadBool('Usage', 'BookPromoShown', FALSE)) then
-      begin
-        BridgeLogInfo('book', Book5Hint);
-        Ini.WriteBool('Usage', 'BookPromoShown', TRUE);
-      end;
+        begin
+          BridgeLogInfo('book', Book5Hint);
+          Ini.WriteBool('Usage', 'BookPromoShown', TRUE);
+        end;
 
       Ini.UpdateFile;
     finally

@@ -51,17 +51,17 @@ function BridgeWiringRecipe: String;
   Raises ETargetNotRunning if no target (or none with APid) runs; a plain Exception if several run. }
 function ResolveTargetPipe(APid: Cardinal; out APipeName: String): Boolean;
 
-// Build a request envelope: {id, cmd, args, timeoutMs?}.
-// AArgs is consumed (we hand it to the JSON tree; caller no longer owns it).
-// Pass ATimeoutMs > 0 to add a top-level timeoutMs field — the bridge worker will use it as its main-thread wait timeout instead of the per-command default.
+{ Build a request envelope: (id, cmd, args, timeoutMs?).
+  AArgs is consumed (we hand it to the JSON tree; caller no longer owns it).
+  Pass ATimeoutMs > 0 to add a top-level timeoutMs field — the bridge worker will use it as its main-thread wait timeout instead of the per-command default. }
 function BuildRequest(AId: Int64; const ACmd: String; AArgs: TJSONObject; ATimeoutMs: Cardinal = 0): TJSONObject;
 
-// Run a request through the resolved target, return the response as a compact JSON string.
-// Frees the response object internally so callers don't deal with ownership.
-// On nil request raises; on transport failure raises; on bridge-level errors, returns the {ok:false,error:{...}} JSON as a string (the caller can parse if needed).
-// Exception: an I/O-deadline expiry (target accepted the connection but stopped responding — ETargetNotResponding from either transport client) is NOT re-raised; it comes back as the documented {ok:false,error:{code:-32098,message:...}} envelope, same shape as a bridge error.
-// The same holds for ETargetNotRunning (no target at all): it comes back as the -32099 envelope, whose message carries BridgeWiringRecipe.
-// ATimeoutMs governs the pipe-side wait; should be >= any timeoutMs embedded in ARequest so the pipe doesn't time out before the bridge does.
+{ Run a request through the resolved target, return the response as a compact JSON string.
+  Frees the response object internally so callers don't deal with ownership.
+  On nil request raises; on transport failure raises; on bridge-level errors, returns the (ok:false,error:(...)) JSON as a string (the caller can parse if needed).
+  Exception: an I/O-deadline expiry (target accepted the connection but stopped responding — ETargetNotResponding from either transport client) is NOT re-raised; it comes back as the documented (ok:false,error:(code:-32098,message:...)) envelope, same shape as a bridge error.
+  The same holds for ETargetNotRunning (no target at all): it comes back as the -32099 envelope, whose message carries BridgeWiringRecipe.
+  ATimeoutMs governs the pipe-side wait; should be >= any timeoutMs embedded in ARequest so the pipe doesn't time out before the bridge does. }
 function RunCommandOnTarget(APid: Cardinal; ARequest: TJSONObject; ATimeoutMs: Cardinal = 0): String;
 
 
@@ -119,15 +119,15 @@ begin
   APipeName := '';
   Targets := ListTargets;
   if APid <> 0 then
-  begin
-    for i := 0 to High(Targets) do
-      if Targets[i].Pid = APid then
-      begin
-        APipeName := Targets[i].PipeName;
-        EXIT(TRUE);
-      end;
-    raise ETargetNotRunning.Create('No Autopilot target with pid ' + UIntToStr(APid) + ' is running.');
-  end;
+    begin
+      for i := 0 to High(Targets) do
+        if Targets[i].Pid = APid then
+          begin
+            APipeName := Targets[i].PipeName;
+            EXIT(TRUE);
+          end;
+      raise ETargetNotRunning.Create('No Autopilot target with pid ' + UIntToStr(APid) + ' is running.');
+    end;
   if Length(Targets) = 0
   then raise ETargetNotRunning.Create('No Autopilot target is running.');
   if Length(Targets) > 1
@@ -156,7 +156,8 @@ var
   Root, ErrObj: TJSONObject;
   IdVal: Int64;
 begin
-  if not TryJsonInt64(ARequest.GetValue('id'), IdVal) then IdVal := 0;
+  if not TryJsonInt64(ARequest.GetValue('id'), IdVal)
+  then IdVal := 0;
   Root := TJSONObject.Create;
   try
     Root.AddPair('id', TJSONNumber.Create(IdVal));
@@ -180,8 +181,8 @@ var
   CmdValue: TJSONValue;
   T0: UInt64;
 begin
-  if ARequest = nil then
-    raise Exception.Create('RunCommandOnTarget: ARequest is nil');
+  if ARequest = nil
+  then raise Exception.Create('RunCommandOnTarget: ARequest is nil');
   CmdName := '?';
   CmdValue := ARequest.GetValue('cmd');
   if CmdValue is TJSONString
@@ -194,57 +195,59 @@ begin
     { Transport selection.
       Default (tmPipe) is the original Windows path, byte for byte.
       tmAdbSocket (set by `--target adb:<port>`) reaches an Android target over the adb-forwarded loopback port — no pipe, no discovery file. }
-    if CurrentTargetMode = tmAdbSocket then
-    begin
-      BridgeLogInfo('mcp', 'in  cmd=' + CmdName + ' adb-socket port=' + IntToStr(AdbHostPort) + ' timeoutMs=' + IntToStr(PipeTimeout));
-      T0 := GetTickCount64;
-      try
-        Resp := CallTargetSocket(AdbHostPort, ARequest, PipeTimeout);
-      except
-        on E: ETargetNotRunning do
-        begin
-          BridgeLogWarn('mcp', 'cmd=' + CmdName + ' target-not-running (adb-socket): ' + E.Message);
-          Exit(BuildErrorEnvelope(ARequest, ErrTargetNotRunning, E.Message + sLineBreak + AdbTargetHint + sLineBreak + BridgeWiringRecipe));
+    if CurrentTargetMode = tmAdbSocket
+    then
+      begin
+        BridgeLogInfo('mcp', 'in  cmd=' + CmdName + ' adb-socket port=' + IntToStr(AdbHostPort) + ' timeoutMs=' + IntToStr(PipeTimeout));
+        T0 := GetTickCount64;
+        try
+          Resp := CallTargetSocket(AdbHostPort, ARequest, PipeTimeout);
+        except
+          on E: ETargetNotRunning do
+            begin
+              BridgeLogWarn('mcp', 'cmd=' + CmdName + ' target-not-running (adb-socket): ' + E.Message);
+              Exit(BuildErrorEnvelope(ARequest, ErrTargetNotRunning, E.Message + sLineBreak + AdbTargetHint + sLineBreak + BridgeWiringRecipe));
+            end;
+          on E: ETargetNotResponding do
+            begin
+              BridgeLogError('mcp', 'cmd=' + CmdName + ' target-not-responding (adb-socket): ' + E.Message);
+              Exit(BuildErrorEnvelope(ARequest, ErrTargetNotResponding, E.Message));   // outer finally still frees ARequest
+            end;
+          on E: Exception do
+            begin
+              BridgeLogError('mcp', 'cmd=' + CmdName + ' transport-fail (adb-socket): ' + E.ClassName + ': ' + E.Message);
+              raise;
+            end;
         end;
-        on E: ETargetNotResponding do
-        begin
-          BridgeLogError('mcp', 'cmd=' + CmdName + ' target-not-responding (adb-socket): ' + E.Message);
-          Exit(BuildErrorEnvelope(ARequest, ErrTargetNotResponding, E.Message));   // outer finally still frees ARequest
+      end
+    else
+      begin
+        try
+          ResolveTargetPipe(APid, PipeName);
+        except
+          on E: ETargetNotRunning do
+            begin
+              BridgeLogWarn('mcp', 'cmd=' + CmdName + ' target-not-running: ' + E.Message);
+              Exit(BuildErrorEnvelope(ARequest, ErrTargetNotRunning, E.Message + sLineBreak + BridgeWiringRecipe));
+            end;
         end;
-        on E: Exception do
-        begin
-          BridgeLogError('mcp', 'cmd=' + CmdName + ' transport-fail (adb-socket): ' + E.ClassName + ': ' + E.Message);
-          raise;
+        BridgeLogInfo('mcp', 'in  cmd=' + CmdName + ' pid=' + IntToStr(APid) + ' timeoutMs=' + IntToStr(PipeTimeout));
+        T0 := GetTickCount64;
+        try
+          Resp := CallTarget(PipeName, ARequest, PipeTimeout);
+        except
+          on E: ETargetNotResponding do
+            begin
+              BridgeLogError('mcp', 'cmd=' + CmdName + ' target-not-responding: ' + E.Message);
+              Exit(BuildErrorEnvelope(ARequest, ErrTargetNotResponding, E.Message));   // outer finally still frees ARequest
+            end;
+          on E: Exception do
+            begin
+              BridgeLogError('mcp', 'cmd=' + CmdName + ' transport-fail: ' + E.ClassName + ': ' + E.Message);
+              raise;
+            end;
         end;
       end;
-    end
-    else begin
-      try
-        ResolveTargetPipe(APid, PipeName);
-      except
-        on E: ETargetNotRunning do
-        begin
-          BridgeLogWarn('mcp', 'cmd=' + CmdName + ' target-not-running: ' + E.Message);
-          Exit(BuildErrorEnvelope(ARequest, ErrTargetNotRunning, E.Message + sLineBreak + BridgeWiringRecipe));
-        end;
-      end;
-      BridgeLogInfo('mcp', 'in  cmd=' + CmdName + ' pid=' + IntToStr(APid) + ' timeoutMs=' + IntToStr(PipeTimeout));
-      T0 := GetTickCount64;
-      try
-        Resp := CallTarget(PipeName, ARequest, PipeTimeout);
-      except
-        on E: ETargetNotResponding do
-        begin
-          BridgeLogError('mcp', 'cmd=' + CmdName + ' target-not-responding: ' + E.Message);
-          Exit(BuildErrorEnvelope(ARequest, ErrTargetNotResponding, E.Message));   // outer finally still frees ARequest
-        end;
-        on E: Exception do
-        begin
-          BridgeLogError('mcp', 'cmd=' + CmdName + ' transport-fail: ' + E.ClassName + ': ' + E.Message);
-          raise;
-        end;
-      end;
-    end;
     try
       { The very first successful tool call on this machine carries the licence reminder.
         It rides an extra top-level field rather than the log file the old nudge used, because a tool response is the one place the driving AI is guaranteed to read.

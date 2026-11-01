@@ -60,8 +60,8 @@ begin
     tkString, tkLString, tkWString, tkUString: Result := 'string';
     tkEnumeration:
       if PropType.Handle = TypeInfo(Boolean)
-        then Result := 'boolean'
-        else Result := 'string';
+      then Result := 'boolean'
+      else Result := 'string';
   else
     raise EArgumentException.Create('Parameter "' + LowerCase(AProp.Name) + '": its type ' + PropType.Name + ' is not supported in a tool params class.');
   end;
@@ -75,8 +75,7 @@ function EnumListOf(AType: TRttiType): TJSONArray;
 var
   Name: String;
 begin
-  if not (AType is TRttiEnumerationType) or (AType.Handle = TypeInfo(Boolean)) then
-    EXIT(NIL);
+  if not (AType is TRttiEnumerationType) or (AType.Handle = TypeInfo(Boolean)) then EXIT(NIL);
 
   Result := TJSONArray.Create;
   for Name in EnumValueNames(TRttiEnumerationType(AType)) do
@@ -118,35 +117,35 @@ begin
       try
         RttiType := Ctx.GetType(ACls);
         for Prop in RttiType.GetProperties do
-        begin
-          // A property without a writer is irrelevant — we can't fill it from JSON.
-          if not (Prop.IsReadable and Prop.IsWritable) then Continue;
+          begin
+            // A property without a writer is irrelevant — we can't fill it from JSON.
+            if not (Prop.IsReadable and Prop.IsWritable) then Continue;
 
-          Name       := LowerCase(Prop.Name);
-          PropSchema := TJSONObject.Create;
-          Props.AddPair(Name, PropSchema);
-          PropSchema.AddPair('type', JsonTypeOf(Prop));
+            Name       := LowerCase(Prop.Name);
+            PropSchema := TJSONObject.Create;
+            Props.AddPair(Name, PropSchema);
+            PropSchema.AddPair('type', JsonTypeOf(Prop));
 
-          EnumList := EnumListOf(Prop.PropertyType);
-          if EnumList <> NIL then
-            PropSchema.AddPair('enum', EnumList);
+            EnumList := EnumListOf(Prop.PropertyType);
+            if EnumList <> NIL
+            then PropSchema.AddPair('enum', EnumList);
 
-          Desc := DescriptionOf(Prop);
-          if Desc <> '' then
-            PropSchema.AddPair('description', Desc);
+            Desc := DescriptionOf(Prop);
+            if Desc <> ''
+            then PropSchema.AddPair('description', Desc);
 
-          if not IsOptionalProperty(Prop) then
-            Required.Add(Name);
-        end;
+            if not IsOptionalProperty(Prop)
+            then Required.Add(Name);
+          end;
       finally
         Ctx.Free;
       end;
 
       if Required.Count > 0 then
-      begin
-        Result.AddPair('required', Required);
-        Required := NIL;   // Result owns it now
-      end;
+        begin
+          Result.AddPair('required', Required);
+          Required := NIL;   // Result owns it now
+        end;
     finally
       FreeAndNil(Required);
     end;

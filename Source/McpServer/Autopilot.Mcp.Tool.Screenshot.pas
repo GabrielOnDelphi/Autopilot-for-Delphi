@@ -97,17 +97,17 @@ begin
   n := 0;
   for i := 1 to Length(AText) do
     if AText[i] > ' ' then
-    begin
-      Inc(n);
-      Result[n] := AText[i];
-    end;
+      begin
+        Inc(n);
+        Result[n] := AText[i];
+      end;
   SetLength(Result, n);
 end;
 
 
-// AText is the bridge's answer: {"id":..,"ok":true,"result":{"form":..,"width":..,"height":..,"encoding":"base64","format":"png","image":"<base64>"}}, plus "licenseNotice" on the first answer of an installation.
-// Only "image" leaves AText.
-// FALSE (AText untouched) for any answer without a picture, a failed capture or a -3209x envelope among them.
+{ AText is the bridge's answer: ("id":..,"ok":true,"result":("form":..,"width":..,"height":..,"encoding":"base64","format":"png","image":"<base64>")), plus "licenseNotice" on the first answer of an installation.
+  Only "image" leaves AText.
+  FALSE (AText untouched) for any answer without a picture, a failed capture or a -3209x envelope among them. }
 function TScreenshotTool.ExtractImage(var AText: String; OUT AImageBase64, AMimeType: String): Boolean;
 var
   Root, Res, V: TJSONValue;

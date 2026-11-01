@@ -71,8 +71,8 @@ begin
   { Lazy lock creation.
     We deliberately avoid initialization sections (project rule).
     First-call race is theoretically possible but practically nil: the bridge calls BridgeLog from main-thread StartBridge before any worker threads exist, so the lock is created before any concurrent caller. }
-  if GLogLock = NIL then
-    GLogLock := TCriticalSection.Create;
+  if GLogLock = NIL
+  then GLogLock := TCriticalSection.Create;
 end;
 
 
@@ -88,8 +88,8 @@ begin
     TPath.GetCachePath = getCacheDir(): internal app cache, always present, matches `run-as <pkg> cat cache/Autopilot/<file>.log`. }
   Folder  := TPath.Combine(TPath.GetCachePath, 'Autopilot');
   {$ENDIF}
-  if not TDirectory.Exists(Folder) then
-    TDirectory.CreateDirectory(Folder);
+  if not TDirectory.Exists(Folder)
+  then TDirectory.CreateDirectory(Folder);
   ExeBase := TPath.GetFileNameWithoutExtension(ParamStr(0));
   {$IFDEF MSWINDOWS}
   GLogPath := TPath.Combine(Folder, ExeBase + '-' + IntToStr(GetCurrentProcessId) + '.log');
@@ -127,14 +127,13 @@ begin
     The Win32 path's cross-process atomic append has no equivalent need here - on Android one app owns its private cache dir, so in-process serialization is enough.
     A raise lands in BridgeLog's outer handler (logger must not crash the host). }
   Bytes := TEncoding.UTF8.GetBytes(ALine + #13#10);
-  if TFile.Exists(GLogPath) then
-    FS := TFileStream.Create(GLogPath, fmOpenWrite or fmShareDenyNone)
-  else
-    FS := TFileStream.Create(GLogPath, fmCreate or fmShareDenyNone);
+  if TFile.Exists(GLogPath)
+  then FS := TFileStream.Create(GLogPath, fmOpenWrite or fmShareDenyNone)
+  else FS := TFileStream.Create(GLogPath, fmCreate or fmShareDenyNone);
   try
     FS.Seek(0, soEnd);
-    if Length(Bytes) > 0 then
-      FS.WriteBuffer(Bytes[0], Length(Bytes));
+    if Length(Bytes) > 0
+    then FS.WriteBuffer(Bytes[0], Length(Bytes));
   finally
     FreeAndNil(FS);
   end;
@@ -194,8 +193,8 @@ end;
 
 procedure BridgeLogShutdown;
 begin
-  if GLogLock <> NIL then
-    FreeAndNil(GLogLock);
+  if GLogLock <> NIL
+  then FreeAndNil(GLogLock);
   GLogReady := FALSE;
   GLogPath  := '';
 end;

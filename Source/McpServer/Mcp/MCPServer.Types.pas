@@ -4,7 +4,8 @@
    2026.11.01
    www.GabrielMoraru.com
 --------------------------------------------------------------------------------------------------------------
-   Protocol constants and the two attributes our tool params classes use, plus the two RTTI helpers that the schema generator and the serializer share (so the schema and the argument checks agree).
+   Protocol constants and the two attributes our tool params classes use,
+   plus the two RTTI helpers that the schema generator and the serializer share (so the schema and the argument checks agree).
 
    Keeps the GDK unit name so the nine Autopilot.Mcp.Tool.* units recompile unchanged.
    We stripped GDK's capability/manager interfaces, response classes, and SchemaEnumAttribute — none are referenced by our code.
@@ -59,8 +60,7 @@ var
   Attr: TCustomAttribute;
 begin
   for Attr in AProp.GetAttributes do
-    if Attr is OptionalAttribute then
-      EXIT(TRUE);
+    if Attr is OptionalAttribute then EXIT(TRUE);
   Result := FALSE;
 end;
 

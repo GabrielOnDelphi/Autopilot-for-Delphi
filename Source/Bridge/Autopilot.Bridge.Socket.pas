@@ -73,25 +73,25 @@ begin
     Runs after the worker thread exited, so no close-vs-accept race is possible here.
     The abstract name vanishes from the kernel namespace when the listen fd closes. }
   if FConnFd >= 0 then
-  begin
-    __close(FConnFd);
-    FConnFd := -1;
-  end;
+    begin
+      __close(FConnFd);
+      FConnFd := -1;
+    end;
   if FListenFd >= 0 then
-  begin
-    __close(FListenFd);
-    FListenFd := -1;
-  end;
+    begin
+      __close(FListenFd);
+      FListenFd := -1;
+    end;
   if FWakePipe.ReadDes >= 0 then
-  begin
-    __close(FWakePipe.ReadDes);
-    FWakePipe.ReadDes := -1;
-  end;
+    begin
+      __close(FWakePipe.ReadDes);
+      FWakePipe.ReadDes := -1;
+    end;
   if FWakePipe.WriteDes >= 0 then
-  begin
-    __close(FWakePipe.WriteDes);
-    FWakePipe.WriteDes := -1;
-  end;
+    begin
+      __close(FWakePipe.WriteDes);
+      FWakePipe.WriteDes := -1;
+    end;
   inherited;
 end;
 
@@ -110,29 +110,29 @@ begin
   { The self-pipe is created once and survives even a failed listener attempt, so a WakeAndStop arriving while the worker is in its retry-sleep still has a live write end on the next pass. }
   if FWakePipe.ReadDes < 0 then
     if pipe(FWakePipe) <> 0 then
-    begin
-      Err := errno;
-      FWakePipe.ReadDes  := -1;
-      FWakePipe.WriteDes := -1;
-      raise EOSError.Create('Bridge socket: pipe() failed: ' + IntToStr(Err) + ' (' + SysErrorMessage(Err) + ')');
-    end;
+      begin
+        Err := errno;
+        FWakePipe.ReadDes  := -1;
+        FWakePipe.WriteDes := -1;
+        raise EOSError.Create('Bridge socket: pipe() failed: ' + IntToStr(Err) + ' (' + SysErrorMessage(Err) + ')');
+      end;
 
   NameBytes := TEncoding.UTF8.GetBytes(FEndpoint);
   { Abstract form: sun_path[0] = NUL, the name in sun_path[1..].
     Max name length is therefore UNIX_PATH_MAX-1 bytes.
     'Autopilot.<pid>' is tiny; this guards a caller-supplied endpoint. }
-  if Length(NameBytes) > UNIX_PATH_MAX - 1 then
-    raise EArgumentException.Create('Bridge socket: abstract name longer than ' + IntToStr(UNIX_PATH_MAX - 1) + ' bytes: ' + FEndpoint);
-  if Length(NameBytes) = 0 then
-    raise EArgumentException.Create('Bridge socket: empty abstract name');
+  if Length(NameBytes) > UNIX_PATH_MAX - 1
+  then raise EArgumentException.Create('Bridge socket: abstract name longer than ' + IntToStr(UNIX_PATH_MAX - 1) + ' bytes: ' + FEndpoint);
+  if Length(NameBytes) = 0
+  then raise EArgumentException.Create('Bridge socket: empty abstract name');
 
   FListenFd := socket(AF_UNIX, SOCK_STREAM, 0);
   if FListenFd < 0 then
-  begin
-    Err := errno;
-    FListenFd := -1;
-    raise EOSError.Create('Bridge socket: socket() failed: ' + IntToStr(Err) + ' (' + SysErrorMessage(Err) + ')');
-  end;
+    begin
+      Err := errno;
+      FListenFd := -1;
+      raise EOSError.Create('Bridge socket: socket() failed: ' + IntToStr(Err) + ' (' + SysErrorMessage(Err) + ')');
+    end;
 
   { Non-blocking listener: select() reporting the listener readable does not guarantee accept() won't block - a client that RSTs in between leaves a blocking accept() waiting for the NEXT client, and the self-pipe wake only interrupts select(), not accept() (so shutdown would hang).
     With O_NONBLOCK that case is EAGAIN and AcceptConnection re-selects.
@@ -140,11 +140,11 @@ begin
     The accepted fd does not inherit O_NONBLOCK on Linux/bionic, so served connections stay blocking for TBridgeWire.
     A fcntl failure only degrades to a blocking listener - log and carry on rather than abort the listener. }
   Flags := fcntl(FListenFd, F_GETFL);
-  if Flags = -1 then
-    BridgeLogWarn('bridge', 'fcntl(F_GETFL) failed: ' + IntToStr(errno) + '; listener stays blocking')
+  if Flags = -1
+  then BridgeLogWarn('bridge', 'fcntl(F_GETFL) failed: ' + IntToStr(errno) + '; listener stays blocking')
   else
-    if fcntl(FListenFd, F_SETFL, Flags or O_NONBLOCK) = -1 then
-      BridgeLogWarn('bridge', 'fcntl(F_SETFL,O_NONBLOCK) failed: ' + IntToStr(errno) + '; listener stays blocking');
+    if fcntl(FListenFd, F_SETFL, Flags or O_NONBLOCK) = -1
+    then BridgeLogWarn('bridge', 'fcntl(F_SETFL,O_NONBLOCK) failed: ' + IntToStr(errno) + '; listener stays blocking');
 
   FillChar(Addr, SizeOf(Addr), 0);
   Addr.sun_family := AF_UNIX;
@@ -154,21 +154,21 @@ begin
   AddrLen := socklen_t(SizeOf(sa_family_t) + 1 + Length(NameBytes));
 
   if bind(FListenFd, Psockaddr(@Addr)^, AddrLen) <> 0 then
-  begin
-    Err := errno;
-    __close(FListenFd);
-    FListenFd := -1;
-    { EADDRINUSE = another instance of this exe already owns the name - the same loud rejection FILE_FLAG_FIRST_PIPE_INSTANCE gives on Windows. }
-    raise EOSError.Create('Bridge socket: bind(@' + FEndpoint + ') failed: ' + IntToStr(Err) + ' (' + SysErrorMessage(Err) + ')');
-  end;
+    begin
+      Err := errno;
+      __close(FListenFd);
+      FListenFd := -1;
+      { EADDRINUSE = another instance of this exe already owns the name - the same loud rejection FILE_FLAG_FIRST_PIPE_INSTANCE gives on Windows. }
+      raise EOSError.Create('Bridge socket: bind(@' + FEndpoint + ') failed: ' + IntToStr(Err) + ' (' + SysErrorMessage(Err) + ')');
+    end;
 
   if listen(FListenFd, 1) <> 0 then
-  begin
-    Err := errno;
-    __close(FListenFd);
-    FListenFd := -1;
-    raise EOSError.Create('Bridge socket: listen() failed: ' + IntToStr(Err) + ' (' + SysErrorMessage(Err) + ')');
-  end;
+    begin
+      Err := errno;
+      __close(FListenFd);
+      FListenFd := -1;
+      raise EOSError.Create('Bridge socket: listen() failed: ' + IntToStr(Err) + ' (' + SysErrorMessage(Err) + ')');
+    end;
 
   BridgeLogInfo('bridge', 'abstract socket listening @' + FEndpoint);
 end;
@@ -189,60 +189,60 @@ begin
   { Outer loop so a non-blocking accept() that comes up empty re-arms select() rather than failing the call.
     A client that RSTs between select() readiness and accept() surfaces as EAGAIN here (the listen fd is non-blocking, see StartListening). }
   while TRUE do
-  begin
-    if FStopping then exit(FALSE);
-
-    { Park in select() on the listener and the self-pipe.
-      The self-pipe readying is the clean shutdown signal - no phantom connection to filter, unlike the Windows self-connect wake.
-      (No Posix.Poll binding exists in the D13 RTL; select() over 2 fds is equivalent here.) }
-    repeat
-      __FD_ZERO(ReadSet);
-      __FD_SET(FListenFd, ReadSet);
-      __FD_SET(FWakePipe.ReadDes, ReadSet);
-      MaxFd := FListenFd;
-      if FWakePipe.ReadDes > MaxFd then
-        MaxFd := FWakePipe.ReadDes;
-      Rc := select(MaxFd + 1, @ReadSet, NIL, NIL, NIL);
-    until (Rc >= 0) or (errno <> EINTR);
-
-    if Rc < 0 then
     begin
+      if FStopping then exit(FALSE);
+
+      { Park in select() on the listener and the self-pipe.
+        The self-pipe readying is the clean shutdown signal - no phantom connection to filter, unlike the Windows self-connect wake.
+        (No Posix.Poll binding exists in the D13 RTL; select() over 2 fds is equivalent here.) }
+      repeat
+        __FD_ZERO(ReadSet);
+        __FD_SET(FListenFd, ReadSet);
+        __FD_SET(FWakePipe.ReadDes, ReadSet);
+        MaxFd := FListenFd;
+        if FWakePipe.ReadDes > MaxFd
+        then MaxFd := FWakePipe.ReadDes;
+        Rc := select(MaxFd + 1, @ReadSet, NIL, NIL, NIL);
+      until (Rc >= 0) or (errno <> EINTR);
+
+      if Rc < 0 then
+        begin
+          Err := errno;
+          BridgeLogWarn('bridge', 'select() failed: ' + IntToStr(Err) + ' (' + SysErrorMessage(Err) + ')');
+          exit(FALSE);   // worker retries off Terminated
+        end;
+
+      if __FD_ISSET(FWakePipe.ReadDes, ReadSet) then
+        begin
+          { Drain the wake byte so a (theoretical) spurious wake doesn't hot-loop the next select; WakeAndStop always sets FStopping before writing. }
+          __read(FWakePipe.ReadDes, @WakeByte, 1);
+          exit(FALSE);
+        end;
+
+      PeerLen := SizeOf(Peer);
+      repeat
+        FConnFd := accept(FListenFd, Peer, PeerLen);
+      until (FConnFd >= 0) or (errno <> EINTR);
+
+      if FConnFd >= 0 then Break;   // a real client is connected
+
+      { accept() failed with no client.
+        EAGAIN/EWOULDBLOCK = the pending connection vanished between select() and accept() (or a spurious readiness) - re-arm select() rather than treat it as a hard failure.
+        Any other errno is transient: return FALSE and let the worker loop back through StartListening. }
       Err := errno;
-      BridgeLogWarn('bridge', 'select() failed: ' + IntToStr(Err) + ' (' + SysErrorMessage(Err) + ')');
-      exit(FALSE);   // worker retries off Terminated
-    end;
-
-    if __FD_ISSET(FWakePipe.ReadDes, ReadSet) then
-    begin
-      { Drain the wake byte so a (theoretical) spurious wake doesn't hot-loop the next select; WakeAndStop always sets FStopping before writing. }
-      __read(FWakePipe.ReadDes, @WakeByte, 1);
+      FConnFd := -1;
+      if (Err = EAGAIN) or (Err = EWOULDBLOCK) then Continue;
+      BridgeLogWarn('bridge', 'accept() failed: ' + IntToStr(Err) + ' (' + SysErrorMessage(Err) + ')');
       exit(FALSE);
     end;
 
-    PeerLen := SizeOf(Peer);
-    repeat
-      FConnFd := accept(FListenFd, Peer, PeerLen);
-    until (FConnFd >= 0) or (errno <> EINTR);
-
-    if FConnFd >= 0 then Break;   // a real client is connected
-
-    { accept() failed with no client.
-      EAGAIN/EWOULDBLOCK = the pending connection vanished between select() and accept() (or a spurious readiness) - re-arm select() rather than treat it as a hard failure.
-      Any other errno is transient: return FALSE and let the worker loop back through StartListening. }
-    Err := errno;
-    FConnFd := -1;
-    if (Err = EAGAIN) or (Err = EWOULDBLOCK) then Continue;
-    BridgeLogWarn('bridge', 'accept() failed: ' + IntToStr(Err) + ' (' + SysErrorMessage(Err) + ')');
-    exit(FALSE);
-  end;
-
   { Backstop: a real client can land between Terminate and WakeAndStop; the worker also re-checks Terminated after we return TRUE. }
   if FStopping then
-  begin
-    __close(FConnFd);
-    FConnFd := -1;
-    exit(FALSE);
-  end;
+    begin
+      __close(FConnFd);
+      FConnFd := -1;
+      exit(FALSE);
+    end;
 
   Result := TRUE;
 end;
@@ -259,10 +259,10 @@ end;
 procedure TSocketTransport.RecycleConnection;
 begin
   if FConnFd >= 0 then
-  begin
-    __close(FConnFd);
-    FConnFd := -1;
-  end;
+    begin
+      __close(FConnFd);
+      FConnFd := -1;
+    end;
   // The listener stays alive - the next AcceptConnection just select()s again.
 end;
 
@@ -275,8 +275,8 @@ begin
     The self-pipe needs no thread targeting. }
   FStopping := TRUE;   // FIRST, so the woken AcceptConnection sees it
   WakeByte := 0;
-  if FWakePipe.WriteDes >= 0 then
-    __write(FWakePipe.WriteDes, @WakeByte, 1);
+  if FWakePipe.WriteDes >= 0
+  then __write(FWakePipe.WriteDes, @WakeByte, 1);
   { Close NOTHING here: the worker may sit anywhere between select() and accept(); fds close in Destroy, after the thread join. }
 end;
 

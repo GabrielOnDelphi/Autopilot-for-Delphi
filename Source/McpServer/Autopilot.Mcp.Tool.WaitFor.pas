@@ -77,13 +77,13 @@ begin
 end;
 
 
-// Pull both fields we care about out of one poll response, in ONE parse.
-//
-// AText   — "text" of a successful get_text response; '' on any failure.
-// ANotice — the one-shot 'licenseNotice' that Autopilot.Mcp.ToolBase attaches to the FIRST successful transport round-trip of the installation.
-//           One of wait_for's internal get_text polls can BE that round-trip, and this tool discards the raw poll responses, so without lifting the field out here the notice would be burnt (UsageCounter persists the flag before returning TRUE) with nobody ever seeing it.
-//           Read before the ok test: the field rides a successful transport round-trip, not a successful command, so an ok:false poll carries it too.
-// AErrorCode - error.code of an ok:false response; 0 otherwise.
+{ Pull both fields we care about out of one poll response, in ONE parse.
+
+  AText   — "text" of a successful get_text response; '' on any failure.
+  ANotice — the one-shot 'licenseNotice' that Autopilot.Mcp.ToolBase attaches to the FIRST successful transport round-trip of the installation.
+            One of wait_for's internal get_text polls can BE that round-trip, and this tool discards the raw poll responses, so without lifting the field out here the notice would be burnt (UsageCounter persists the flag before returning TRUE) with nobody ever seeing it.
+            Read before the ok test: the field rides a successful transport round-trip, not a successful command, so an ok:false poll carries it too.
+  AErrorCode - error.code of an ok:false response; 0 otherwise. }
 procedure ParsePollResponse(const AResponseJson: String; OUT AText, ANotice: String; OUT AErrorCode: Integer);
 var
   Root, Result_: TJSONValue;
@@ -105,16 +105,16 @@ begin
 
     V := Obj.GetValue('ok');
     if not (V is TJSONBool) or not TJSONBool(V).AsBoolean then
-    begin
-      V := Obj.GetValue('error');
-      if V is TJSONObject then
       begin
-        V := TJSONObject(V).GetValue('code');
-        if V is TJSONNumber
-        then AErrorCode := TJSONNumber(V).AsInt;
+        V := Obj.GetValue('error');
+        if V is TJSONObject then
+          begin
+            V := TJSONObject(V).GetValue('code');
+            if V is TJSONNumber
+            then AErrorCode := TJSONNumber(V).AsInt;
+          end;
+        EXIT;
       end;
-      EXIT;
-    end;
     Result_ := Obj.GetValue('result');
     if not (Result_ is TJSONObject) then EXIT;
     V := TJSONObject(Result_).GetValue('text');
@@ -168,28 +168,28 @@ begin
   Notice    := '';
 
   while TRUE do
-  begin
-    Args := TJSONObject.Create;
-    Args.AddPair('path', Params.Path);
-    Resp := RunCommandOnTarget(Cardinal(Params.Pid), BuildRequest(1, 'get_text', Args));
-    Inc(PollCount);
-    ParsePollResponse(Resp, Current, PollNotice, PollError);
-    // Keep the FIRST notice seen: it can arrive on any poll, and a later poll must not overwrite it with the '' every other response carries.
-    if (Notice = '') and (PollNotice <> '')
-    then Notice := PollNotice;
-    { No target (-32099): hand the answer, with its setup steps, straight back to the AI instead of polling a target that does not exist until the timeout.
-      Target not responding (-32098: its pipe stayed busy, or it accepted the connection and did not answer): the whole target process is frozen, so more polls only hide the cause behind a matched:false.
-      Hand that answer straight back too. }
-    if (PollError = ErrTargetNotRunning) or (PollError = ErrTargetNotResponding)
-    then EXIT(WithNotice(Resp, Notice));
-    if Current = Params.ExpectedText then
     begin
-      Matched := TRUE;
-      Break;
+      Args := TJSONObject.Create;
+      Args.AddPair('path', Params.Path);
+      Resp := RunCommandOnTarget(Cardinal(Params.Pid), BuildRequest(1, 'get_text', Args));
+      Inc(PollCount);
+      ParsePollResponse(Resp, Current, PollNotice, PollError);
+      // Keep the FIRST notice seen: it can arrive on any poll, and a later poll must not overwrite it with the '' every other response carries.
+      if (Notice = '') and (PollNotice <> '')
+      then Notice := PollNotice;
+      { No target (-32099): hand the answer, with its setup steps, straight back to the AI instead of polling a target that does not exist until the timeout.
+        Target not responding (-32098: its pipe stayed busy, or it accepted the connection and did not answer): the whole target process is frozen, so more polls only hide the cause behind a matched:false.
+        Hand that answer straight back too. }
+      if (PollError = ErrTargetNotRunning) or (PollError = ErrTargetNotResponding)
+      then EXIT(WithNotice(Resp, Notice));
+      if Current = Params.ExpectedText then
+        begin
+          Matched := TRUE;
+          Break;
+        end;
+      if GetTickCount64 >= Deadline then Break;
+      Sleep(PollIv);
     end;
-    if GetTickCount64 >= Deadline then Break;
-    Sleep(PollIv);
-  end;
 
   BridgeLogInfo('mcp', 'wait_for path=' + Params.Path + ' matched=' + BoolToStr(Matched, TRUE) + ' polls=' + IntToStr(PollCount));
 

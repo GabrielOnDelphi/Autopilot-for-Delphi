@@ -18,10 +18,10 @@ uses
 // TRUE on Windows (the only platform with Win32 dialogs the bridge can reach this way).
 function NativeDialogsSupported: Boolean;
 
-// Enumerate native (non-component) top-level dialog windows of THIS process.
-// AExclude = window handles to skip (the framework's own form windows + the app window), so the framework's TForm/TfmxForm windows are not mistaken for OS dialogs.
-// Returns a JSON array (caller owns it); each node is { hwnd, class, caption, text, buttons:[{id,caption,enabled}] }.
-// Empty array when no dialog is up, or always on non-Windows.
+{ Enumerate native (non-component) top-level dialog windows of THIS process.
+  AExclude = window handles to skip (the framework's own form windows + the app window), so the framework's TForm/TfmxForm windows are not mistaken for OS dialogs.
+  Returns a JSON array (caller owns it); each node is ( hwnd, class, caption, text, buttons:[(id,caption,enabled)] ).
+  Empty array when no dialog is up, or always on non-Windows. }
 function EnumerateNativeDialogs(const AExclude: array of NativeUInt): TJSONArray;
 
 { Find a native dialog (ATargetDlg=0 -> the topmost one) and click the button picked by ASelector.
@@ -69,8 +69,7 @@ begin
   SetLength(Result, Integer(Len));
   Copied := 0;
   // wParam counts the terminating null too; String[Len] has an implicit #0 slot beyond Len.
-  if SendMessageTimeout(AWnd, WM_GETTEXT, WPARAM(Len) + 1, LPARAM(PChar(Result)), SMTO_ABORTIFHUNG, TextReadTimeoutMs, @Copied) = 0 then
-    exit('');
+  if SendMessageTimeout(AWnd, WM_GETTEXT, WPARAM(Len) + 1, LPARAM(PChar(Result)), SMTO_ABORTIFHUNG, TextReadTimeoutMs, @Copied) = 0 then exit('');
   SetLength(Result, Integer(Copied));
 end;
 
@@ -115,11 +114,11 @@ var
 begin
   Ctx := PChildCtx(AParam);
   Cls := ClassNameOf(AWnd);
-  if SameText(Cls, 'Button') then
-    Ctx.Buttons.Add(AWnd)
+  if SameText(Cls, 'Button')
+  then Ctx.Buttons.Add(AWnd)
   else
-    if SameText(Cls, 'Static') then
-      Ctx.Statics.Add(AWnd);
+    if SameText(Cls, 'Static')
+    then Ctx.Statics.Add(AWnd);
   Result := TRUE;
 end;
 
@@ -142,8 +141,8 @@ begin
   Ctx := PTopCtx(AParam);
   WndPid := 0;
   GetWindowThreadProcessId(AWnd, WndPid);
-  if (WndPid = Ctx.Pid) and IsWindowVisible(AWnd) then
-    Ctx.List.Add(AWnd);
+  if (WndPid = Ctx.Pid) and IsWindowVisible(AWnd)
+  then Ctx.List.Add(AWnd);
   Result := TRUE;
 end;
 
@@ -175,14 +174,14 @@ var
 begin
   Result := TJSONArray.Create;
   for i := 0 to AButtons.Count - 1 do
-  begin
-    B := AButtons[i];
-    Node := TJSONObject.Create;
-    Node.AddPair('id', TJSONNumber.Create(GetDlgCtrlID(B)));
-    Node.AddPair('caption', StripAmp(WindowTextOf(B)));
-    Node.AddPair('enabled', TJSONBool.Create(IsWindowEnabled(B)));
-    Result.AddElement(Node);
-  end;
+    begin
+      B := AButtons[i];
+      Node := TJSONObject.Create;
+      Node.AddPair('id', TJSONNumber.Create(GetDlgCtrlID(B)));
+      Node.AddPair('caption', StripAmp(WindowTextOf(B)));
+      Node.AddPair('enabled', TJSONBool.Create(IsWindowEnabled(B)));
+      Result.AddElement(Node);
+    end;
 end;
 
 
@@ -193,12 +192,13 @@ var
 begin
   Result := '';
   for i := 0 to AStatics.Count - 1 do
-  begin
-    S := Trim(WindowTextOf(AStatics[i]));
-    if S = '' then Continue;
-    if Result <> '' then Result := Result + ' ';
-    Result := Result + S;
-  end;
+    begin
+      S := Trim(WindowTextOf(AStatics[i]));
+      if S = '' then Continue;
+      if Result <> ''
+      then Result := Result + ' ';
+      Result := Result + S;
+    end;
 end;
 
 
@@ -228,20 +228,20 @@ begin
   try
     EnumWindows(@TopEnumProc, LPARAM(@Ctx));
     for i := 0 to Ctx.List.Count - 1 do
-    begin
-      W := Ctx.List[i];
-      if InExclude(W, AExclude) then Continue;
-      Buttons := TList<HWND>.Create;
-      Statics := TList<HWND>.Create;
-      try
-        CollectChildren(W, Buttons, Statics);
-        if LooksLikeDialog(W, Buttons.Count) then
-          Result.AddElement(BuildDialogNode(W, Buttons, Statics));
-      finally
-        Buttons.Free;
-        Statics.Free;
+      begin
+        W := Ctx.List[i];
+        if InExclude(W, AExclude) then Continue;
+        Buttons := TList<HWND>.Create;
+        Statics := TList<HWND>.Create;
+        try
+          CollectChildren(W, Buttons, Statics);
+          if LooksLikeDialog(W, Buttons.Count)
+          then Result.AddElement(BuildDialogNode(W, Buttons, Statics));
+        finally
+          Buttons.Free;
+          Statics.Free;
+        end;
       end;
-    end;
   finally
     Ctx.List.Free;
   end;
@@ -286,46 +286,50 @@ begin
 
   { # By numeric id }
   if TryStrToInt(Sel, NumId) then
-  begin
-    for i := 0 to AButtons.Count - 1 do
-      if GetDlgCtrlID(AButtons[i]) = NumId then
-      begin
-        ABtn := AButtons[i]; AId := NumId; ACap := StripAmp(WindowTextOf(ABtn));
-        exit(TRUE);
-      end;
-    AId := NumId; exit(TRUE);   // not enumerable as a child Button; dispatch by id
-  end;
+    begin
+      for i := 0 to AButtons.Count - 1 do
+        if GetDlgCtrlID(AButtons[i]) = NumId then
+          begin
+            ABtn := AButtons[i]; AId := NumId; ACap := StripAmp(WindowTextOf(ABtn));
+            exit(TRUE);
+          end;
+      AId := NumId; exit(TRUE);   // not enumerable as a child Button; dispatch by id
+    end;
 
   { # By caption — exact }
   for i := 0 to AButtons.Count - 1 do
-  begin
-    B := AButtons[i]; Cap := StripAmp(WindowTextOf(B));
-    if SameText(Cap, Sel) then
-    begin ABtn := B; AId := GetDlgCtrlID(B); ACap := Cap; exit(TRUE); end;
-  end;
+    begin
+      B := AButtons[i]; Cap := StripAmp(WindowTextOf(B));
+      if SameText(Cap, Sel) then
+        begin
+          ABtn := B; AId := GetDlgCtrlID(B); ACap := Cap; exit(TRUE);
+        end;
+    end;
 
   { # By role keyword }
   { Ahead of the substring pass: a role word ('ok'/'no'/...) is a deliberate intent and must beat a loose caption substring (e.g. 'no' inside 'Ignore').
     Also reaches a localized common button — 'ok' -> IDOK works even when the caption reads 'Aceptar'. }
   RoleId := RoleToId(Sel);
   if RoleId <> 0 then
-  begin
-    for i := 0 to AButtons.Count - 1 do
-      if GetDlgCtrlID(AButtons[i]) = RoleId then
-      begin
-        ABtn := AButtons[i]; AId := RoleId; ACap := StripAmp(WindowTextOf(ABtn));
-        exit(TRUE);
-      end;
-    AId := RoleId; exit(TRUE);   // common button without a separate HWND; dispatch by id
-  end;
+    begin
+      for i := 0 to AButtons.Count - 1 do
+        if GetDlgCtrlID(AButtons[i]) = RoleId then
+          begin
+            ABtn := AButtons[i]; AId := RoleId; ACap := StripAmp(WindowTextOf(ABtn));
+            exit(TRUE);
+          end;
+      AId := RoleId; exit(TRUE);   // common button without a separate HWND; dispatch by id
+    end;
 
   { # By caption — substring (loosest, last) }
   for i := 0 to AButtons.Count - 1 do
-  begin
-    B := AButtons[i]; Cap := StripAmp(WindowTextOf(B));
-    if (Cap <> '') and ContainsText(Cap, Sel) then
-    begin ABtn := B; AId := GetDlgCtrlID(B); ACap := Cap; exit(TRUE); end;
-  end;
+    begin
+      B := AButtons[i]; Cap := StripAmp(WindowTextOf(B));
+      if (Cap <> '') and ContainsText(Cap, Sel) then
+        begin
+          ABtn := B; AId := GetDlgCtrlID(B); ACap := Cap; exit(TRUE);
+        end;
+    end;
 end;
 
 
@@ -355,33 +359,33 @@ begin
   try
     EnumWindows(@TopEnumProc, LPARAM(@Ctx));   // Z-order: first match is topmost
     for i := 0 to Ctx.List.Count - 1 do
-    begin
-      W := Ctx.List[i];
-      if InExclude(W, AExclude) then Continue;
-      Buttons := TList<HWND>.Create;
-      Statics := TList<HWND>.Create;
-      try
-        CollectChildren(W, Buttons, Statics);
-        if not LooksLikeDialog(W, Buttons.Count) then Continue;
-        if (ATargetDlg = 0) or (HWND(ATargetDlg) = W) then
-        begin
-          Dlg := W;
-          Break;
+      begin
+        W := Ctx.List[i];
+        if InExclude(W, AExclude) then Continue;
+        Buttons := TList<HWND>.Create;
+        Statics := TList<HWND>.Create;
+        try
+          CollectChildren(W, Buttons, Statics);
+          if not LooksLikeDialog(W, Buttons.Count) then Continue;
+          if (ATargetDlg = 0) or (HWND(ATargetDlg) = W) then
+            begin
+              Dlg := W;
+              Break;
+            end;
+        finally
+          Buttons.Free;
+          Statics.Free;
         end;
-      finally
-        Buttons.Free;
-        Statics.Free;
       end;
-    end;
   finally
     Ctx.List.Free;
   end;
 
   if Dlg = 0 then
-  begin
-    AReason := 'no_dialog';
-    exit;
-  end;
+    begin
+      AReason := 'no_dialog';
+      exit;
+    end;
   AResolvedDlg := NativeUInt(Dlg);
 
   { # Resolve + dispatch the button }
@@ -390,38 +394,39 @@ begin
   try
     CollectChildren(Dlg, Buttons, Statics);
     if not ResolveButton(Buttons, ASelector, MatchBtn, MatchId, MatchCap) then
-    begin
-      AReason := 'button_not_found';
-      exit;
-    end;
+      begin
+        AReason := 'button_not_found';
+        exit;
+      end;
 
     { Same-thread send (the dialog lives on the main thread, where this runs), so the window proc is invoked synchronously: the button's WM_COMMAND reaches the dialog, which calls EndDialog and unwinds its modal loop.
       SMTO_ABORTIFHUNG guards the rare cross-thread dialog.
       BM_CLICK when we have the button HWND; WM_COMMAND-by-id when we only resolved a standard id (Task Dialog common button with no enumerable child). }
     Res := 0;
-    if MatchBtn <> 0 then
-    begin
-      AVia := 'BM_CLICK';
-      Sent := SendMessageTimeout(MatchBtn, BM_CLICK, 0, 0, SMTO_ABORTIFHUNG, 4000, @Res);
-    end
+    if MatchBtn <> 0
+    then
+      begin
+        AVia := 'BM_CLICK';
+        Sent := SendMessageTimeout(MatchBtn, BM_CLICK, 0, 0, SMTO_ABORTIFHUNG, 4000, @Res);
+      end
     else
-    begin
-      { Unverifiable path, reported as such through AVia.
-        A dialog with no command for this id just ignores the message and the send still completes, so nothing in the return values can tell "dismissed" from "ignored".
-        The dialog's own reply is not a signal either: DefDlgProc's return for an unhandled WM_COMMAND is not contractual (the DialogProc TRUE/FALSE convention is documented for dialog procedures YOU write, and the docs state the return is ignored for several messages), and we have not measured what MessageBoxW / the Task Dialog actually return - so it is not used. }
-      AVia := 'WM_COMMAND';
-      WParam := Winapi.Windows.WPARAM((MatchId and $FFFF) or (BN_CLICKED shl 16));
-      Sent := SendMessageTimeout(Dlg, WM_COMMAND, WParam, 0, SMTO_ABORTIFHUNG, 4000, @Res);
-    end;
+      begin
+        { Unverifiable path, reported as such through AVia.
+          A dialog with no command for this id just ignores the message and the send still completes, so nothing in the return values can tell "dismissed" from "ignored".
+          The dialog's own reply is not a signal either: DefDlgProc's return for an unhandled WM_COMMAND is not contractual (the DialogProc TRUE/FALSE convention is documented for dialog procedures YOU write, and the docs state the return is ignored for several messages), and we have not measured what MessageBoxW / the Task Dialog actually return - so it is not used. }
+        AVia := 'WM_COMMAND';
+        WParam := Winapi.Windows.WPARAM((MatchId and $FFFF) or (BN_CLICKED shl 16));
+        Sent := SendMessageTimeout(Dlg, WM_COMMAND, WParam, 0, SMTO_ABORTIFHUNG, 4000, @Res);
+      end;
 
     { A zero return means the send never completed: the window died between our enumeration and the send, or a dialog owned by a non-main thread was hung and SMTO_ABORTIFHUNG bailed out.
       Only the cross-thread case can actually trip it (for a same-thread window the proc is called directly and the timeout is ignored), but answering clicked:true for a click the OS says never landed would send the driver on to its next step against a dialog that is still up.
       Res itself is NOT a success signal - BM_CLICK returns zero. }
     if Sent = 0 then
-    begin
-      AReason := 'send_failed';
-      exit;
-    end;
+      begin
+        AReason := 'send_failed';
+        exit;
+      end;
 
     AClickedId := MatchId;
     AClickedCaption := MatchCap;

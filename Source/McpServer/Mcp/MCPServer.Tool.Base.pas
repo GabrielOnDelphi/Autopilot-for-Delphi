@@ -1,4 +1,4 @@
-unit MCPServer.Tool.Base;
+﻿unit MCPServer.Tool.Base;
 
 {=============================================================================================================
    2026.10.06
@@ -66,8 +66,6 @@ type
     FDescription : String;
     function BuildSchema: TJSONObject; virtual; abstract;
   public
-    constructor Create; virtual;
-
     function GetName: String;
     function GetTitle: String;
     function GetDescription: String;
@@ -107,11 +105,6 @@ uses
 
 { TMCPToolBase }
 
-constructor TMCPToolBase.Create;
-begin
-  inherited Create;
-end;
-
 function TMCPToolBase.GetName: String;
 begin
   Result := FName;
@@ -121,8 +114,8 @@ function TMCPToolBase.GetTitle: String;
 begin
   // If the subclass didn't set a separate title, fall back to the name so the tools/list response always has a usable label.
   if FTitle <> ''
-    then Result := FTitle
-    else Result := FName;
+  then Result := FTitle
+  else Result := FName;
 end;
 
 function TMCPToolBase.GetDescription: String;
@@ -158,8 +151,8 @@ end;
 function TMCPToolBase<T>.GetTitle: String;
 begin
   if FTitle <> ''
-    then Result := FTitle
-    else Result := FName;
+  then Result := FTitle
+  else Result := FName;
 end;
 
 function TMCPToolBase<T>.GetDescription: String;

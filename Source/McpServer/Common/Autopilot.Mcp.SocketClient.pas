@@ -45,17 +45,17 @@ implementation
 
 { # Winsock lifecycle }
 
-// Winsock needs WSAStartup once per process before any socket call.
-// We do it EXACTLY ONCE, lock-free, and never call WSACleanup — the OS reclaims Winsock at process exit, and a never-cleaned single startup removes every teardown race (startup/cleanup churn, decrement-on-failure imbalance) that a ref-count would introduce.
-// This also drops the initialization/FINALISATION block the critical-section version needed.
-//
-// Race-free one-shot via TInterlocked.CompareExchange on a 3-state cell:
-//   0 = untouched   1 = a thread is running WSAStartup   2 = ready
-// Exactly one thread wins the 0->1 transition and runs WSAStartup; everyone else WAITS for state 2 (they do NOT race ahead to socket() before startup finished — that was the hazard in a naive Increment-only counter).
-// On failure the winner resets the cell to 0 so the next caller retries, and raises.
-//
-// Why this is safe for our callers AND for future ones: the MCP stdio loop is single-threaded today, so contention never actually happens — but unlike the counter version, this stays correct if a future parallel dispatcher (or the Phase-B worker) ever calls in concurrently.
-// Defensive by construction, not by assumption about the caller.
+{ Winsock needs WSAStartup once per process before any socket call.
+  We do it EXACTLY ONCE, lock-free, and never call WSACleanup — the OS reclaims Winsock at process exit, and a never-cleaned single startup removes every teardown race (startup/cleanup churn, decrement-on-failure imbalance) that a ref-count would introduce.
+  This also drops the initialization/FINALISATION block the critical-section version needed.
+
+  Race-free one-shot via TInterlocked.CompareExchange on a 3-state cell:
+    0 = untouched   1 = a thread is running WSAStartup   2 = ready
+  Exactly one thread wins the 0->1 transition and runs WSAStartup; everyone else WAITS for state 2 (they do NOT race ahead to socket() before startup finished — that was the hazard in a naive Increment-only counter).
+  On failure the winner resets the cell to 0 so the next caller retries, and raises.
+
+  Why this is safe for our callers AND for future ones: the MCP stdio loop is single-threaded today, so contention never actually happens — but unlike the counter version, this stays correct if a future parallel dispatcher (or the Phase-B worker) ever calls in concurrently.
+  Defensive by construction, not by assumption about the caller. }
 
 const
   WSA_UNTOUCHED = 0;
@@ -74,32 +74,32 @@ begin
   if GWsaState = WSA_READY then Exit;
 
   if TInterlocked.CompareExchange(GWsaState, WSA_STARTING, WSA_UNTOUCHED) = WSA_UNTOUCHED then
-  begin
-    // We won the race — we own the one-time startup.
-    Rc := WSAStartup($0202, Data);
-    if Rc <> 0 then
     begin
-      // Let the next caller try again, then surface the failure.
-      TInterlocked.Exchange(GWsaState, WSA_UNTOUCHED);
-      raise Exception.CreateFmt('WSAStartup failed (code %d)', [Rc]);
+      // We won the race — we own the one-time startup.
+      Rc := WSAStartup($0202, Data);
+      if Rc <> 0 then
+        begin
+          // Let the next caller try again, then surface the failure.
+          TInterlocked.Exchange(GWsaState, WSA_UNTOUCHED);
+          raise Exception.CreateFmt('WSAStartup failed (code %d)', [Rc]);
+        end;
+      TInterlocked.Exchange(GWsaState, WSA_READY);
+      Exit;
     end;
-    TInterlocked.Exchange(GWsaState, WSA_READY);
-    Exit;
-  end;
 
   { We lost the race (or another thread is mid-startup).
     Wait for READY.
     This spins for the microseconds WSAStartup takes; Yield keeps it cheap.
     If the winner failed and reset to UNTOUCHED, take over the startup ourselves. }
   while GWsaState <> WSA_READY do
-  begin
-    if GWsaState = WSA_UNTOUCHED then
     begin
-      EnsureWinsock;   // winner failed and reset — retry from the top
-      Exit;
+      if GWsaState = WSA_UNTOUCHED then
+        begin
+          EnsureWinsock;   // winner failed and reset — retry from the top
+          Exit;
+        end;
+      TThread.Yield;
     end;
-    TThread.Yield;
-  end;
 end;
 
 
@@ -118,13 +118,13 @@ begin
   if Count <= 0 then Exit(0);
   N := recv(FSocket, Buffer, Count, 0);
   if N = SOCKET_ERROR then
-  begin
-    Err := WSAGetLastError;
-    // WSAETIMEDOUT here = the SO_RCVTIMEO deadline set by CallTargetSocket expired: the target accepted the connection but sent nothing back within the deadline.
-    if Err = WSAETIMEDOUT then
-      raise ETargetNotResponding.Create('target accepted the socket connection but sent no reply within the I/O deadline — frozen, hung, or screen-off-frozen (Android)?');
-    raise Exception.CreateFmt('socket recv failed (code %d)', [Err]);
-  end;
+    begin
+      Err := WSAGetLastError;
+      // WSAETIMEDOUT here = the SO_RCVTIMEO deadline set by CallTargetSocket expired: the target accepted the connection but sent nothing back within the deadline.
+      if Err = WSAETIMEDOUT
+      then raise ETargetNotResponding.Create('target accepted the socket connection but sent no reply within the I/O deadline — frozen, hung, or screen-off-frozen (Android)?');
+      raise Exception.CreateFmt('socket recv failed (code %d)', [Err]);
+    end;
   // N = 0 means the peer closed — surface as 0 so TBridgeWire.ReadFully sees EOF.
   Result := N;
 end;
@@ -138,21 +138,21 @@ begin
   Sent := 0;
   P := @Buffer;
   while Sent < Count do
-  begin
-    N := send(FSocket, P^, Count - Sent, 0);
-    if N = SOCKET_ERROR then
     begin
-      Err := WSAGetLastError;
-      // SO_SNDTIMEO deadline: the peer stopped draining its receive buffer.
-      if Err = WSAETIMEDOUT then
-        raise ETargetNotResponding.Create('target accepted the socket connection but stopped accepting data within the I/O deadline — frozen or hung?');
-      raise Exception.CreateFmt('socket send failed (code %d)', [Err]);
+      N := send(FSocket, P^, Count - Sent, 0);
+      if N = SOCKET_ERROR then
+        begin
+          Err := WSAGetLastError;
+          // SO_SNDTIMEO deadline: the peer stopped draining its receive buffer.
+          if Err = WSAETIMEDOUT
+          then raise ETargetNotResponding.Create('target accepted the socket connection but stopped accepting data within the I/O deadline — frozen or hung?');
+          raise Exception.CreateFmt('socket send failed (code %d)', [Err]);
+        end;
+      if N = 0
+      then raise Exception.Create('socket send returned 0 (peer closed)');
+      Inc(Sent, N);
+      Inc(P, N);
     end;
-    if N = 0 then
-      raise Exception.Create('socket send returned 0 (peer closed)');
-    Inc(Sent, N);
-    Inc(P, N);
-  end;
   Result := Sent;
 end;
 
@@ -189,43 +189,44 @@ begin
 
   repeat
     Result := socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    if Result = INVALID_SOCKET then
-      raise Exception.CreateFmt('socket() failed (code %d)', [WSAGetLastError]);
+    if Result = INVALID_SOCKET
+    then raise Exception.CreateFmt('socket() failed (code %d)', [WSAGetLastError]);
 
     NonBlock := 1;
     ioctlsocket(Result, Integer(FIONBIO), NonBlock);
 
     Rc := connect(Result, TSockAddr(Addr), SizeOf(Addr));
     if Rc = 0 then
-    begin
-      // Immediate connect (loopback can do this). Back to blocking and done.
-      NonBlock := 0;
-      ioctlsocket(Result, Integer(FIONBIO), NonBlock);
-      Exit;
-    end;
+      begin
+        // Immediate connect (loopback can do this). Back to blocking and done.
+        NonBlock := 0;
+        ioctlsocket(Result, Integer(FIONBIO), NonBlock);
+        Exit;
+      end;
 
     if WSAGetLastError = WSAEWOULDBLOCK then
-    begin
-      RemainMs := Int64(Deadline) - Int64(GetTickCount64);
-      if RemainMs < 0 then RemainMs := 0;
-      FD_ZERO(WriteSet); _FD_SET(Result, WriteSet);
-      FD_ZERO(ErrSet);   _FD_SET(Result, ErrSet);
-      TV.tv_sec  := RemainMs DIV 1000;
-      TV.tv_usec := (RemainMs MOD 1000) * 1000;
-      Rc := select(0, nil, @WriteSet, @ErrSet, @TV);
-      if (Rc > 0) and FD_ISSET(Result, WriteSet) then
       begin
-        { Writable: check SO_ERROR to confirm the connect actually succeeded.
-          If getsockopt itself fails, treat it as a failed attempt (don't trust the pre-zeroed SockErr, which would otherwise read as "connected"). }
-        SockErr := 0; ErrLen := SizeOf(SockErr);
-        if (getsockopt(Result, SOL_SOCKET, SO_ERROR, PAnsiChar(@SockErr), ErrLen) = 0) and (SockErr = 0) then
-        begin
-          NonBlock := 0;
-          ioctlsocket(Result, Integer(FIONBIO), NonBlock);
-          Exit;
-        end;
+        RemainMs := Int64(Deadline) - Int64(GetTickCount64);
+        if RemainMs < 0
+        then RemainMs := 0;
+        FD_ZERO(WriteSet); _FD_SET(Result, WriteSet);
+        FD_ZERO(ErrSet);   _FD_SET(Result, ErrSet);
+        TV.tv_sec  := RemainMs DIV 1000;
+        TV.tv_usec := (RemainMs MOD 1000) * 1000;
+        Rc := select(0, nil, @WriteSet, @ErrSet, @TV);
+        if (Rc > 0) and FD_ISSET(Result, WriteSet) then
+          begin
+            { Writable: check SO_ERROR to confirm the connect actually succeeded.
+              If getsockopt itself fails, treat it as a failed attempt (don't trust the pre-zeroed SockErr, which would otherwise read as "connected"). }
+            SockErr := 0; ErrLen := SizeOf(SockErr);
+            if (getsockopt(Result, SOL_SOCKET, SO_ERROR, PAnsiChar(@SockErr), ErrLen) = 0) and (SockErr = 0) then
+              begin
+                NonBlock := 0;
+                ioctlsocket(Result, Integer(FIONBIO), NonBlock);
+                Exit;
+              end;
+          end;
       end;
-    end;
 
     { Failed this attempt (refused, or select timed out short).
       Close and retry until the overall deadline — the listener may still be coming up. }
@@ -236,8 +237,8 @@ begin
   until GetTickCount64 >= Deadline;
 
   // Nothing accepts on the port: no `adb forward` for it. ToolBase turns this into -32099 target_not_running.
-  if Result = INVALID_SOCKET then
-    raise ETargetNotRunning.Create('CallTargetSocket: could not connect to 127.0.0.1:' + IntToStr(APort) + ' within ' + IntToStr(ATimeoutMs) + ' ms');
+  if Result = INVALID_SOCKET
+  then raise ETargetNotRunning.Create('CallTargetSocket: could not connect to 127.0.0.1:' + IntToStr(APort) + ' within ' + IntToStr(ATimeoutMs) + ' ms');
 end;
 
 
@@ -281,28 +282,28 @@ begin
       A recv/send past the deadline fails with WSAETIMEDOUT, which TSocketStream turns into ETargetNotResponding.
       The socket is in an indeterminate state after such a timeout (per WinSock docs) — fine here: it is closed on the way out of this call. }
     IoTimeoutMs := ATimeoutMs + IoDeadlineGraceMs;
-    if (setsockopt(Sock, SOL_SOCKET, SO_RCVTIMEO, PAnsiChar(@IoTimeoutMs), SizeOf(IoTimeoutMs)) = SOCKET_ERROR) or (setsockopt(Sock, SOL_SOCKET, SO_SNDTIMEO, PAnsiChar(@IoTimeoutMs), SizeOf(IoTimeoutMs)) = SOCKET_ERROR) then
-      raise Exception.CreateFmt('setsockopt(SO_RCVTIMEO/SO_SNDTIMEO) failed (code %d)', [WSAGetLastError]);
+    if (setsockopt(Sock, SOL_SOCKET, SO_RCVTIMEO, PAnsiChar(@IoTimeoutMs), SizeOf(IoTimeoutMs)) = SOCKET_ERROR) or (setsockopt(Sock, SOL_SOCKET, SO_SNDTIMEO, PAnsiChar(@IoTimeoutMs), SizeOf(IoTimeoutMs)) = SOCKET_ERROR)
+    then raise Exception.CreateFmt('setsockopt(SO_RCVTIMEO/SO_SNDTIMEO) failed (code %d)', [WSAGetLastError]);
     Stream := TSocketStream.Create(Sock);
     try
       // Bridge writes hello first. We don't verify contents — the bridge owns the wire format.
-      if not TBridgeWire.TryReadFrame(Stream, HelloRaw) then
-        raise Exception.Create('CallTargetSocket: bridge did not send hello');
+      if not TBridgeWire.TryReadFrame(Stream, HelloRaw)
+      then raise Exception.Create('CallTargetSocket: bridge did not send hello');
 
       WriteHelloAck(Stream);
 
       TBridgeWire.WriteFrame(Stream, ARequestJson.ToJSON);
-      if not TBridgeWire.TryReadFrame(Stream, Frame) then
-        raise Exception.Create('CallTargetSocket: no response from bridge');
+      if not TBridgeWire.TryReadFrame(Stream, Frame)
+      then raise Exception.Create('CallTargetSocket: no response from bridge');
 
       Parsed := TJSONObject.ParseJSONValue(Frame);
-      if Parsed IS TJSONObject then
-        Result := TJSONObject(Parsed)
+      if Parsed IS TJSONObject
+      then Result := TJSONObject(Parsed)
       else
-      begin
-        Parsed.Free;
-        raise Exception.Create('CallTargetSocket: response is not a JSON object');
-      end;
+        begin
+          Parsed.Free;
+          raise Exception.Create('CallTargetSocket: response is not a JSON object');
+        end;
     finally
       Stream.Free;
     end;

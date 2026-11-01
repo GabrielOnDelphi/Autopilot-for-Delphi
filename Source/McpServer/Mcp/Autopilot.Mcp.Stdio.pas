@@ -61,8 +61,8 @@ uses
   Best-effort; a failed SetConsoleOutputCP is logged. }
 procedure EnableUtf8Io;
 begin
-  if not SetConsoleOutputCP(CP_UTF8) then
-    BridgeLogWarn('mcp', 'SetConsoleOutputCP(CP_UTF8) failed; LastError=' + IntToStr(GetLastError));
+  if not SetConsoleOutputCP(CP_UTF8)
+  then BridgeLogWarn('mcp', 'SetConsoleOutputCP(CP_UTF8) failed; LastError=' + IntToStr(GetLastError));
   SetTextCodePage(Output, CP_UTF8);
   SetTextCodePage(Input, CP_UTF8);
 end;
@@ -90,26 +90,24 @@ begin
 
   // Claude Code never sends a byte order mark, but PowerShell's pipe to a native program typically puts EF BB BF in front of the first line, and ParseJSONValue would refuse the line with -32700.
   Start := 0;
-  if (Length(ABytes) >= 3) and (ABytes[0] = $EF) and (ABytes[1] = $BB) and (ABytes[2] = $BF) then
-    Start := 3;
+  if (Length(ABytes) >= 3) and (ABytes[0] = $EF) and (ABytes[1] = $BB) and (ABytes[2] = $BF)
+  then Start := 3;
   Count := Length(ABytes) - Start;
-  if Count = 0 then
-    EXIT(TRUE);
+  if Count = 0 then EXIT(TRUE);
 
-  if TEncoding.UTF8.GetCharCount(ABytes, Start, Count) = 0 then
-    EXIT(FALSE);
+  if TEncoding.UTF8.GetCharCount(ABytes, Start, Count) = 0 then EXIT(FALSE);
   ALine := TEncoding.UTF8.GetString(ABytes, Start, Count);
 
   Back   := TEncoding.UTF8.GetBytes(ALine);
   Result := Length(Back) = Count;
   i := 0;
   while Result and (i < Count) do
-  begin
-    Result := Back[i] = ABytes[Start + i];
-    Inc(i);
-  end;
-  if not Result then
-    ALine := '';
+    begin
+      Result := Back[i] = ABytes[Start + i];
+      Inc(i);
+    end;
+  if not Result
+  then ALine := '';
 end;
 
 
@@ -119,10 +117,10 @@ var
   JErr: TJSONString;
 begin
   if not TryDecodeUtf8Line(ABytes, Line) then
-  begin
-    BridgeLogWarn('mcp', 'recv: a line of ' + IntToStr(Length(ABytes)) + ' bytes is not valid UTF-8; answered -32700');
-    EXIT('{"jsonrpc":"2.0","id":null,"error":{"code":-32700,"message":"Parse error: the line is not valid UTF-8"}}');
-  end;
+    begin
+      BridgeLogWarn('mcp', 'recv: a line of ' + IntToStr(Length(ABytes)) + ' bytes is not valid UTF-8; answered -32700');
+      EXIT('{"jsonrpc":"2.0","id":null,"error":{"code":-32700,"message":"Parse error: the line is not valid UTF-8"}}');
+    end;
 
   if Line.Trim = '' then EXIT('');
   BridgeLogInfo('mcp', 'recv: ' + Line);
@@ -131,19 +129,19 @@ begin
     Result := DispatchLine(Line);
   except
     on E: Exception do
-    begin
-      { Dispatcher should swallow its own errors and return an error envelope.
-        If we land here, something escaped — keep the loop alive, log and emit a generic envelope so the client doesn't hang. }
-      BridgeLogError('mcp', 'dispatch escaped: ' + E.ClassName + ': ' + E.Message);
-      { Escape the message via TJSONString so backslashes, newlines and quotes in E.Message stay valid JSON.
-        Quote-only escaping emitted broken JSON for Windows paths ("C:\x") and multi-line messages, which the client cannot parse. }
-      JErr := TJSONString.Create(E.Message);
-      try
-        Result := '{"jsonrpc":"2.0","id":null,"error":{"code":-32603,"message":' + JErr.ToJSON + '}}';
-      finally
-        FreeAndNil(JErr);
+      begin
+        { Dispatcher should swallow its own errors and return an error envelope.
+          If we land here, something escaped — keep the loop alive, log and emit a generic envelope so the client doesn't hang. }
+        BridgeLogError('mcp', 'dispatch escaped: ' + E.ClassName + ': ' + E.Message);
+        { Escape the message via TJSONString so backslashes, newlines and quotes in E.Message stay valid JSON.
+          Quote-only escaping emitted broken JSON for Windows paths ("C:\x") and multi-line messages, which the client cannot parse. }
+        JErr := TJSONString.Create(E.Message);
+        try
+          Result := '{"jsonrpc":"2.0","id":null,"error":{"code":-32603,"message":' + JErr.ToJSON + '}}';
+        finally
+          FreeAndNil(JErr);
+        end;
       end;
-    end;
   end;
 end;
 
@@ -157,34 +155,34 @@ begin
   BridgeLogInfo('mcp', 'stdio loop entered');
 
   while not Eof(Input) do
-  begin
-    try
-      Bytes := ReadLineBytes(Input);
-    except
-      on E: Exception do
-      begin
-        // A broken pipe on stdin shows up here. Treat as EOF.
-        BridgeLogWarn('mcp', 'stdin readln failed: ' + E.ClassName + ': ' + E.Message);
-        Break;
+    begin
+      try
+        Bytes := ReadLineBytes(Input);
+      except
+        on E: Exception do
+          begin
+            // A broken pipe on stdin shows up here. Treat as EOF.
+            BridgeLogWarn('mcp', 'stdin readln failed: ' + E.ClassName + ': ' + E.Message);
+            Break;
+          end;
+      end;
+
+      Response := AnswerLine(Bytes);
+      if Response = '' then Continue;  // notification or blank line — no reply
+
+      try
+        Writeln(Output, Response);
+        Flush(Output);
+        BridgeLogInfo('mcp', 'send: ' + Response);
+      except
+        on E: Exception do
+          begin
+            // Writing failed — the client closed stdout. Game over.
+            BridgeLogError('mcp', 'stdout writeln failed: ' + E.ClassName + ': ' + E.Message);
+            Break;
+          end;
       end;
     end;
-
-    Response := AnswerLine(Bytes);
-    if Response = '' then Continue;  // notification or blank line — no reply
-
-    try
-      Writeln(Output, Response);
-      Flush(Output);
-      BridgeLogInfo('mcp', 'send: ' + Response);
-    except
-      on E: Exception do
-      begin
-        // Writing failed — the client closed stdout. Game over.
-        BridgeLogError('mcp', 'stdout writeln failed: ' + E.ClassName + ': ' + E.Message);
-        Break;
-      end;
-    end;
-  end;
 
   BridgeLogInfo('mcp', 'stdio loop exited (EOF on stdin)');
 end;

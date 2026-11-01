@@ -224,8 +224,8 @@ end;
 function NewArgs(const APath: String): TJSONObject;
 begin
   Result := TJSONObject.Create;
-  if APath <> '' then
-    Result.AddPair('path', APath);
+  if APath <> ''
+  then Result.AddPair('path', APath);
 end;
 
 
@@ -271,11 +271,10 @@ var
 begin
   if APid = 0 then EXIT(FALSE);
   H := OpenProcess(SYNCHRONIZE, FALSE, APid);
-  if H = 0 then
-    { ERROR_INVALID_PARAMETER (87) is what Windows answers when no process has this pid - the only failure that means dead.
-      Anything else (ERROR_ACCESS_DENIED, 5) means a process with that pid exists but may not be opened: reporting it dead would delete a live target's discovery file, which its bridge writes only once.
-      Measured 2026-08-11: a free pid gives 87, a live SYSTEM-owned process gives 5. }
-    EXIT(GetLastError <> ERROR_INVALID_PARAMETER);
+  { ERROR_INVALID_PARAMETER (87) is what Windows answers when no process has this pid - the only failure that means dead.
+    Anything else (ERROR_ACCESS_DENIED, 5) means a process with that pid exists but may not be opened: reporting it dead would delete a live target's discovery file, which its bridge writes only once.
+    Measured 2026-08-11: a free pid gives 87, a live SYSTEM-owned process gives 5. }
+  if H = 0 then EXIT(GetLastError <> ERROR_INVALID_PARAMETER);
   try
     { A zero-timeout wait is the unambiguous liveness probe: an exit code of 259 (STILL_ACTIVE) cannot fool it.
       "<> WAIT_OBJECT_0", not "= WAIT_TIMEOUT": an unexpected WAIT_FAILED errs on alive. }
@@ -301,22 +300,22 @@ begin
     Stream := TFileStream.Create(AFile, fmOpenRead or fmShareDenyNone);
     try
       SetLength(Bytes, Integer(Stream.Size));   // a discovery file holds one pipe name
-      if Length(Bytes) > 0 then
-        Stream.ReadBuffer(Bytes[0], Length(Bytes));
+      if Length(Bytes) > 0
+      then Stream.ReadBuffer(Bytes[0], Length(Bytes));
     finally
       FreeAndNil(Stream);
     end;
   except
     on E: EFOpenError do
-    begin
-      BridgeLogWarn(LogTag, 'cannot read ' + AFile + ': ' + E.Message);
-      EXIT(FALSE);
-    end;
+      begin
+        BridgeLogWarn(LogTag, 'cannot read ' + AFile + ': ' + E.Message);
+        EXIT(FALSE);
+      end;
     on E: EReadError do
-    begin
-      BridgeLogWarn(LogTag, 'cannot read ' + AFile + ': ' + E.Message);
-      EXIT(FALSE);
-    end;
+      begin
+        BridgeLogWarn(LogTag, 'cannot read ' + AFile + ': ' + E.Message);
+        EXIT(FALSE);
+      end;
   end;
   Encoding := NIL;
   BomLength := TEncoding.GetBufferEncoding(Bytes, Encoding, TEncoding.UTF8);   // the bridge may write a UTF-8 BOM
@@ -348,19 +347,19 @@ begin
   try
     Files := TDirectory.GetFiles(DiscoveryFolderPath, '*.pipe');
     for i := 0 to High(Files) do
-    begin
-      if not TryStrToUInt(TPath.GetFileNameWithoutExtension(Files[i]), PidVal) then Continue;
-      if not IsPidAlive(PidVal) then
       begin
-        if not System.SysUtils.DeleteFile(Files[i]) then
-          BridgeLogWarn(LogTag, 'cannot delete the stale discovery file ' + Files[i] + ': ' + SysErrorMessage(GetLastError));
-        Continue;
+        if not TryStrToUInt(TPath.GetFileNameWithoutExtension(Files[i]), PidVal) then Continue;
+        if not IsPidAlive(PidVal) then
+          begin
+            if not System.SysUtils.DeleteFile(Files[i])
+            then BridgeLogWarn(LogTag, 'cannot delete the stale discovery file ' + Files[i] + ': ' + SysErrorMessage(GetLastError));
+            Continue;
+          end;
+        if not TryReadPipeName(Files[i], PipeName) then Continue;
+        Entry.Pid      := PidVal;
+        Entry.PipeName := PipeName;
+        Acc.Add(Entry);
       end;
-      if not TryReadPipeName(Files[i], PipeName) then Continue;
-      Entry.Pid      := PidVal;
-      Entry.PipeName := PipeName;
-      Acc.Add(Entry);
-    end;
     Result := Acc.ToArray;
   finally
     FreeAndNil(Acc);
@@ -392,8 +391,7 @@ begin
   SetLength(Result, Integer(Len));
   Copied := 0;
   // wParam counts the terminating null too; String[Len] has an implicit #0 slot beyond Len
-  if SendMessageTimeout(AWnd, WM_GETTEXT, WPARAM(Len) + 1, LPARAM(PChar(Result)), SMTO_ABORTIFHUNG, TextReadTimeoutMs, @Copied) = 0 then
-    EXIT('');
+  if SendMessageTimeout(AWnd, WM_GETTEXT, WPARAM(Len) + 1, LPARAM(PChar(Result)), SMTO_ABORTIFHUNG, TextReadTimeoutMs, @Copied) = 0 then EXIT('');
   SetLength(Result, Integer(Copied));
 end;
 
@@ -432,8 +430,8 @@ begin
   Result := TRUE;
   if not SameText(ClassNameOf(AWnd), 'Static') then EXIT;
   S := Trim(WindowTextOf(AWnd));
-  if S <> '' then
-    TStringList(Pointer(AParam)).Add(S);
+  if S <> ''
+  then TStringList(Pointer(AParam)).Add(S);
 end;
 
 
@@ -448,12 +446,12 @@ begin
     EnumChildWindows(AWnd, @CollectStaticText, LPARAM(Lines));
     Result := '"' + Trim(WindowTextOf(AWnd));
     for i := 0 to Lines.Count - 1 do
-    begin
-      if i = 0
-      then Result := Result + ': '
-      else Result := Result + ' ';
-      Result := Result + StringReplace(Lines[i], sLineBreak, ' ', [rfReplaceAll]);
-    end;
+      begin
+        if i = 0
+        then Result := Result + ': '
+        else Result := Result + ' ';
+        Result := Result + StringReplace(Lines[i], sLineBreak, ' ', [rfReplaceAll]);
+      end;
     Result := Result + '"';
   finally
     FreeAndNil(Lines);
@@ -476,8 +474,8 @@ begin
   if Cls = '#32770'
   then Scan.Boxes.Add(DialogBoxText(AWnd))
   else
-    if (Scan.AppWindow = 0) and ((Cls = 'TApplication') or (Cls = 'TFMAppClass')) then
-      Scan.AppWindow := AWnd;
+    if (Scan.AppWindow = 0) and ((Cls = 'TApplication') or (Cls = 'TFMAppClass'))
+    then Scan.AppWindow := AWnd;
 end;
 
 
@@ -499,12 +497,12 @@ begin
   Scan := ScanWindowsOf(APid);
   try
     for i := 0 to Scan.Boxes.Count - 1 do
-    begin
-      if i = 0
-      then Result := '. Dialog boxes the app shows: '
-      else Result := Result + ', ';
-      Result := Result + Scan.Boxes[i];
-    end;
+      begin
+        if i = 0
+        then Result := '. Dialog boxes the app shows: '
+        else Result := Result + ', ';
+        Result := Result + Scan.Boxes[i];
+      end;
   finally
     FreeAndNil(Scan);
   end;
@@ -525,15 +523,15 @@ begin
   Arr := TJSONArray(V);
   for i := 0 to Arr.Count - 1 do
     if Arr.Items[i] is TJSONObject then
-    begin
-      Item := TJSONObject(Arr.Items[i]);
-      if Result <> '' then
-        Result := Result + ', ';
-      Result := Result + '"' + JsonStr(Item, 'caption');
-      if JsonStr(Item, 'text') <> '' then
-        Result := Result + ': ' + JsonStr(Item, 'text');
-      Result := Result + '"';
-    end;
+      begin
+        Item := TJSONObject(Arr.Items[i]);
+        if Result <> ''
+        then Result := Result + ', ';
+        Result := Result + '"' + JsonStr(Item, 'caption');
+        if JsonStr(Item, 'text') <> ''
+        then Result := Result + ': ' + JsonStr(Item, 'text');
+        Result := Result + '"';
+      end;
 end;
 
 
@@ -564,15 +562,15 @@ begin
   FPipe      := APipe;
   FTimeoutMs := ATimeoutMs;
   FEvent := CreateEventW(NIL, TRUE, FALSE, NIL);
-  if FEvent = 0 then
-    RaiseLastOSError;
+  if FEvent = 0
+  then RaiseLastOSError;
 end;
 
 
 destructor TDeadlinePipeStream.Destroy;
 begin
-  if FEvent <> 0 then
-    CloseHandle(FEvent);
+  if FEvent <> 0
+  then CloseHandle(FEvent);
   inherited;
 end;
 
@@ -597,39 +595,38 @@ begin
   else Started := WriteFile(FPipe, Buffer, Count, Dummy, @Ov);
 
   if not Started then
-  begin
-    Err := GetLastError;
-    if Err <> ERROR_IO_PENDING then
     begin
-      // Immediate failure. A closed peer reads as EOF (0), so TBridgeWire.TryReadFrame takes its normal FALSE path; anything else is a real OS error.
-      if AIsRead and ((Err = ERROR_BROKEN_PIPE) or (Err = ERROR_PIPE_NOT_CONNECTED))
-      then EXIT(0)
-      else RaiseLastOSError(Err);
-    end;
+      Err := GetLastError;
+      if Err <> ERROR_IO_PENDING then
+        begin
+          // Immediate failure. A closed peer reads as EOF (0), so TBridgeWire.TryReadFrame takes its normal FALSE path; anything else is a real OS error.
+          if AIsRead and ((Err = ERROR_BROKEN_PIPE) or (Err = ERROR_PIPE_NOT_CONNECTED))
+          then EXIT(0)
+          else RaiseLastOSError(Err);
+        end;
 
-    { TRAP: from here to GetOverlappedResult the kernel may still write into Ov and Buffer.
-      Only Win32 calls that cannot raise may stand here: a statement that raises (a log line, a check) would leave this routine while the I/O is pending, and the kernel would then write into freed memory. }
-    if WaitForSingleObject(FEvent, FTimeoutMs) <> WAIT_OBJECT_0 then
+      { TRAP: from here to GetOverlappedResult the kernel may still write into Ov and Buffer.
+        Only Win32 calls that cannot raise may stand here: a statement that raises (a log line, a check) would leave this routine while the I/O is pending, and the kernel would then write into freed memory. }
       // Deadline hit: cancel the pending operation. ERROR_NOT_FOUND (it completed in the race window) is fine - GetOverlappedResult below resolves either way.
-      CancelIoEx(FPipe, @Ov);
-  end;
+      if WaitForSingleObject(FEvent, FTimeoutMs) <> WAIT_OBJECT_0
+      then CancelIoEx(FPipe, @Ov);
+    end;
 
   { Single collection point for every path (synchronous completion, signaled wait, after the cancel).
     bWait = TRUE also guarantees the kernel is done with Ov and Buffer before they leave scope - mandatory after CancelIoEx. }
   if not GetOverlappedResult(FPipe, Ov, N, TRUE) then
-  begin
-    Err := GetLastError;
-    if Err = ERROR_OPERATION_ABORTED then
     begin
-      if AIsRead
-      then OpWord := 'reply'
-      else OpWord := 'accept data';
-      raise ETargetNotResponding.Create('Autopilot: the app accepted the pipe connection but did not ' + OpWord + ' within ' + UIntToStr(FTimeoutMs) + ' ms - stopped on a breakpoint, or hung?');
+      Err := GetLastError;
+      if Err = ERROR_OPERATION_ABORTED then
+        begin
+          if AIsRead
+          then OpWord := 'reply'
+          else OpWord := 'accept data';
+          raise ETargetNotResponding.Create('Autopilot: the app accepted the pipe connection but did not ' + OpWord + ' within ' + UIntToStr(FTimeoutMs) + ' ms - stopped on a breakpoint, or hung?');
+        end;
+      if AIsRead and ((Err = ERROR_BROKEN_PIPE) or (Err = ERROR_PIPE_NOT_CONNECTED)) then EXIT(0);
+      RaiseLastOSError(Err);
     end;
-    if AIsRead and ((Err = ERROR_BROKEN_PIPE) or (Err = ERROR_PIPE_NOT_CONNECTED)) then
-      EXIT(0);
-    RaiseLastOSError(Err);
-  end;
   Result := Longint(N);
 end;
 
@@ -683,14 +680,14 @@ begin
   AData    := '';
   ErrObj := ARoot.GetValue('error');
   if not (ErrObj is TJSONObject) then EXIT;
-  if TryJsonInt64(TJSONObject(ErrObj).GetValue('code'), N) and (N >= Low(Integer)) and (N <= High(Integer)) then
-    ACode := Integer(N);
+  if TryJsonInt64(TJSONObject(ErrObj).GetValue('code'), N) and (N >= Low(Integer)) and (N <= High(Integer))
+  then ACode := Integer(N);
   V := TJSONObject(ErrObj).GetValue('message');
-  if V is TJSONString then
-    AMessage := TJSONString(V).Value;
+  if V is TJSONString
+  then AMessage := TJSONString(V).Value;
   V := TJSONObject(ErrObj).GetValue('data');
-  if V <> NIL then
-    AData := V.ToJSON;
+  if V <> NIL
+  then AData := V.ToJSON;
 end;
 
 
@@ -702,28 +699,28 @@ begin
   FPipeName := APipeName;
   FPid      := APid;
   if (APid <> 0) and (APid <> GetCurrentProcessId) then
-  begin
-    FProcess := OpenProcess(SYNCHRONIZE or PROCESS_QUERY_INFORMATION or PROCESS_TERMINATE, FALSE, APid);
-    if FProcess = 0 then
-      FProcess := OpenProcess(SYNCHRONIZE, FALSE, APid);   // still 0: the liveness check falls back to IsPidAlive
-  end;
+    begin
+      FProcess := OpenProcess(SYNCHRONIZE or PROCESS_QUERY_INFORMATION or PROCESS_TERMINATE, FALSE, APid);
+      if FProcess = 0
+      then FProcess := OpenProcess(SYNCHRONIZE, FALSE, APid);   // still 0: the liveness check falls back to IsPidAlive
+    end;
 end;
 
 
 destructor TAutopilotApp.Destroy;
 begin
   if FStartedByUs and (FProcess <> 0) and (WaitForSingleObject(FProcess, 0) = WAIT_TIMEOUT) then
-  begin
-    TerminateProcess(FProcess, 1);
-    WaitForSingleObject(FProcess, KillWaitMs);
-    BridgeLogWarn(LogTag, 'Destroy killed pid ' + UIntToStr(FPid) + ', which Start had started (call Close first for a clean end)');
-  end;
-  if FStartedByUs then
-    DeleteDiscoveryFileIfEnded;
-  if FProcess <> 0 then
-    CloseHandle(FProcess);
-  if FJob <> 0 then
-    CloseHandle(FJob);   // JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE ends anything the app started too
+    begin
+      TerminateProcess(FProcess, 1);
+      WaitForSingleObject(FProcess, KillWaitMs);
+      BridgeLogWarn(LogTag, 'Destroy killed pid ' + UIntToStr(FPid) + ', which Start had started (call Close first for a clean end)');
+    end;
+  if FStartedByUs
+  then DeleteDiscoveryFileIfEnded;
+  if FProcess <> 0
+  then CloseHandle(FProcess);
+  if FJob <> 0
+  then CloseHandle(FJob);   // JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE ends anything the app started too
   inherited;
 end;
 
@@ -734,14 +731,14 @@ var
   Code: DWORD;
 begin
   AExitInfo := '';
-  if FProcess <> 0 then
-  begin
-    Result := WaitForSingleObject(FProcess, 0) = WAIT_OBJECT_0;
-    if Result and GetExitCodeProcess(FProcess, Code) then
-      AExitInfo := ' with exit code ' + UIntToStr(Code);
-  end
-  else
-    Result := (FPid <> 0) and (FPid <> GetCurrentProcessId) and not IsPidAlive(FPid);
+  if FProcess <> 0
+  then
+    begin
+      Result := WaitForSingleObject(FProcess, 0) = WAIT_OBJECT_0;
+      if Result and GetExitCodeProcess(FProcess, Code)
+      then AExitInfo := ' with exit code ' + UIntToStr(Code);
+    end
+  else Result := (FPid <> 0) and (FPid <> GetCurrentProcessId) and not IsPidAlive(FPid);
 end;
 
 
@@ -749,8 +746,8 @@ procedure TAutopilotApp.CheckStillRunning;
 var
   ExitInfo: String;
 begin
-  if ProcessEnded(ExitInfo) then
-    raise ETargetNotRunning.Create('Autopilot: the app (pid ' + UIntToStr(FPid) + ') has ended' + ExitInfo);
+  if ProcessEnded(ExitInfo)
+  then raise ETargetNotRunning.Create('Autopilot: the app (pid ' + UIntToStr(FPid) + ') has ended' + ExitInfo);
 end;
 
 
@@ -759,8 +756,7 @@ var
   Deadline: UInt64;
   ExitInfo: String;
 begin
-  if FProcess <> 0 then
-    EXIT(WaitForSingleObject(FProcess, ATimeoutMs) = WAIT_OBJECT_0);
+  if FProcess <> 0 then EXIT(WaitForSingleObject(FProcess, ATimeoutMs) = WAIT_OBJECT_0);
   Deadline := GetTickCount64 + ATimeoutMs;
   repeat
     if ProcessEnded(ExitInfo) then EXIT(TRUE);
@@ -776,32 +772,33 @@ var
   H: THandle;
   Done: Boolean;
 begin
-  if FProcess <> 0 then
-  begin
-    Done := TerminateProcess(FProcess, 1);
-    if Done then
-      WaitForSingleObject(FProcess, KillWaitMs);
-  end
+  if FProcess <> 0
+  then
+    begin
+      Done := TerminateProcess(FProcess, 1);
+      if Done
+      then WaitForSingleObject(FProcess, KillWaitMs);
+    end
   else
-  begin
-    H := OpenProcess(PROCESS_TERMINATE or SYNCHRONIZE, FALSE, FPid);
-    Done := (H <> 0) and TerminateProcess(H, 1);
-    if H <> 0 then
-    try
-      if Done then
-        WaitForSingleObject(H, KillWaitMs);
-    finally
-      CloseHandle(H);
+    begin
+      H := OpenProcess(PROCESS_TERMINATE or SYNCHRONIZE, FALSE, FPid);
+      Done := (H <> 0) and TerminateProcess(H, 1);
+      if H <> 0 then
+        try
+          if Done
+          then WaitForSingleObject(H, KillWaitMs);
+        finally
+          CloseHandle(H);
+        end;
     end;
-  end;
-  if Done then
-  begin
-    BridgeLogWarn(LogTag, 'killed pid ' + UIntToStr(FPid));
-    DeleteDiscoveryFileIfEnded;
-    Result := 'the app was killed';
-  end
-  else
-    Result := 'killing the app failed: ' + SysErrorMessage(GetLastError);
+  if Done
+  then
+    begin
+      BridgeLogWarn(LogTag, 'killed pid ' + UIntToStr(FPid));
+      DeleteDiscoveryFileIfEnded;
+      Result := 'the app was killed';
+    end
+  else Result := 'killing the app failed: ' + SysErrorMessage(GetLastError);
 end;
 
 
@@ -812,8 +809,8 @@ var
 begin
   if (FPid = 0) or not ProcessEnded(ExitInfo) then EXIT;
   FileName := DiscoveryFileOf(FPid);
-  if FileExists(FileName) and not System.SysUtils.DeleteFile(FileName) then
-    BridgeLogWarn(LogTag, 'cannot delete the stale discovery file ' + FileName + ': ' + SysErrorMessage(GetLastError));
+  if FileExists(FileName) and not System.SysUtils.DeleteFile(FileName)
+  then BridgeLogWarn(LogTag, 'cannot delete the stale discovery file ' + FileName + ': ' + SysErrorMessage(GetLastError));
 end;
 
 
@@ -825,8 +822,8 @@ var
   CmdLine, WorkDir, DiscoveryFile: String;
   WorkDirPtr: PChar;
 begin
-  if not FileExists(ExePath) then
-    raise ETargetNotRunning.Create('Autopilot.Start: file not found: ' + ExePath);
+  if not FileExists(ExePath)
+  then raise ETargetNotRunning.Create('Autopilot.Start: file not found: ' + ExePath);
 
   Result := TAutopilotApp.CreateForPipe('', 0);
   try
@@ -834,15 +831,15 @@ begin
 
     { # Job object: the app ends together with this process, even when no teardown runs }
     Result.FJob := CreateJobObject(NIL, NIL);
-    if Result.FJob = 0 then
-      BridgeLogWarn(LogTag, 'Start: CreateJobObject failed (' + SysErrorMessage(GetLastError) + '): the app will not end together with this process')
+    if Result.FJob = 0
+    then BridgeLogWarn(LogTag, 'Start: CreateJobObject failed (' + SysErrorMessage(GetLastError) + '): the app will not end together with this process')
     else
-    begin
-      Limits := Default(TJobObjectExtendedLimitInformation);
-      Limits.BasicLimitInformation.LimitFlags := JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
-      if not SetInformationJobObject(Result.FJob, JobObjectExtendedLimitInformation, @Limits, SizeOf(Limits)) then
-        BridgeLogWarn(LogTag, 'Start: SetInformationJobObject failed (' + SysErrorMessage(GetLastError) + '): the app will not end together with this process');
-    end;
+      begin
+        Limits := Default(TJobObjectExtendedLimitInformation);
+        Limits.BasicLimitInformation.LimitFlags := JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+        if not SetInformationJobObject(Result.FJob, JobObjectExtendedLimitInformation, @Limits, SizeOf(Limits))
+        then BridgeLogWarn(LogTag, 'Start: SetInformationJobObject failed (' + SysErrorMessage(GetLastError) + '): the app will not end together with this process');
+      end;
 
     { # The process, suspended until it is in the job }
     SI := Default(TStartupInfo);
@@ -852,27 +849,27 @@ begin
     then SI.wShowWindow := SW_SHOWNORMAL
     else SI.wShowWindow := SW_SHOWMINNOACTIVE;
     CmdLine := '"' + ExePath + '"';
-    if Params <> '' then
-      CmdLine := CmdLine + ' ' + Params;
+    if Params <> ''
+    then CmdLine := CmdLine + ' ' + Params;
     UniqueString(CmdLine);   // CreateProcessW may write into its command line buffer
     WorkDir := ExtractFileDir(ExePath);
     if WorkDir = ''
     then WorkDirPtr := NIL
     else WorkDirPtr := PChar(WorkDir);
     PI := Default(TProcessInformation);
-    if not CreateProcess(PChar(ExePath), PChar(CmdLine), NIL, NIL, FALSE, CREATE_SUSPENDED, NIL, WorkDirPtr, SI, PI) then
-      raise ETargetNotRunning.Create('Autopilot.Start: cannot start ' + ExePath + ': ' + SysErrorMessage(GetLastError));
+    if not CreateProcess(PChar(ExePath), PChar(CmdLine), NIL, NIL, FALSE, CREATE_SUSPENDED, NIL, WorkDirPtr, SI, PI)
+    then raise ETargetNotRunning.Create('Autopilot.Start: cannot start ' + ExePath + ': ' + SysErrorMessage(GetLastError));
     Result.FProcess := PI.hProcess;
     Result.FPid     := PI.dwProcessId;
     try
-      if (Result.FJob <> 0) and not AssignProcessToJobObject(Result.FJob, PI.hProcess) then
-        BridgeLogWarn(LogTag, 'Start: AssignProcessToJobObject failed (' + SysErrorMessage(GetLastError) + '): the app will not end together with this process');
+      if (Result.FJob <> 0) and not AssignProcessToJobObject(Result.FJob, PI.hProcess)
+      then BridgeLogWarn(LogTag, 'Start: AssignProcessToJobObject failed (' + SysErrorMessage(GetLastError) + '): the app will not end together with this process');
       { A discovery file with this pid is left over from an earlier process that ended without StopBridge: this one has not run a line yet }
       DiscoveryFile := DiscoveryFileOf(Result.FPid);
-      if FileExists(DiscoveryFile) and not System.SysUtils.DeleteFile(DiscoveryFile) then
-        BridgeLogWarn(LogTag, 'Start: cannot delete the stale discovery file ' + DiscoveryFile + ': ' + SysErrorMessage(GetLastError));
-      if ResumeThread(PI.hThread) = $FFFFFFFF then
-        RaiseLastOSError;
+      if FileExists(DiscoveryFile) and not System.SysUtils.DeleteFile(DiscoveryFile)
+      then BridgeLogWarn(LogTag, 'Start: cannot delete the stale discovery file ' + DiscoveryFile + ': ' + SysErrorMessage(GetLastError));
+      if ResumeThread(PI.hThread) = $FFFFFFFF
+      then RaiseLastOSError;
     finally
       CloseHandle(PI.hThread);
     end;
@@ -893,10 +890,9 @@ var
 begin
   Deadline := GetTickCount64 + ATimeoutMs;
   repeat
-    if FileExists(ADiscoveryFile) and TryReadPipeName(ADiscoveryFile, Result) then
-      EXIT;
-    if ProcessEnded(ExitInfo) then
-      raise ETargetNotRunning.Create('Autopilot.Start: ' + ExtractFileName(AExePath) + ' (pid ' + UIntToStr(FPid) + ') ended' + ExitInfo + ' before its bridge came up');
+    if FileExists(ADiscoveryFile) and TryReadPipeName(ADiscoveryFile, Result) then EXIT;
+    if ProcessEnded(ExitInfo)
+    then raise ETargetNotRunning.Create('Autopilot.Start: ' + ExtractFileName(AExePath) + ' (pid ' + UIntToStr(FPid) + ') ended' + ExitInfo + ' before its bridge came up');
     Sleep(PipeRetryMs);
   until GetTickCount64 >= Deadline;
   raise ETargetNotRunning.Create('Autopilot.Start: ' + ExtractFileName(AExePath) + ' (pid ' + UIntToStr(FPid) + ') runs, but no bridge wrote ' + ADiscoveryFile + ' within ' + UIntToStr(ATimeoutMs) + ' ms. Likely causes: the app was built without the ' + 'AUTOPILOT define, it never calls StartBridge, or it waits in a startup error box' + DialogBoxesNote(FPid) + '. The app was killed');
@@ -911,31 +907,32 @@ var
 begin
   Targets := ListTargets;
   Chosen := -1;
-  if Pid <> 0 then
-  begin
-    for i := 0 to High(Targets) do
-      if Targets[i].Pid = Pid then
-        Chosen := i;
-    if Chosen < 0 then
-      raise ETargetNotRunning.Create('Autopilot.Attach: no Autopilot target with pid ' + UIntToStr(Pid) + ' is running (no live ' + DiscoveryFileOf(Pid) + ')');
-  end
-  else
-  begin
-    if Length(Targets) = 0 then
-      raise ETargetNotRunning.Create('Autopilot.Attach: no Autopilot target is running (' + DiscoveryFolderPath + ' holds no live entry)');
-    if Length(Targets) > 1 then
+  if Pid <> 0
+  then
     begin
-      Pids := '';
       for i := 0 to High(Targets) do
-      begin
-        if Pids <> '' then
-          Pids := Pids + ', ';
-        Pids := Pids + UIntToStr(Targets[i].Pid);
-      end;
-      raise ETargetNotRunning.Create('Autopilot.Attach: ' + IntToStr(Length(Targets)) + ' Autopilot targets are running (pids ' + Pids + '); pass the pid of the app to Attach');
+        if Targets[i].Pid = Pid
+        then Chosen := i;
+      if Chosen < 0
+      then raise ETargetNotRunning.Create('Autopilot.Attach: no Autopilot target with pid ' + UIntToStr(Pid) + ' is running (no live ' + DiscoveryFileOf(Pid) + ')');
+    end
+  else
+    begin
+      if Length(Targets) = 0
+      then raise ETargetNotRunning.Create('Autopilot.Attach: no Autopilot target is running (' + DiscoveryFolderPath + ' holds no live entry)');
+      if Length(Targets) > 1 then
+        begin
+          Pids := '';
+          for i := 0 to High(Targets) do
+            begin
+              if Pids <> ''
+              then Pids := Pids + ', ';
+              Pids := Pids + UIntToStr(Targets[i].Pid);
+            end;
+          raise ETargetNotRunning.Create('Autopilot.Attach: ' + IntToStr(Length(Targets)) + ' Autopilot targets are running (pids ' + Pids + '); pass the pid of the app to Attach');
+        end;
+      Chosen := 0;
     end;
-    Chosen := 0;
-  end;
   Result := TAutopilotApp.CreateForPipe(Targets[Chosen].PipeName, Targets[Chosen].Pid);
   BridgeLogInfo(LogTag, 'Attach: pid ' + UIntToStr(Result.FPid) + ' ' + Result.FPipeName);
 end;
@@ -947,15 +944,15 @@ var
   Scan: TWindowScan;
   AppWnd: HWND;
 begin
-  if FPid = 0 then
-    raise ETargetNotRunning.Create('Autopilot.Close: this TAutopilotApp has no app; create it with TAutopilotApp.Start or TAutopilotApp.Attach');
-  if FPid = GetCurrentProcessId then
-    raise EInvalidOpException.Create('Autopilot.Close: the app is this process (pid ' + UIntToStr(FPid) + ')');
+  if FPid = 0
+  then raise ETargetNotRunning.Create('Autopilot.Close: this TAutopilotApp has no app; create it with TAutopilotApp.Start or TAutopilotApp.Attach');
+  if FPid = GetCurrentProcessId
+  then raise EInvalidOpException.Create('Autopilot.Close: the app is this process (pid ' + UIntToStr(FPid) + ')');
   if ProcessEnded(ExitInfo) then
-  begin
-    DeleteDiscoveryFileIfEnded;
-    EXIT;
-  end;
+    begin
+      DeleteDiscoveryFileIfEnded;
+      EXIT;
+    end;
 
   Scan := ScanWindowsOf(FPid);
   try
@@ -964,19 +961,19 @@ begin
     FreeAndNil(Scan);
   end;
   if (AppWnd = 0) or not PostMessage(AppWnd, WM_CLOSE, 0, 0) then
-  begin
-    Boxes  := DialogBoxesNote(FPid);
-    Killed := Kill;
-    raise ETargetNotResponding.Create('Autopilot.Close: the app (pid ' + UIntToStr(FPid) + ') has no TApplication or TFMAppClass window ' + 'that takes WM_CLOSE' + Boxes + '; ' + Killed);
-  end;
+    begin
+      Boxes  := DialogBoxesNote(FPid);
+      Killed := Kill;
+      raise ETargetNotResponding.Create('Autopilot.Close: the app (pid ' + UIntToStr(FPid) + ') has no TApplication or TFMAppClass window ' + 'that takes WM_CLOSE' + Boxes + '; ' + Killed);
+    end;
 
   if WaitForEnd(TimeoutMs) then
-  begin
-    ProcessEnded(ExitInfo);
-    BridgeLogInfo(LogTag, 'Close: pid ' + UIntToStr(FPid) + ' ended' + ExitInfo);
-    DeleteDiscoveryFileIfEnded;
-    EXIT;
-  end;
+    begin
+      ProcessEnded(ExitInfo);
+      BridgeLogInfo(LogTag, 'Close: pid ' + UIntToStr(FPid) + ' ended' + ExitInfo);
+      DeleteDiscoveryFileIfEnded;
+      EXIT;
+    end;
 
   Boxes  := DialogBoxesNote(FPid);   // read while the app still runs
   Killed := Kill;
@@ -990,8 +987,8 @@ procedure TAutopilotApp.RaiseConnectionClosed(const AWhat: String);
 var
   ExitInfo: String;
 begin
-  if ProcessEnded(ExitInfo) then
-    raise ETargetNotRunning.Create('Autopilot: the app (pid ' + UIntToStr(FPid) + ') ended' + ExitInfo + '; its bridge ' + AWhat);
+  if ProcessEnded(ExitInfo)
+  then raise ETargetNotRunning.Create('Autopilot: the app (pid ' + UIntToStr(FPid) + ') ended' + ExitInfo + '; its bridge ' + AWhat);
   raise ETargetNotResponding.Create('Autopilot: the bridge on ' + FPipeName + ' ' + AWhat + ' (it is shutting down, or it refused the request)');
 end;
 
@@ -1022,28 +1019,29 @@ begin
 
     { How the bridge moves from one connection to the next (measured 2026-10-13, a command sent right after the previous one): the open finds the pipe busy (the old instance still exists); the bridge closes that instance about 0.1 ms later (the pipe is gone: ERROR_FILE_NOT_FOUND) and creates the next one within about 0.2 ms.
       A Sleep(25) at either step lasts about 33 ms on Windows, because of the timer tick. }
-    if Err = ERROR_PIPE_BUSY then
-    begin
-      { WaitNamedPipe returns as soon as the bridge waits for a client again (a pending ConnectNamedPipe), at once when the bridge closes the instance (measured: FALSE with ERROR_FILE_NOT_FOUND), and at the latest after the slice, so the liveness check above runs at least once per slice.
-        Its TRUE reserves nothing (another client may open the instance first), so the loop opens again whatever it returns.
-        Never pass 0: that is NMPWAIT_USE_DEFAULT_WAIT, the server's default time-out. https://learn.microsoft.com/en-us/windows/win32/api/namedpipeapi/nf-namedpipeapi-waitnamedpipew }
-      Left := Deadline - Tick;
-      if Left > BusyWaitSliceMs then
-        Left := BusyWaitSliceMs;
-      WaitNamedPipeW(PWideChar(FPipeName), DWORD(Left));
-      SeenBusy  := TRUE;
-      SinceBusy := TStopwatch.StartNew;
-    end
+    if Err = ERROR_PIPE_BUSY
+    then
+      begin
+        { WaitNamedPipe returns as soon as the bridge waits for a client again (a pending ConnectNamedPipe), at once when the bridge closes the instance (measured: FALSE with ERROR_FILE_NOT_FOUND), and at the latest after the slice, so the liveness check above runs at least once per slice.
+          Its TRUE reserves nothing (another client may open the instance first), so the loop opens again whatever it returns.
+          Never pass 0: that is NMPWAIT_USE_DEFAULT_WAIT, the server's default time-out. https://learn.microsoft.com/en-us/windows/win32/api/namedpipeapi/nf-namedpipeapi-waitnamedpipew }
+        Left := Deadline - Tick;
+        if Left > BusyWaitSliceMs
+        then Left := BusyWaitSliceMs;
+        WaitNamedPipeW(PWideChar(FPipeName), DWORD(Left));
+        SeenBusy  := TRUE;
+        SinceBusy := TStopwatch.StartNew;
+      end
     else
       if SeenBusy and (SinceBusy.ElapsedMilliseconds < RecreateYieldMs)
       then SwitchToThread    // the pipe vanished right after it was busy: the bridge is creating the next instance
       else Sleep(PipeRetryMs);
   until GetTickCount64 >= Deadline;
 
-  if Err = ERROR_PIPE_BUSY then
-    raise ETargetNotResponding.Create('Autopilot: pipe ' + FPipeName + ' stayed busy for ' + UIntToStr(ATimeoutMs) + ' ms: the app serves another client, or it is frozen (stopped on a breakpoint, or hung)');
-  if Err = ERROR_FILE_NOT_FOUND then
-    raise ETargetNotRunning.Create('Autopilot: pipe ' + FPipeName + ' did not appear within ' + UIntToStr(ATimeoutMs) + ' ms: the app has stopped its bridge (StopBridge), or it is closing');
+  if Err = ERROR_PIPE_BUSY
+  then raise ETargetNotResponding.Create('Autopilot: pipe ' + FPipeName + ' stayed busy for ' + UIntToStr(ATimeoutMs) + ' ms: the app serves another client, or it is frozen (stopped on a breakpoint, or hung)');
+  if Err = ERROR_FILE_NOT_FOUND
+  then raise ETargetNotRunning.Create('Autopilot: pipe ' + FPipeName + ' did not appear within ' + UIntToStr(ATimeoutMs) + ' ms: the app has stopped its bridge (StopBridge), or it is closing');
   E := EOSError.Create('Autopilot: cannot open pipe ' + FPipeName + ': ' + SysErrorMessage(Err) + ' (code ' + UIntToStr(Err) + '). The pipe accepts only the Windows user that runs the app: run the test as that user');
   E.ErrorCode := Err;
   raise E;
@@ -1058,27 +1056,27 @@ var
   Hello: TJSONObject;
   HelloVersion, HelloPid: Int64;
 begin
-  if not TBridgeWire.TryReadFrame(AStream, Raw) then
-    RaiseConnectionClosed('closed the connection before its hello');
+  if not TBridgeWire.TryReadFrame(AStream, Raw)
+  then RaiseConnectionClosed('closed the connection before its hello');
   Root := TJSONObject.ParseJSONValue(Raw);
   try
     if Root is TJSONObject
     then V := TJSONObject(Root).GetValue('hello')
     else V := NIL;
-    if not (V is TJSONObject) then
-      raise EAutopilotError.CreateCode(ErrProtocolMismatch, 'Autopilot: the first frame on ' + FPipeName + ' is not a hello: ' + Copy(Raw, 1, 200));
+    if not (V is TJSONObject)
+    then raise EAutopilotError.CreateCode(ErrProtocolMismatch, 'Autopilot: the first frame on ' + FPipeName + ' is not a hello: ' + Copy(Raw, 1, 200));
     Hello := TJSONObject(V);
-    if not TryJsonInt64(Hello.GetValue('protocolVersion'), HelloVersion) then
-      raise EAutopilotError.CreateCode(ErrProtocolMismatch, 'Autopilot: the hello on ' + FPipeName + ' has no protocolVersion: ' + Copy(Raw, 1, 200));
-    if HelloVersion <> ProtocolVersion then
-      raise EAutopilotError.CreateCode(ErrProtocolMismatch, 'Autopilot: protocol mismatch on ' + FPipeName + ': the bridge speaks protocol ' + IntToStr(HelloVersion) + ', this client speaks protocol ' + IntToStr(ProtocolVersion) + '. Use the client unit of the same Autopilot release as the bridge');
+    if not TryJsonInt64(Hello.GetValue('protocolVersion'), HelloVersion)
+    then raise EAutopilotError.CreateCode(ErrProtocolMismatch, 'Autopilot: the hello on ' + FPipeName + ' has no protocolVersion: ' + Copy(Raw, 1, 200));
+    if HelloVersion <> ProtocolVersion
+    then raise EAutopilotError.CreateCode(ErrProtocolMismatch, 'Autopilot: protocol mismatch on ' + FPipeName + ': the bridge speaks protocol ' + IntToStr(HelloVersion) + ', this client speaks protocol ' + IntToStr(ProtocolVersion) + '. Use the client unit of the same Autopilot release as the bridge');
     if TryJsonInt64(Hello.GetValue('pid'), HelloPid) then
-    begin
-      if (HelloPid = GetCurrentProcessId) and (GetCurrentThreadId = MainThreadID) then
-        raise EInvalidOpException.Create('Autopilot: called from the main thread of the process whose bridge answers (pid ' + IntToStr(HelloPid) + '). The bridge runs every command on that main thread, so this call would wait for itself and ' + 'fail with -32004 after its timeout. Call the client from a worker thread, or from a separate test EXE');
-      if (FPid <> 0) and (HelloPid <> FPid) then
-        raise ETargetNotRunning.Create('Autopilot: pipe ' + FPipeName + ' belongs to pid ' + IntToStr(HelloPid) + ', not to the app (pid ' + UIntToStr(FPid) + ')');
-    end;
+      begin
+        if (HelloPid = GetCurrentProcessId) and (GetCurrentThreadId = MainThreadID)
+        then raise EInvalidOpException.Create('Autopilot: called from the main thread of the process whose bridge answers (pid ' + IntToStr(HelloPid) + '). The bridge runs every command on that main thread, so this call would wait for itself and ' + 'fail with -32004 after its timeout. Call the client from a worker thread, or from a separate test EXE');
+        if (FPid <> 0) and (HelloPid <> FPid)
+        then raise ETargetNotRunning.Create('Autopilot: pipe ' + FPipeName + ' belongs to pid ' + IntToStr(HelloPid) + ', not to the app (pid ' + UIntToStr(FPid) + ')');
+      end;
   finally
     FreeAndNil(Root);
   end;
@@ -1104,8 +1102,8 @@ begin
   try
     Req.AddPair('id', TJSONNumber.Create(Id));
     Req.AddPair('cmd', ACmd);
-    if AArgs = NIL then
-      AArgs := TJSONObject.Create;
+    if AArgs = NIL
+    then AArgs := TJSONObject.Create;
     Req.AddPair('args', AArgs);
     AArgs := NIL;   // Req owns it now
     Req.AddPair('timeoutMs', TJSONNumber.Create(Int64(ATimeoutMs)));
@@ -1115,8 +1113,8 @@ begin
     FreeAndNil(AArgs);   // only when AddPair raised before Req took it
   end;
 
-  if FPipeName = '' then
-    raise ETargetNotRunning.Create('Autopilot: this TAutopilotApp has no app; create it with TAutopilotApp.Start or TAutopilotApp.Attach');
+  if FPipeName = ''
+  then raise ETargetNotRunning.Create('Autopilot: this TAutopilotApp has no app; create it with TAutopilotApp.Start or TAutopilotApp.Attach');
 
   { # The round trip }
   Pipe := OpenPipe(ATimeoutMs);
@@ -1126,8 +1124,8 @@ begin
       ReadHello(Stream);
       WriteHelloAck(Stream);
       TBridgeWire.WriteFrame(Stream, ReqText);
-      if not TBridgeWire.TryReadFrame(Stream, Frame) then
-        RaiseConnectionClosed('closed the connection without answering ' + ACmd);
+      if not TBridgeWire.TryReadFrame(Stream, Frame)
+      then RaiseConnectionClosed('closed the connection without answering ' + ACmd);
     finally
       FreeAndNil(Stream);
     end;
@@ -1138,16 +1136,16 @@ begin
   { # The answer: a JSON object with the request's id }
   Parsed := TJSONObject.ParseJSONValue(Frame);
   if not (Parsed is TJSONObject) then
-  begin
-    FreeAndNil(Parsed);
-    raise EAutopilotError.CreateCode(ErrProtocolMismatch, 'Autopilot ' + ACmd + ': the answer is not a JSON object: ' + Copy(Frame, 1, 200));
-  end;
+    begin
+      FreeAndNil(Parsed);
+      raise EAutopilotError.CreateCode(ErrProtocolMismatch, 'Autopilot ' + ACmd + ': the answer is not a JSON object: ' + Copy(Frame, 1, 200));
+    end;
   Result := TJSONObject(Parsed);
   if not TryJsonInt64(Result.GetValue('id'), AnswerId) or (AnswerId <> Id) then
-  begin
-    FreeAndNil(Result);
-    raise EAutopilotError.CreateCode(ErrProtocolMismatch, 'Autopilot ' + ACmd + ': the answer does not carry the id ' + IntToStr(Id) + ' of the request: ' + Copy(Frame, 1, 200));
-  end;
+    begin
+      FreeAndNil(Result);
+      raise EAutopilotError.CreateCode(ErrProtocolMismatch, 'Autopilot ' + ACmd + ': the answer does not carry the id ' + IntToStr(Id) + ' of the request: ' + Copy(Frame, 1, 200));
+    end;
 end;
 
 
@@ -1161,24 +1159,24 @@ var
   Code: Integer;
   Msg, Data: String;
 begin
-  if ATimeoutMs = 0 then
-    ATimeoutMs := DefaultTimeoutFor(ACmd);
+  if ATimeoutMs = 0
+  then ATimeoutMs := DefaultTimeoutFor(ACmd);
   Root := Exchange(ACmd, AArgs, ATimeoutMs);
   try
     if JsonBool(Root, 'ok') then
-    begin
-      V := Root.GetValue('result');
-      if V is TJSONObject
-      then Result := TJSONObject(V.Clone)
-      else Result := TJSONObject.Create;
-      EXIT;
-    end;
+      begin
+        V := Root.GetValue('result');
+        if V is TJSONObject
+        then Result := TJSONObject(V.Clone)
+        else Result := TJSONObject.Create;
+        EXIT;
+      end;
     ReadErrorOf(Root, Code, Msg, Data);
   finally
     FreeAndNil(Root);
   end;
-  if (Code = ErrMainThreadBlocked) and AListDialogsWhenBlocked then
-    Msg := Msg + OpenDialogsNote;
+  if (Code = ErrMainThreadBlocked) and AListDialogsWhenBlocked
+  then Msg := Msg + OpenDialogsNote;
   raise EAutopilotError.CreateCode(Code, 'Autopilot ' + ACmd + ': ' + Msg + ' (error ' + IntToStr(Code) + ')', Data);
 end;
 
@@ -1251,12 +1249,11 @@ begin
   try
     V := R.GetValue('dialogs');
     if V is TJSONArray then
-    begin
-      Arr := TJSONArray(V);
-      for i := 0 to Arr.Count - 1 do
-        if (Arr.Items[i] is TJSONObject) and TryJsonInt64(TJSONObject(Arr.Items[i]).GetValue('hwnd'), H) and (H = AHwnd) then
-          EXIT(TRUE);
-    end;
+      begin
+        Arr := TJSONArray(V);
+        for i := 0 to Arr.Count - 1 do
+          if (Arr.Items[i] is TJSONObject) and TryJsonInt64(TJSONObject(Arr.Items[i]).GetValue('hwnd'), H) and (H = AHwnd) then EXIT(TRUE);
+      end;
   finally
     FreeAndNil(R);
   end;
@@ -1273,16 +1270,16 @@ var
   N: Int64;
 begin
   Args := NewArgs(Path);
-  if Count <> 1 then
-    Args.AddPair('count', TJSONNumber.Create(Count));   // the bridge rejects a count outside 1..1000 with -32600
+  if Count <> 1
+  then Args.AddPair('count', TJSONNumber.Create(Count));   // the bridge rejects a count outside 1..1000 with -32600
   if (TimeoutMs = 0) and (Count > 1) then
-  begin
-    // Clamp before the arithmetic, so an absurd Count reaches the bridge's clear rejection instead of an overflow here
-    Budget := Count;
-    if Budget > MaxClickCount then
-      Budget := MaxClickCount;
-    TimeoutMs := DefaultTimeoutClickMs + Cardinal(Budget - 1) * PerClickBudgetMs;
-  end;
+    begin
+      // Clamp before the arithmetic, so an absurd Count reaches the bridge's clear rejection instead of an overflow here
+      Budget := Count;
+      if Budget > MaxClickCount
+      then Budget := MaxClickCount;
+      TimeoutMs := DefaultTimeoutClickMs + Cardinal(Budget - 1) * PerClickBudgetMs;
+    end;
   R := Request('click', Args, TimeoutMs, TRUE);
   try
     Stopped := JsonStr(R, 'stoppedReason');
@@ -1293,8 +1290,8 @@ begin
   finally
     FreeAndNil(R);
   end;
-  if Copy(Stopped, 1, Length('exception:')) = 'exception:' then
-    raise EAutopilotHandlerError.CreateCode(ErrInternalError, 'Autopilot click ' + Path + ': the OnClick handler raised ' + Copy(Stopped, Length('exception:') + 1, MaxInt) + ' after ' + IntToStr(Result) + ' successful clicks (the bridge caught it; the app''s own exception handler never saw it)', Answer);
+  if Copy(Stopped, 1, Length('exception:')) = 'exception:'
+  then raise EAutopilotHandlerError.CreateCode(ErrInternalError, 'Autopilot click ' + Path + ': the OnClick handler raised ' + Copy(Stopped, Length('exception:') + 1, MaxInt) + ' after ' + IntToStr(Result) + ' successful clicks (the bridge caught it; the app''s own exception handler never saw it)', Answer);
 end;
 
 
@@ -1373,10 +1370,10 @@ var
   Args: TJSONObject;
 begin
   Args := NewArgs(Path);
-  if Keys <> '' then
-    Args.AddPair('keys', Keys);
-  if Text <> '' then
-    Args.AddPair('text', Text);
+  if Keys <> ''
+  then Args.AddPair('keys', Keys);
+  if Text <> ''
+  then Args.AddPair('text', Text);
   Send('send_keys', Args);
 end;
 
@@ -1389,8 +1386,8 @@ var
   DialogHwnd: Int64;
   Deadline: UInt64;
 begin
-  if Trim(Button) = '' then
-    raise EArgumentException.Create('Autopilot.DismissDialog: Button is empty; pass a role (ok, cancel, yes, no, retry, abort, ignore, close), ' + 'a button caption or a control id');
+  if Trim(Button) = ''
+  then raise EArgumentException.Create('Autopilot.DismissDialog: Button is empty; pass a role (ok, cancel, yes, no, retry, abort, ignore, close), ' + 'a button caption or a control id');
 
   { # Wait for the dialog: after ClickAsync the click, and with it the dialog, comes only after the click's answer }
   Deadline := GetTickCount64 + TimeoutMs;
@@ -1436,11 +1433,11 @@ begin
   finally
     FreeAndNil(R);
   end;
-  if Image = '' then
-    raise EAutopilotError.CreateCode(ErrProtocolMismatch, 'Autopilot screenshot ' + Path + ': the answer has no image');
+  if Image = ''
+  then raise EAutopilotError.CreateCode(ErrProtocolMismatch, 'Autopilot screenshot ' + Path + ': the answer has no image');
   Bytes := TNetEncoding.Base64.DecodeStringToBytes(Image);
-  if ExtractFileDir(PngFileName) <> '' then
-    ForceDirectories(ExtractFileDir(PngFileName));
+  if ExtractFileDir(PngFileName) <> ''
+  then ForceDirectories(ExtractFileDir(PngFileName));
   TFile.WriteAllBytes(PngFileName, Bytes);
 end;
 
@@ -1464,17 +1461,17 @@ begin
     except
       // A control that does not exist yet, or a main thread busy for a moment: poll again. A protocol mismatch never heals.
       on E: EAutopilotError do
-      begin
-        if E.Code = ErrProtocolMismatch then
-          raise;
-        LastError := E.Message;
-      end;
+        begin
+          if E.Code = ErrProtocolMismatch
+          then raise;
+          LastError := E.Message;
+        end;
     end;
     if GetTickCount64 >= Deadline then Break;
     Sleep(ClientPollIntervalMs);
   until FALSE;
-  if LastError <> '' then
-    LastError := '; last error: ' + LastError;
+  if LastError <> ''
+  then LastError := '; last error: ' + LastError;
   BridgeLogInfo(LogTag, 'WaitForText ' + Path + ': "' + Expected + '" not seen within ' + UIntToStr(TimeoutMs) + ' ms (' + IntToStr(Polls) + ' polls); last text "' + Current + '"' + LastError);
   Result := FALSE;
 end;

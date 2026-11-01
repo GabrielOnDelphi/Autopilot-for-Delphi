@@ -83,8 +83,8 @@ end;
 procedure TFreeWatch.Notification(AComponent: TComponent; Operation: TOperation);
 begin
   inherited;   // unlinks AComponent; RemoveFreeNotifications loops until this unlink happens
-  if (Operation = opRemove) and (AComponent = FWatched) then
-    Freed := TRUE;
+  if (Operation = opRemove) and (AComponent = FWatched)
+  then Freed := TRUE;
 end;
 
 
@@ -108,20 +108,20 @@ var
 begin
   Result := FALSE;
   if ALeaf = '' then exit;
-  if ALeaf[1] = '@' then
-  begin
-    HashPos := Pos('#', ALeaf);
-    if HashPos < 3 then exit;
-    ClassPart := Copy(ALeaf, 2, HashPos - 2);
-    IdxStr := Copy(ALeaf, HashPos + 1, MaxInt);
-    Val(IdxStr, Idx, ParseCode);
-    if ParseCode <> 0 then exit;
-    if (Idx < 0) or (Idx >= AOwner.ComponentCount) then exit;
-    if AOwner.Components[Idx] <> AComp then exit;
-    Result := SameText(AComp.ClassName, ClassPart);
-  end
-  else
-    Result := SameText(AComp.Name, ALeaf);
+  if ALeaf[1] = '@'
+  then
+    begin
+      HashPos := Pos('#', ALeaf);
+      if HashPos < 3 then exit;
+      ClassPart := Copy(ALeaf, 2, HashPos - 2);
+      IdxStr := Copy(ALeaf, HashPos + 1, MaxInt);
+      Val(IdxStr, Idx, ParseCode);
+      if ParseCode <> 0 then exit;
+      if (Idx < 0) or (Idx >= AOwner.ComponentCount) then exit;
+      if AOwner.Components[Idx] <> AComp then exit;
+      Result := SameText(AComp.ClassName, ClassPart);
+    end
+  else Result := SameText(AComp.Name, ALeaf);
 end;
 
 
@@ -131,8 +131,7 @@ var
 begin
   Result := NIL;
   for j := 0 to AParent.ComponentCount - 1 do
-    if MatchesLeaf(AParent, AParent.Components[j], ALeaf) then
-      exit(AParent.Components[j]);
+    if MatchesLeaf(AParent, AParent.Components[j], ALeaf) then exit(AParent.Components[j]);
 end;
 
 
@@ -144,22 +143,21 @@ var
 begin
   Result := NIL;
   for j := 0 to AParent.ComponentCount - 1 do
-  begin
-    Child := AParent.Components[j];
-    if AVisited.IndexOf(Child) >= 0 then Continue;
-    AVisited.Add(Child);
-    if MatchesLeaf(AParent, Child, ALeaf) then
-      exit(Child);
-  end;
-  for j := 0 to AParent.ComponentCount - 1 do
-  begin
-    Child := AParent.Components[j];
-    if Child.ComponentCount > 0 then
     begin
-      Result := FindDescendantOf(Child, ALeaf, AVisited);
-      if Result <> NIL then exit;
+      Child := AParent.Components[j];
+      if AVisited.IndexOf(Child) >= 0 then Continue;
+      AVisited.Add(Child);
+      if MatchesLeaf(AParent, Child, ALeaf) then exit(Child);
     end;
-  end;
+  for j := 0 to AParent.ComponentCount - 1 do
+    begin
+      Child := AParent.Components[j];
+      if Child.ComponentCount > 0 then
+        begin
+          Result := FindDescendantOf(Child, ALeaf, AVisited);
+          if Result <> NIL then exit;
+        end;
+    end;
 end;
 
 
@@ -182,17 +180,16 @@ end;
   A synthetic '@Class#N' id is owner-relative, so it is checked against the object's own Owner. }
 function MatchesVisualLeaf(AComp: TComponent; const ALeaf: String): Boolean;
 begin
-  if (ALeaf <> '') and (ALeaf[1] = '@') then
-    Result := (AComp.Owner <> NIL) and MatchesLeaf(AComp.Owner, AComp, ALeaf)
-  else
-    Result := (ALeaf <> '') and SameText(AComp.Name, ALeaf);
+  if (ALeaf <> '') and (ALeaf[1] = '@')
+  then Result := (AComp.Owner <> NIL) and MatchesLeaf(AComp.Owner, AComp, ALeaf)
+  else Result := (ALeaf <> '') and SameText(AComp.Name, ALeaf);
 end;
 
 
 procedure AddUnique(AList: TList; AComp: TComponent);
 begin
-  if AList.IndexOf(AComp) < 0 then
-    AList.Add(AComp);
+  if AList.IndexOf(AComp) < 0
+  then AList.Add(AComp);
 end;
 
 
@@ -205,13 +202,13 @@ begin
   Assert(TThread.CurrentThread.ThreadID = MainThreadID, 'CollectVisualDescendants: FMX touched off the main thread');
   if not (AParent is TFmxObject) or (ADepth > MaxVisualDepth) then exit;
   for j := 0 to TFmxObject(AParent).ChildrenCount - 1 do
-  begin
-    Child := TFmxObject(AParent).Children[j];
-    if IsStyleTree(Child) then Continue;
-    if MatchesVisualLeaf(Child, ALeaf) then
-      AddUnique(AMatches, Child);
-    CollectVisualDescendants(Child, ALeaf, AMatches, ADepth + 1);
-  end;
+    begin
+      Child := TFmxObject(AParent).Children[j];
+      if IsStyleTree(Child) then Continue;
+      if MatchesVisualLeaf(Child, ALeaf)
+      then AddUnique(AMatches, Child);
+      CollectVisualDescendants(Child, ALeaf, AMatches, ADepth + 1);
+    end;
 end;
 
 
@@ -224,14 +221,14 @@ begin
   Assert(TThread.CurrentThread.ThreadID = MainThreadID, 'CollectVisualChildren: FMX touched off the main thread');
   if not (AParent is TFmxObject) or (ADepth > MaxVisualDepth) then exit;
   for j := 0 to TFmxObject(AParent).ChildrenCount - 1 do
-  begin
-    Child := TFmxObject(AParent).Children[j];
-    if IsStyleTree(Child) then Continue;
-    if MatchesVisualLeaf(Child, ALeaf) then
-      AddUnique(AStep, Child);
-    if not Child.Stored then
-      CollectVisualChildren(Child, ALeaf, AStep, ADepth + 1);
-  end;
+    begin
+      Child := TFmxObject(AParent).Children[j];
+      if IsStyleTree(Child) then Continue;
+      if MatchesVisualLeaf(Child, ALeaf)
+      then AddUnique(AStep, Child);
+      if not Child.Stored
+      then CollectVisualChildren(Child, ALeaf, AStep, ADepth + 1);
+    end;
 end;
 
 
@@ -245,16 +242,16 @@ var
 begin
   Assert(TThread.CurrentThread.ThreadID = MainThreadID, 'CollectAnchoredMatches: FMX touched off the main thread');
   if AIndex > High(AParts) then
-  begin
-    AddUnique(AMatches, ACur);
-    exit;
-  end;
+    begin
+      AddUnique(AMatches, ACur);
+      exit;
+    end;
 
   Step := TList.Create;
   try
     Owned := FindChildOf(ACur, AParts[AIndex]);
-    if Owned <> NIL then
-      Step.Add(Owned);
+    if Owned <> NIL
+    then Step.Add(Owned);
     CollectVisualChildren(ACur, AParts[AIndex], Step, 0);
     for j := 0 to Step.Count - 1 do
       CollectAnchoredMatches(TComponent(Step[j]), AParts, AIndex + 1, AMatches);
@@ -282,46 +279,47 @@ begin
   if Length(Parts) < 1 then exit;
   FormName := Parts[0];
   for i := 0 to Screen.FormCount - 1 do
-  begin
-    Form := Screen.Forms[i];
-    if (FormName <> '*') and not SameText(Form.Name, FormName) then Continue;
-    if Length(Parts) = 1 then
-      exit(TComponent(Form))
-    else
-      if Length(Parts) = 2 then
-      begin
-        Visited := TList.Create;
-        try
-          Result := FindDescendantOf(Form, Parts[1], Visited);
-        finally
-          FreeAndNil(Visited);
-        end;
-        if Result <> NIL then exit;
-      end
+    begin
+      Form := Screen.Forms[i];
+      if (FormName <> '*') and not SameText(Form.Name, FormName) then Continue;
+      if Length(Parts) = 1
+      then exit(TComponent(Form))
       else
-      begin
-        Cur := Form;
-        for k := 1 to High(Parts) do
-        begin
-          Cur := FindChildOf(Cur, Parts[k]);
-          if Cur = NIL then Break;
-        end;
-        if Cur <> NIL then exit(Cur);
-      end;
-  end;
+        if Length(Parts) = 2
+        then
+          begin
+            Visited := TList.Create;
+            try
+              Result := FindDescendantOf(Form, Parts[1], Visited);
+            finally
+              FreeAndNil(Visited);
+            end;
+            if Result <> NIL then exit;
+          end
+        else
+          begin
+            Cur := Form;
+            for k := 1 to High(Parts) do
+              begin
+                Cur := FindChildOf(Cur, Parts[k]);
+                if Cur = NIL then Break;
+              end;
+            if Cur <> NIL then exit(Cur);
+          end;
+    end;
 
   { # Visual-parent fallback }
   if Length(Parts) < 2 then exit;
   for i := 0 to Screen.FormCount - 1 do
-  begin
-    Form := Screen.Forms[i];
-    if (FormName <> '*') and not SameText(Form.Name, FormName) then Continue;
-    if Length(Parts) = 2
-    then CollectVisualDescendants(Form, Parts[1], AMatches, 0)
-    else CollectAnchoredMatches(Form, Parts, 1, AMatches);
-  end;
-  if AMatches.Count = 1 then
-    Result := TComponent(AMatches[0]);
+    begin
+      Form := Screen.Forms[i];
+      if (FormName <> '*') and not SameText(Form.Name, FormName) then Continue;
+      if Length(Parts) = 2
+      then CollectVisualDescendants(Form, Parts[1], AMatches, 0)
+      else CollectAnchoredMatches(Form, Parts, 1, AMatches);
+    end;
+  if AMatches.Count = 1
+  then Result := TComponent(AMatches[0]);
 end;
 
 
@@ -362,8 +360,8 @@ begin
       TCommonCustomForm has Caption but no Text, so get_text("MyFmxForm") needs the fallback.
       A Text or Caption that is not a string counts as missing. }
     Prop := RT.GetProperty('Text');
-    if not IsReadableStringProp(Prop) then
-      Prop := RT.GetProperty('Caption');
+    if not IsReadableStringProp(Prop)
+    then Prop := RT.GetProperty('Caption');
     if not IsReadableStringProp(Prop) then exit;
     { Same guard as the VCL bridge: some FMX property getters raise on partially-initialized forms or controls.
       The exception is swallowed and reported as "no text". }
@@ -456,14 +454,14 @@ begin
       A Text or Caption that cannot hold a string counts as missing. }
     NewValue := AValue;
     Prop := RT.GetProperty('Text');
-    if not TryConvertForWrite(Prop, NewValue, Converted) then
-      Prop := RT.GetProperty('Caption');
+    if not TryConvertForWrite(Prop, NewValue, Converted)
+    then Prop := RT.GetProperty('Caption');
     if not TryConvertForWrite(Prop, NewValue, Converted) then exit;
     if not Prop.IsWritable then
-    begin
-      AErrCode := ErrUnsupportedAction;
-      exit;
-    end;
+      begin
+        AErrCode := ErrUnsupportedAction;
+        exit;
+      end;
     Prop.SetValue(AComp, Converted);
     Result := TRUE;
   finally
@@ -497,8 +495,8 @@ end;
 function AlphaColorToText(AColor: TAlphaColor): String;
 begin
   AlphaColorToIdent(Integer(AColor), Result);
-  if (Result <> '') and (Result[1] = 'x') then
-    Result := '#' + Copy(Result, 2, MaxInt);
+  if (Result <> '') and (Result[1] = 'x')
+  then Result := '#' + Copy(Result, 2, MaxInt);
 end;
 
 
@@ -531,18 +529,18 @@ begin
     begin
       // TAlphaColor short-circuit: emit '#AARRGGBB' (or 'claName' when named) instead of a raw 32-bit integer.
       if AProp.PropertyType.Handle = TypeInfo(TAlphaColor) then
-      begin
-        try
-          AlphaStr := AlphaColorToText(TAlphaColor(V.AsOrdinal));
-          AValue := AlphaStr;
-          Result := TRUE;
-        except
-          // Fall back to raw decimal on any UIConsts failure: a readback must never fail the whole availableProperties response.
-          AValue := IntToStr(V.AsOrdinal);
-          Result := TRUE;
+        begin
+          try
+            AlphaStr := AlphaColorToText(TAlphaColor(V.AsOrdinal));
+            AValue := AlphaStr;
+            Result := TRUE;
+          except
+            // Fall back to raw decimal on any UIConsts failure: a readback must never fail the whole availableProperties response.
+            AValue := IntToStr(V.AsOrdinal);
+            Result := TRUE;
+          end;
+          exit;
         end;
-        exit;
-      end;
       AValue := IntToStr(V.AsInteger);
       Result := TRUE;
     end;
@@ -552,20 +550,23 @@ begin
       Result := TRUE;
     end;
     tkEnumeration:
-      if AProp.PropertyType.Handle = TypeInfo(Boolean) then
-      begin
-        if V.AsBoolean then AValue := 'true' else AValue := 'false';
-        Result := TRUE;
-      end
-      else
-      begin
-        EnumName := GetEnumName(AProp.PropertyType.Handle, V.AsOrdinal);
-        if EnumName <> '' then
+      if AProp.PropertyType.Handle = TypeInfo(Boolean)
+      then
         begin
-          AValue := EnumName;
+          if V.AsBoolean
+          then AValue := 'true'
+          else AValue := 'false';
           Result := TRUE;
+        end
+      else
+        begin
+          EnumName := GetEnumName(AProp.PropertyType.Handle, V.AsOrdinal);
+          if EnumName <> '' then
+            begin
+              AValue := EnumName;
+              Result := TRUE;
+            end;
         end;
-      end;
     tkFloat:
     begin
       AValue := FloatToStr(V.AsExtended, FormatSettings.Invariant);
@@ -599,43 +600,41 @@ begin
       RT := Ctx.GetType(AInstance.ClassType);
       if RT = NIL then exit;
       for Prop in RT.GetProperties do
-      begin
-        if not Prop.IsWritable then Continue;
-        { tkClass is included so the AI sees 'Outer.Inner' nesting is available.
-          TAlphaColor is tkInteger by RTTI but is labelled 'alphacolor', so the AI knows to send '#AARRGGBB' / 'claName' rather than a raw integer. }
-        case Prop.PropertyType.TypeKind of
-          tkString, tkLString, tkWString, tkUString: KindName := 'string';
-          tkInteger:
-            if Prop.PropertyType.Handle = TypeInfo(TAlphaColor) then
-              KindName := 'alphacolor'
-            else
-              KindName := 'integer';
-          tkInt64:                                    KindName := 'int64';
-          tkEnumeration:
-            // The ByteBool/WordBool/LongBool family reads back as 'True'/'False' through GetEnumName (System.TypInfo.pas) and set_property takes it as a boolean, so tag it 'boolean': 'enum' would send the AI hunting for enum identifiers this family does not have.
-            if (Prop.PropertyType.Handle = TypeInfo(Boolean)) or IsBoolFamilyType(Prop.PropertyType.Handle) then
-              KindName := 'boolean'
-            else
-              KindName := 'enum';
-          tkSet:                                      KindName := 'set';
-          tkFloat:                                    KindName := 'float';
-          tkClass:                                    KindName := 'class';
-        else
-          Continue;
+        begin
+          if not Prop.IsWritable then Continue;
+          { tkClass is included so the AI sees 'Outer.Inner' nesting is available.
+            TAlphaColor is tkInteger by RTTI but is labelled 'alphacolor', so the AI knows to send '#AARRGGBB' / 'claName' rather than a raw integer. }
+          case Prop.PropertyType.TypeKind of
+            tkString, tkLString, tkWString, tkUString: KindName := 'string';
+            tkInteger:
+              if Prop.PropertyType.Handle = TypeInfo(TAlphaColor)
+              then KindName := 'alphacolor'
+              else KindName := 'integer';
+            tkInt64:                                    KindName := 'int64';
+            tkEnumeration:
+              // The ByteBool/WordBool/LongBool family reads back as 'True'/'False' through GetEnumName (System.TypInfo.pas) and set_property takes it as a boolean, so tag it 'boolean': 'enum' would send the AI hunting for enum identifiers this family does not have.
+              if (Prop.PropertyType.Handle = TypeInfo(Boolean)) or IsBoolFamilyType(Prop.PropertyType.Handle)
+              then KindName := 'boolean'
+              else KindName := 'enum';
+            tkSet:                                      KindName := 'set';
+            tkFloat:                                    KindName := 'float';
+            tkClass:                                    KindName := 'class';
+          else
+            Continue;
+          end;
+          Node := TJSONObject.Create;
+          try
+            Node.AddPair('name', Prop.Name);
+            Node.AddPair('kind', KindName);
+            if Prop.PropertyType.TypeKind <> tkClass then
+              if TryReadPropertyAsString(AInstance, Prop, CurStr)
+              then Node.AddPair('currentValue', CurStr);
+            Result.AddElement(Node);   // ownership moves to Result
+          except
+            FreeAndNil(Node);
+            raise;
+          end;
         end;
-        Node := TJSONObject.Create;
-        try
-          Node.AddPair('name', Prop.Name);
-          Node.AddPair('kind', KindName);
-          if Prop.PropertyType.TypeKind <> tkClass then
-            if TryReadPropertyAsString(AInstance, Prop, CurStr) then
-              Node.AddPair('currentValue', CurStr);
-          Result.AddElement(Node);   // ownership moves to Result
-        except
-          FreeAndNil(Node);
-          raise;
-        end;
-      end;
     finally
       Ctx.Free;
     end;
@@ -665,8 +664,8 @@ begin
   S := Trim(AStrValue);
   if S = '' then exit;
   // 6-digit RGB short form ('#RRGGBB'): expand to 8-digit ARGB with full opacity, because StringToAlphaColor would read it as alpha=0 (fully transparent).
-  if (S.Length = 7) and (S[1] = '#') then
-    S := '#FF' + Copy(S, 2, 6);
+  if (S.Length = 7) and (S[1] = '#')
+  then S := '#FF' + Copy(S, 2, 6);
   try
     AColor := StringToAlphaColor(S);
     Result := TRUE;
@@ -718,110 +717,110 @@ begin
   // Dotted propName: 'Outer.Inner', one level only (the VCL twin has the full contract).
   DotPos := Pos('.', APropName);
   if DotPos > 0 then
-  begin
-    OuterName := Copy(APropName, 1, DotPos - 1);
-    InnerName := Copy(APropName, DotPos + 1, MaxInt);
-    if Pos('.', InnerName) > 0 then
     begin
-      AErrCode := ErrUnsupportedAction;
-      AErrMsg := 'set_property supports at most one level of nesting; got "' + APropName + '"';
-      exit;
-    end;
-    if (OuterName = '') or (InnerName = '') then
-    begin
-      AErrCode := ErrUnsupportedAction;
-      AErrMsg := 'invalid dotted propName "' + APropName + '"';
-      exit;
-    end;
-    Ctx := TRttiContext.Create;
-    try
-      RT := Ctx.GetType(AInstance.ClassType);
-      if RT = NIL then
-      begin
-        AErrMsg := AInstance.ClassName + ' has no RTTI';
-        exit;
-      end;
-      Prop := RT.GetProperty(OuterName);
-      if Prop = NIL then
-      begin
-        AErrMsg := AInstance.ClassName + ' has no published property "' + OuterName + '"';
-        exit;
-      end;
-      if Prop.PropertyType.TypeKind <> tkClass then
-      begin
-        AErrCode := ErrUnsupportedAction;
-        AErrMsg := AInstance.ClassName + '.' + OuterName + ' is not a class-typed property (dotted propName requires tkClass outer)';
-        exit;
-      end;
-      if not Prop.IsReadable then
-      begin
-        AErrCode := ErrUnsupportedAction;
-        AErrMsg := AInstance.ClassName + '.' + OuterName + ' is not readable';
-        exit;
-      end;
-      try
-        Inner := Prop.GetValue(AInstance).AsObject;
-      except
-        on E: Exception do
+      OuterName := Copy(APropName, 1, DotPos - 1);
+      InnerName := Copy(APropName, DotPos + 1, MaxInt);
+      if Pos('.', InnerName) > 0 then
         begin
           AErrCode := ErrUnsupportedAction;
-          AErrMsg := AInstance.ClassName + '.' + OuterName + ' getter raised ' + E.ClassName;
+          AErrMsg := 'set_property supports at most one level of nesting; got "' + APropName + '"';
           exit;
         end;
+      if (OuterName = '') or (InnerName = '') then
+        begin
+          AErrCode := ErrUnsupportedAction;
+          AErrMsg := 'invalid dotted propName "' + APropName + '"';
+          exit;
+        end;
+      Ctx := TRttiContext.Create;
+      try
+        RT := Ctx.GetType(AInstance.ClassType);
+        if RT = NIL then
+          begin
+            AErrMsg := AInstance.ClassName + ' has no RTTI';
+            exit;
+          end;
+        Prop := RT.GetProperty(OuterName);
+        if Prop = NIL then
+          begin
+            AErrMsg := AInstance.ClassName + ' has no published property "' + OuterName + '"';
+            exit;
+          end;
+        if Prop.PropertyType.TypeKind <> tkClass then
+          begin
+            AErrCode := ErrUnsupportedAction;
+            AErrMsg := AInstance.ClassName + '.' + OuterName + ' is not a class-typed property (dotted propName requires tkClass outer)';
+            exit;
+          end;
+        if not Prop.IsReadable then
+          begin
+            AErrCode := ErrUnsupportedAction;
+            AErrMsg := AInstance.ClassName + '.' + OuterName + ' is not readable';
+            exit;
+          end;
+        try
+          Inner := Prop.GetValue(AInstance).AsObject;
+        except
+          on E: Exception do
+            begin
+              AErrCode := ErrUnsupportedAction;
+              AErrMsg := AInstance.ClassName + '.' + OuterName + ' getter raised ' + E.ClassName;
+              exit;
+            end;
+        end;
+        if Inner = NIL then
+          begin
+            AErrCode := ErrUnsupportedAction;
+            AErrMsg := AInstance.ClassName + '.' + OuterName + ' is nil';
+            exit;
+          end;
+      finally
+        Ctx.Free;
       end;
-      if Inner = NIL then
-      begin
-        AErrCode := ErrUnsupportedAction;
-        AErrMsg := AInstance.ClassName + '.' + OuterName + ' is nil';
-        exit;
-      end;
-    finally
-      Ctx.Free;
+      exit(TrySetGenericProperty(Inner, InnerName, AStrValue, AErrCode, AErrMsg, AFailedInstance, AElided));
     end;
-    exit(TrySetGenericProperty(Inner, InnerName, AStrValue, AErrCode, AErrMsg, AFailedInstance, AElided));
-  end;
 
   Ctx := TRttiContext.Create;
   try
     RT := Ctx.GetType(AInstance.ClassType);
     if RT = NIL then
-    begin
-      AErrMsg := AInstance.ClassName + ' has no RTTI';
-      exit;
-    end;
+      begin
+        AErrMsg := AInstance.ClassName + ' has no RTTI';
+        exit;
+      end;
     Prop := RT.GetProperty(APropName);
     if Prop = NIL then
-    begin
-      AErrMsg := AInstance.ClassName + ' has no published property "' + APropName + '"';
-      exit;
-    end;
+      begin
+        AErrMsg := AInstance.ClassName + ' has no published property "' + APropName + '"';
+        exit;
+      end;
     if not Prop.IsWritable then
-    begin
-      AErrCode := ErrUnsupportedAction;
-      AErrMsg := AInstance.ClassName + '.' + APropName + ' is read-only';
-      exit;
-    end;
+      begin
+        AErrCode := ErrUnsupportedAction;
+        AErrMsg := AInstance.ClassName + '.' + APropName + ' is read-only';
+        exit;
+      end;
 
     // Read the live value once for elision (see VCL twin's longer note).
     CanRead := FALSE;
     if Prop.IsReadable then
-    begin
-      try
-        CurVal := Prop.GetValue(AInstance);
-        CanRead := TRUE;
-      except
-        CanRead := FALSE;
+      begin
+        try
+          CurVal := Prop.GetValue(AInstance);
+          CanRead := TRUE;
+        except
+          CanRead := FALSE;
+        end;
       end;
-    end;
 
     case Prop.PropertyType.TypeKind of
       tkString, tkLString, tkWString, tkUString:
       begin
         if CanRead and (CurVal.AsString = AStrValue) then
-        begin
-          AElided := TRUE;
-          exit(TRUE);
-        end;
+          begin
+            AElided := TRUE;
+            exit(TRUE);
+          end;
         Prop.SetValue(AInstance, AStrValue);
         exit(TRUE);
       end;
@@ -831,33 +830,33 @@ begin
         { TAlphaColor (System.UITypes.TAlphaColor = type Cardinal), detected by type handle, not class name.
           TryParseAlphaColor lets the AI pass '#FF8000' (6-digit RGB, full alpha), '#80FF8000' (8-digit ARGB), 'claSkyBlue', or a raw decimal/$hex integer. }
         if Prop.PropertyType.Handle = TypeInfo(TAlphaColor) then
-        begin
-          if not TryParseAlphaColor(AStrValue, AlphaVal) then
+          begin
+            if not TryParseAlphaColor(AStrValue, AlphaVal) then
+              begin
+                AErrCode := ErrUnsupportedAction;
+                AErrMsg := APropName + ' expects a TAlphaColor value (e.g. "#FF8000", "#80FF8000", "claSkyBlue", or a numeric color); got "' + AStrValue + '"';
+                exit;
+              end;
+            if CanRead and (TAlphaColor(CurVal.AsOrdinal) = AlphaVal) then
+              begin
+                AElided := TRUE;
+                exit(TRUE);
+              end;
+            Prop.SetValue(AInstance, TValue.From<TAlphaColor>(AlphaVal));
+            exit(TRUE);
+          end;
+        Val(AStrValue, IntVal, Code);
+        if Code <> 0 then
           begin
             AErrCode := ErrUnsupportedAction;
-            AErrMsg := APropName + ' expects a TAlphaColor value (e.g. "#FF8000", "#80FF8000", "claSkyBlue", or a numeric color); got "' + AStrValue + '"';
+            AErrMsg := APropName + ' expects an integer; got "' + AStrValue + '"';
             exit;
           end;
-          if CanRead and (TAlphaColor(CurVal.AsOrdinal) = AlphaVal) then
+        if CanRead and (CurVal.AsInteger = IntVal) then
           begin
             AElided := TRUE;
             exit(TRUE);
           end;
-          Prop.SetValue(AInstance, TValue.From<TAlphaColor>(AlphaVal));
-          exit(TRUE);
-        end;
-        Val(AStrValue, IntVal, Code);
-        if Code <> 0 then
-        begin
-          AErrCode := ErrUnsupportedAction;
-          AErrMsg := APropName + ' expects an integer; got "' + AStrValue + '"';
-          exit;
-        end;
-        if CanRead and (CurVal.AsInteger = IntVal) then
-        begin
-          AElided := TRUE;
-          exit(TRUE);
-        end;
         Prop.SetValue(AInstance, IntVal);
         exit(TRUE);
       end;
@@ -866,102 +865,104 @@ begin
       begin
         Val(AStrValue, Int64Val, Code);
         if Code <> 0 then
-        begin
-          AErrCode := ErrUnsupportedAction;
-          AErrMsg := APropName + ' expects an int64; got "' + AStrValue + '"';
-          exit;
-        end;
+          begin
+            AErrCode := ErrUnsupportedAction;
+            AErrMsg := APropName + ' expects an int64; got "' + AStrValue + '"';
+            exit;
+          end;
         if CanRead and (CurVal.AsInt64 = Int64Val) then
-        begin
-          AElided := TRUE;
-          exit(TRUE);
-        end;
+          begin
+            AElided := TRUE;
+            exit(TRUE);
+          end;
         Prop.SetValue(AInstance, Int64Val);
         exit(TRUE);
       end;
 
       tkEnumeration:
-        if Prop.PropertyType.Handle = TypeInfo(Boolean) then
-        begin
-          Lower := LowerCase(AStrValue);
-          if (Lower = 'true') or (Lower = '1') then
-            BoolVal := TRUE
-          else
-            if (Lower = 'false') or (Lower = '0') then
-              BoolVal := FALSE
-            else
-            begin
-              AErrCode := ErrUnsupportedAction;
-              AErrMsg := APropName + ' expects boolean (true/false); got "' + AStrValue + '"';
-              exit;
-            end;
-          if CanRead and (CurVal.AsBoolean = BoolVal) then
+        if Prop.PropertyType.Handle = TypeInfo(Boolean)
+        then
           begin
-            AElided := TRUE;
-            exit(TRUE);
-          end;
-          Prop.SetValue(AInstance, BoolVal);
-          exit(TRUE);
-        end
-        else
-          if IsBoolFamilyType(Prop.PropertyType.Handle) then
-          begin
-            { ByteBool/WordBool/LongBool are tkEnumeration, and the generic enum path below cannot write TRUE to them: GetEnumValue answers 'True' with -1, which is also its not-found result, so the EnumOrd<0 fallback runs Val('True'), fails, and reports -32005; any other non-numeric string reaches a bare StrToInt inside GetEnumValue and raises EConvertError (GetEnumValue in System.TypInfo.pas, Delphi 13), escaping as -32603.
-              Reachable on a shipped component: TADOCommand.Prepared is a published WordBool (Data.Win.ADODB.pas).
-              It is also the read/write round trip - read_property renders this family through GetEnumName, which returns BooleanIdents[Value <> 0] = 'True'/'False' (System.TypInfo.pas).
-              Matched by BaseType (see IsBoolFamilyType), which also catches a strong alias such as `type TFlag = type WordBool`, NOT by the RTL's own MinValue < 0 test: a normal enumeration may legally carry a negative ordinal (the RTL declares such types itself - UCollationResult in System.Internal.ICU.pas), and catching those here would turn set_property(<that enum>, '1') into a silent write of -1. }
             Lower := LowerCase(AStrValue);
-            if (Lower = 'true') or (Lower = '1') or (Lower = '-1') then
-              BoolVal := TRUE
+            if (Lower = 'true') or (Lower = '1')
+            then BoolVal := TRUE
             else
-              if (Lower = 'false') or (Lower = '0') then
-                BoolVal := FALSE
+              if (Lower = 'false') or (Lower = '0')
+              then BoolVal := FALSE
               else
+                begin
+                  AErrCode := ErrUnsupportedAction;
+                  AErrMsg := APropName + ' expects boolean (true/false); got "' + AStrValue + '"';
+                  exit;
+                end;
+            if CanRead and (CurVal.AsBoolean = BoolVal) then
               begin
-                AErrCode := ErrUnsupportedAction;
-                AErrMsg := APropName + ' expects boolean (true/false); got "' + AStrValue + '"';
-                exit;
+                AElided := TRUE;
+                exit(TRUE);
               end;
-            if CanRead and ((CurVal.AsOrdinal <> 0) = BoolVal) then
-            begin
-              AElided := TRUE;
-              exit(TRUE);
-            end;
-            // TRUE is all-bits-set (-1) for this family, not 1 - the OLE VARIANT_BOOL convention the COM consumers of these properties compare against.
-            if BoolVal
-            then Prop.SetValue(AInstance, TValue.FromOrdinal(Prop.PropertyType.Handle, -1))
-            else Prop.SetValue(AInstance, TValue.FromOrdinal(Prop.PropertyType.Handle, 0));
+            Prop.SetValue(AInstance, BoolVal);
             exit(TRUE);
           end
+        else
+          if IsBoolFamilyType(Prop.PropertyType.Handle)
+          then
+            begin
+              { ByteBool/WordBool/LongBool are tkEnumeration, and the generic enum path below cannot write TRUE to them: GetEnumValue answers 'True' with -1, which is also its not-found result, so the EnumOrd<0 fallback runs Val('True'), fails, and reports -32005; any other non-numeric string reaches a bare StrToInt inside GetEnumValue and raises EConvertError (GetEnumValue in System.TypInfo.pas, Delphi 13), escaping as -32603.
+                Reachable on a shipped component: TADOCommand.Prepared is a published WordBool (Data.Win.ADODB.pas).
+                It is also the read/write round trip - read_property renders this family through GetEnumName, which returns BooleanIdents[Value <> 0] = 'True'/'False' (System.TypInfo.pas).
+                Matched by BaseType (see IsBoolFamilyType), which also catches a strong alias such as `type TFlag = type WordBool`, NOT by the RTL's own MinValue < 0 test: a normal enumeration may legally carry a negative ordinal (the RTL declares such types itself - UCollationResult in System.Internal.ICU.pas), and catching those here would turn set_property(<that enum>, '1') into a silent write of -1. }
+              Lower := LowerCase(AStrValue);
+              if (Lower = 'true') or (Lower = '1') or (Lower = '-1')
+              then BoolVal := TRUE
+              else
+                if (Lower = 'false') or (Lower = '0')
+                then BoolVal := FALSE
+                else
+                  begin
+                    AErrCode := ErrUnsupportedAction;
+                    AErrMsg := APropName + ' expects boolean (true/false); got "' + AStrValue + '"';
+                    exit;
+                  end;
+              if CanRead and ((CurVal.AsOrdinal <> 0) = BoolVal) then
+                begin
+                  AElided := TRUE;
+                  exit(TRUE);
+                end;
+              // TRUE is all-bits-set (-1) for this family, not 1 - the OLE VARIANT_BOOL convention the COM consumers of these properties compare against.
+              if BoolVal
+              then Prop.SetValue(AInstance, TValue.FromOrdinal(Prop.PropertyType.Handle, -1))
+              else Prop.SetValue(AInstance, TValue.FromOrdinal(Prop.PropertyType.Handle, 0));
+              exit(TRUE);
+            end
           else
-          begin
-            { GetEnumValue is not exception-free: for an enumeration whose MinValue is negative it skips the name list and runs a bare StrToInt on the string (System.TypInfo.pas, Delphi 13), which raises EConvertError on any identifier.
-              That is treated as "no such identifier" and the ordinal fallback decides, so the coercion lane answers -32005 instead of leaking -32603. }
-            try
-              EnumOrd := GetEnumValue(Prop.PropertyType.Handle, AStrValue);
-            except
-              on EConvertError do
-                EnumOrd := -1;
-            end;
-            if EnumOrd < 0 then
             begin
-              Val(AStrValue, IntVal, Code);
-              if Code <> 0 then
-              begin
-                AErrCode := ErrUnsupportedAction;
-                AErrMsg := APropName + ' expects an enum identifier or ordinal; got "' + AStrValue + '"';
-                exit;
+              { GetEnumValue is not exception-free: for an enumeration whose MinValue is negative it skips the name list and runs a bare StrToInt on the string (System.TypInfo.pas, Delphi 13), which raises EConvertError on any identifier.
+                That is treated as "no such identifier" and the ordinal fallback decides, so the coercion lane answers -32005 instead of leaking -32603. }
+              try
+                EnumOrd := GetEnumValue(Prop.PropertyType.Handle, AStrValue);
+              except
+                on EConvertError do
+                  EnumOrd := -1;
               end;
-              EnumOrd := IntVal;
-            end;
-            if CanRead and (CurVal.AsOrdinal = EnumOrd) then
-            begin
-              AElided := TRUE;
+              if EnumOrd < 0 then
+                begin
+                  Val(AStrValue, IntVal, Code);
+                  if Code <> 0 then
+                    begin
+                      AErrCode := ErrUnsupportedAction;
+                      AErrMsg := APropName + ' expects an enum identifier or ordinal; got "' + AStrValue + '"';
+                      exit;
+                    end;
+                  EnumOrd := IntVal;
+                end;
+              if CanRead and (CurVal.AsOrdinal = EnumOrd) then
+                begin
+                  AElided := TRUE;
+                  exit(TRUE);
+                end;
+              Prop.SetValue(AInstance, TValue.FromOrdinal(Prop.PropertyType.Handle, EnumOrd));
               exit(TRUE);
             end;
-            Prop.SetValue(AInstance, TValue.FromOrdinal(Prop.PropertyType.Handle, EnumOrd));
-            exit(TRUE);
-          end;
 
       tkSet:
       begin
@@ -969,36 +970,36 @@ begin
           TValue.FromOrdinal raises EInvalidCast for tkSet typeinfo, so TValue.Make with a pointer to the raw ordinal is used instead. }
         Lower := Trim(AStrValue);
         if (Lower <> '') and (Lower[1] <> '[') then
-        begin
-          Val(Lower, IntVal, Code);
-          if Code = 0 then
           begin
-            if CanRead and (Integer(CurVal.GetReferenceToRawData^) = IntVal) then
-            begin
-              AElided := TRUE;
-              exit(TRUE);
-            end;
-            TValue.Make(@IntVal, Prop.PropertyType.Handle, TmpVal);
-            Prop.SetValue(AInstance, TmpVal);
-            exit(TRUE);
+            Val(Lower, IntVal, Code);
+            if Code = 0 then
+              begin
+                if CanRead and (Integer(CurVal.GetReferenceToRawData^) = IntVal) then
+                  begin
+                    AElided := TRUE;
+                    exit(TRUE);
+                  end;
+                TValue.Make(@IntVal, Prop.PropertyType.Handle, TmpVal);
+                Prop.SetValue(AInstance, TmpVal);
+                exit(TRUE);
+              end;
+            Lower := '[' + Lower + ']';
           end;
-          Lower := '[' + Lower + ']';
-        end;
         try
           IntVal := StringToSet(Prop.PropertyType.Handle, Lower);
         except
           on E: Exception do
-          begin
-            AErrCode := ErrUnsupportedAction;
-            AErrMsg := APropName + ' expects a set literal like "[biSystemMenu,biMinimize]"; got "' + AStrValue + '"';
-            exit;
-          end;
+            begin
+              AErrCode := ErrUnsupportedAction;
+              AErrMsg := APropName + ' expects a set literal like "[biSystemMenu,biMinimize]"; got "' + AStrValue + '"';
+              exit;
+            end;
         end;
         if CanRead and (Integer(CurVal.GetReferenceToRawData^) = IntVal) then
-        begin
-          AElided := TRUE;
-          exit(TRUE);
-        end;
+          begin
+            AElided := TRUE;
+            exit(TRUE);
+          end;
         TValue.Make(@IntVal, Prop.PropertyType.Handle, TmpVal);
         Prop.SetValue(AInstance, TmpVal);
         exit(TRUE);
@@ -1007,19 +1008,19 @@ begin
       tkFloat:
       begin
         if not TryStrToFloat(AStrValue, FloatVal, FormatSettings.Invariant) then
-        begin
-          AErrCode := ErrUnsupportedAction;
-          AErrMsg := APropName + ' expects a number; got "' + AStrValue + '"';
-          exit;
-        end;
+          begin
+            AErrCode := ErrUnsupportedAction;
+            AErrMsg := APropName + ' expects a number; got "' + AStrValue + '"';
+            exit;
+          end;
         { Exact-bits equality (no epsilon): Double/Extended round-trip cleanly.
           A Single-typed property may not elide on a resend of a decimal that Single cannot hold exactly (e.g. 0.1); that is harmless, the write goes through.
           AsExtended is the standard tkFloat accessor. }
         if CanRead and (CurVal.AsExtended = FloatVal) then
-        begin
-          AElided := TRUE;
-          exit(TRUE);
-        end;
+          begin
+            AElided := TRUE;
+            exit(TRUE);
+          end;
         Prop.SetValue(AInstance, FloatVal);
         exit(TRUE);
       end;
@@ -1051,14 +1052,14 @@ begin
     // An IsChecked or Checked that is not a Boolean counts as missing.
     NewValue := AValue;
     Prop := RT.GetProperty('IsChecked');     // FMX TCheckBox.IsChecked, not Checked
-    if not TryConvertForWrite(Prop, NewValue, Converted) then
-      Prop := RT.GetProperty('Checked');
+    if not TryConvertForWrite(Prop, NewValue, Converted)
+    then Prop := RT.GetProperty('Checked');
     if not TryConvertForWrite(Prop, NewValue, Converted) then exit;
     if not Prop.IsWritable then
-    begin
-      AErrCode := ErrUnsupportedAction;
-      exit;
-    end;
+      begin
+        AErrCode := ErrUnsupportedAction;
+        exit;
+      end;
     Prop.SetValue(AComp, Converted);
     Result := TRUE;
   finally
@@ -1070,10 +1071,9 @@ end;
 function LeafNameFor(AComp: TComponent): String;
 begin
   Assert(TThread.CurrentThread.ThreadID = MainThreadID, 'LeafNameFor: FMX touched off the main thread');
-  if AComp.Name = '' then
-    Result := SyntheticIdFor(AComp)
-  else
-    Result := AComp.Name;
+  if AComp.Name = ''
+  then Result := SyntheticIdFor(AComp)
+  else Result := AComp.Name;
 end;
 
 
@@ -1087,11 +1087,11 @@ begin
   Result := LeafNameFor(AComp);
   Cur := AComp.Owner;
   while Cur <> NIL do
-  begin
-    if Cur is TCommonCustomForm then exit(Cur.Name + '.' + Result);
-    Result := LeafNameFor(Cur) + '.' + Result;
-    Cur := Cur.Owner;
-  end;
+    begin
+      if Cur is TCommonCustomForm then exit(Cur.Name + '.' + Result);
+      Result := LeafNameFor(Cur) + '.' + Result;
+      Cur := Cur.Owner;
+    end;
   Result := '';
 end;
 
@@ -1122,19 +1122,19 @@ begin
 
     AResp.Ok := FALSE;
     if Matches.Count < 2 then
-    begin
-      AResp.ErrorCode := ErrNotFound;
-      AResp.ErrorMessage := 'no component matches ' + APath;
-      exit;
-    end;
+      begin
+        AResp.ErrorCode := ErrNotFound;
+        AResp.ErrorMessage := 'no component matches ' + APath;
+        exit;
+      end;
 
     Candidates := '';
     for i := 0 to Matches.Count - 1 do
-    begin
-      if Candidates <> '' then
-        Candidates := Candidates + ', ';
-      Candidates := Candidates + ReferenceFor(TComponent(Matches[i]));
-    end;
+      begin
+        if Candidates <> ''
+        then Candidates := Candidates + ', ';
+        Candidates := Candidates + ReferenceFor(TComponent(Matches[i]));
+      end;
     AResp.ErrorCode := ErrAmbiguousPath;
     AResp.ErrorMessage := APath + ' is ambiguous: ' + IntToStr(Matches.Count) + ' controls shown there match it (' + Candidates + '). Use one of these paths instead.';
   finally
@@ -1149,10 +1149,10 @@ var
 begin
   Cur := AComp;
   while Cur <> NIL do
-  begin
-    if Cur = ARoot then exit(TRUE);
-    Cur := Cur.Owner;
-  end;
+    begin
+      if Cur = ARoot then exit(TRUE);
+      Cur := Cur.Owner;
+    end;
   Result := FALSE;
 end;
 
@@ -1173,8 +1173,8 @@ begin
   while not VisualParent.Stored and (VisualParent.Parent <> NIL) do
     VisualParent := VisualParent.Parent;
   ParentPath := OwnerPathFor(VisualParent);
-  if ParentPath <> '' then
-    ANode.AddPair('parent', ParentPath);
+  if ParentPath <> ''
+  then ANode.AddPair('parent', ParentPath);
 end;
 
 
@@ -1193,14 +1193,14 @@ begin
   Result.AddPair('name', NodeName);
   Result.AddPair('path', ANodePath);
   Result.AddPair('class', AComp.ClassName);
-  if IsSynthetic then
-    Result.AddPair('synthetic', TJSONBool.Create(TRUE));
-  if TryGetTextProperty(AComp, S) then
-    Result.AddPair('text', S);
-  if TryGetEnabled(AComp, B) then
-    Result.AddPair('enabled', TJSONBool.Create(B));
-  if TryGetVisible(AComp, B) then
-    Result.AddPair('visible', TJSONBool.Create(B));
+  if IsSynthetic
+  then Result.AddPair('synthetic', TJSONBool.Create(TRUE));
+  if TryGetTextProperty(AComp, S)
+  then Result.AddPair('text', S);
+  if TryGetEnabled(AComp, B)
+  then Result.AddPair('enabled', TJSONBool.Create(B));
+  if TryGetVisible(AComp, B)
+  then Result.AddPair('visible', TJSONBool.Create(B));
 end;
 
 
@@ -1216,17 +1216,17 @@ var
 begin
   Assert(TThread.CurrentThread.ThreadID = MainThreadID, 'WalkComponents: FMX touched off the main thread');
   for j := 0 to AParent.ComponentCount - 1 do
-  begin
-    Child := AParent.Components[j];
-    if AVisited.IndexOf(Child) >= 0 then Continue;
-    AVisited.Add(Child);
-    ChildPath := AParentPath + '.' + LeafNameFor(Child);
-    Node := BuildComponentNode(AFormName, ChildPath, Child);
-    AItems.AddElement(Node);   // AItems owns Node from here, so a raise below cannot leak it
-    AddReparentedField(Node, Child, AParent);
-    if Child.ComponentCount > 0 then
-      WalkComponents(AFormName, ChildPath, Child, AItems, AVisited);
-  end;
+    begin
+      Child := AParent.Components[j];
+      if AVisited.IndexOf(Child) >= 0 then Continue;
+      AVisited.Add(Child);
+      ChildPath := AParentPath + '.' + LeafNameFor(Child);
+      Node := BuildComponentNode(AFormName, ChildPath, Child);
+      AItems.AddElement(Node);   // AItems owns Node from here, so a raise below cannot leak it
+      AddReparentedField(Node, Child, AParent);
+      if Child.ComponentCount > 0
+      then WalkComponents(AFormName, ChildPath, Child, AItems, AVisited);
+    end;
 end;
 
 
@@ -1246,21 +1246,21 @@ begin
   try
     // Per-form Visited (the VCL twin explains why).
     for i := 0 to Screen.FormCount - 1 do
-    begin
-      Form := Screen.Forms[i];
-      Visited := TList.Create;
-      try
-        { Emit the form as its own node first, then recurse owned components (including frames).
-          Its Caption read may raise on an unrealized form; TryGetTextProperty swallows that and the node simply lacks a `text` field. }
-        Visited.Add(Form);
-        FormNode := BuildComponentNode(Form.Name, Form.Name, Form);
-        Items.AddElement(FormNode);
-        AddReparentedField(FormNode, Form, NIL);
-        WalkComponents(Form.Name, Form.Name, Form, Items, Visited);
-      finally
-        FreeAndNil(Visited);
+      begin
+        Form := Screen.Forms[i];
+        Visited := TList.Create;
+        try
+          { Emit the form as its own node first, then recurse owned components (including frames).
+            Its Caption read may raise on an unrealized form; TryGetTextProperty swallows that and the node simply lacks a `text` field. }
+          Visited.Add(Form);
+          FormNode := BuildComponentNode(Form.Name, Form.Name, Form);
+          Items.AddElement(FormNode);
+          AddReparentedField(FormNode, Form, NIL);
+          WalkComponents(Form.Name, Form.Name, Form, Items, Visited);
+        finally
+          FreeAndNil(Visited);
+        end;
       end;
-    end;
     Wrap := TJSONObject.Create;
     Wrap.AddPair('components', Items);
     Items := NIL;
@@ -1283,27 +1283,27 @@ begin
   Result := Default(TBridgeResponse);
   Result.Id := AReq.Id;
   if AReq.Args = NIL then
-  begin
-    Result.Ok := FALSE; Result.ErrorCode := ErrInvalidRequest;
-    Result.ErrorMessage := 'get_text requires args.path';
-    exit;
-  end;
+    begin
+      Result.Ok := FALSE; Result.ErrorCode := ErrInvalidRequest;
+      Result.ErrorMessage := 'get_text requires args.path';
+      exit;
+    end;
   PathVal := AReq.Args.GetValue('path');
   if not (PathVal is TJSONString) then
-  begin
-    Result.Ok := FALSE; Result.ErrorCode := ErrInvalidRequest;
-    Result.ErrorMessage := 'get_text requires args.path (string)';
-    exit;
-  end;
+    begin
+      Result.Ok := FALSE; Result.ErrorCode := ErrInvalidRequest;
+      Result.ErrorMessage := 'get_text requires args.path (string)';
+      exit;
+    end;
   Path := TJSONString(PathVal).Value;
   Comp := ResolvePathOrFail(Path, Result);
   if Comp = NIL then exit;
   if not TryGetTextProperty(Comp, Text) then
-  begin
-    Result.Ok := FALSE; Result.ErrorCode := ErrRttiPropertyMissing;
-    Result.ErrorMessage := Comp.ClassName + ' has no readable Text/Caption property';
-    exit;
-  end;
+    begin
+      Result.Ok := FALSE; Result.ErrorCode := ErrRttiPropertyMissing;
+      Result.ErrorMessage := Comp.ClassName + ' has no readable Text/Caption property';
+      exit;
+    end;
   Wrap := TJSONObject.Create;
   Wrap.AddPair('text', Text);
   Result.Ok := TRUE;
@@ -1338,120 +1338,120 @@ begin
   Notify := NIL;
 
   if AReq.Args = NIL then
-  begin
-    Result.Ok := FALSE; Result.ErrorCode := ErrInvalidRequest;
-    Result.ErrorMessage := 'click requires args.path';
-    exit;
-  end;
+    begin
+      Result.Ok := FALSE; Result.ErrorCode := ErrInvalidRequest;
+      Result.ErrorMessage := 'click requires args.path';
+      exit;
+    end;
   PathVal := AReq.Args.GetValue('path');
   if not (PathVal is TJSONString) then
-  begin
-    Result.Ok := FALSE; Result.ErrorCode := ErrInvalidRequest;
-    Result.ErrorMessage := 'click requires args.path (string)';
-    exit;
-  end;
+    begin
+      Result.Ok := FALSE; Result.ErrorCode := ErrInvalidRequest;
+      Result.ErrorMessage := 'click requires args.path (string)';
+      exit;
+    end;
   Path := TJSONString(PathVal).Value;
 
   RequestedCount := 1;
   CountVal := AReq.Args.GetValue('count');
   if CountVal is TJSONNumber then
-  begin
-    { TJSONNumber.AsInt is StrToInt(Value) (TJSONNumber.GetAsInt in System.JSON.pas): it RAISES EConvertError on a fractional (1.5) or out-of-Int32 count, which would surface as ErrInternalError.
-      TryStrToInt on the raw number text keeps a malformed count in the ErrInvalidRequest lane where it belongs. }
-    if not TryStrToInt(TJSONNumber(CountVal).Value, RequestedCount) then
     begin
-      Result.Ok := FALSE; Result.ErrorCode := ErrInvalidRequest;
-      Result.ErrorMessage := 'click args.count must be an integer 1..' + IntToStr(MaxClickCount) + ' (got ' + TJSONNumber(CountVal).Value + ')';
-      exit;
+      { TJSONNumber.AsInt is StrToInt(Value) (TJSONNumber.GetAsInt in System.JSON.pas): it RAISES EConvertError on a fractional (1.5) or out-of-Int32 count, which would surface as ErrInternalError.
+        TryStrToInt on the raw number text keeps a malformed count in the ErrInvalidRequest lane where it belongs. }
+      if not TryStrToInt(TJSONNumber(CountVal).Value, RequestedCount) then
+        begin
+          Result.Ok := FALSE; Result.ErrorCode := ErrInvalidRequest;
+          Result.ErrorMessage := 'click args.count must be an integer 1..' + IntToStr(MaxClickCount) + ' (got ' + TJSONNumber(CountVal).Value + ')';
+          exit;
+        end;
+      if (RequestedCount < 1) or (RequestedCount > MaxClickCount) then
+        begin
+          Result.Ok := FALSE; Result.ErrorCode := ErrInvalidRequest;
+          Result.ErrorMessage := 'click args.count must be 1..' + IntToStr(MaxClickCount) + ' (got ' + IntToStr(RequestedCount) + ')';
+          exit;
+        end;
     end;
-    if (RequestedCount < 1) or (RequestedCount > MaxClickCount) then
-    begin
-      Result.Ok := FALSE; Result.ErrorCode := ErrInvalidRequest;
-      Result.ErrorMessage := 'click args.count must be 1..' + IntToStr(MaxClickCount) + ' (got ' + IntToStr(RequestedCount) + ')';
-      exit;
-    end;
-  end;
 
   { mode=message is VCL-on-Windows only: it posts BM_CLICK to the control's HWND, and an FMX control has no per-control window handle to post to (FMX paints its own controls).
     Rejected explicitly, because silently falling back to the synchronous OnClick path would defeat the caller's no-block intent.
     Validated strictly, like the VCL twin. }
   ModeVal := AReq.Args.GetValue('mode');
   if ModeVal <> NIL then
-  begin
-    if not (ModeVal is TJSONString) then
     begin
-      Result.Ok := FALSE; Result.ErrorCode := ErrInvalidRequest;
-      Result.ErrorMessage := 'click args.mode must be a string ("auto" or "message")';
-      exit;
+      if not (ModeVal is TJSONString) then
+        begin
+          Result.Ok := FALSE; Result.ErrorCode := ErrInvalidRequest;
+          Result.ErrorMessage := 'click args.mode must be a string ("auto" or "message")';
+          exit;
+        end;
+      Mode := LowerCase(Trim(TJSONString(ModeVal).Value));
+      if Mode = 'message' then
+        begin
+          Result.Ok := FALSE; Result.ErrorCode := ErrUnsupportedAction;
+          Result.ErrorMessage := 'click mode=message is VCL-on-Windows only (FMX controls have no window ' + 'handle); omit mode to use the OnClick dispatch';
+          exit;
+        end;
+      if (Mode <> '') and (Mode <> 'auto') then
+        begin
+          Result.Ok := FALSE; Result.ErrorCode := ErrInvalidRequest;
+          Result.ErrorMessage := 'click args.mode must be "auto" or "message" (got "' + TJSONString(ModeVal).Value + '")';
+          exit;
+        end;
     end;
-    Mode := LowerCase(Trim(TJSONString(ModeVal).Value));
-    if Mode = 'message' then
-    begin
-      Result.Ok := FALSE; Result.ErrorCode := ErrUnsupportedAction;
-      Result.ErrorMessage := 'click mode=message is VCL-on-Windows only (FMX controls have no window ' + 'handle); omit mode to use the OnClick dispatch';
-      exit;
-    end;
-    if (Mode <> '') and (Mode <> 'auto') then
-    begin
-      Result.Ok := FALSE; Result.ErrorCode := ErrInvalidRequest;
-      Result.ErrorMessage := 'click args.mode must be "auto" or "message" (got "' + TJSONString(ModeVal).Value + '")';
-      exit;
-    end;
-  end;
 
   Comp := ResolvePathOrFail(Path, Result);
   if Comp = NIL then exit;
   if TryGetEnabled(Comp, Enabled) and not Enabled then
-  begin
-    Result.Ok := FALSE; Result.ErrorCode := ErrControlDisabled;
-    Result.ErrorMessage := Comp.Name + ' is disabled';
-    exit;
-  end;
+    begin
+      Result.Ok := FALSE; Result.ErrorCode := ErrControlDisabled;
+      Result.ErrorMessage := Comp.Name + ' is disabled';
+      exit;
+    end;
 
   { A control bound to an action: TControl.Click (FMX.Controls.pas) runs ActionLink.Execute, i.e. TCustomAction.Execute, with the action as Sender.
     Calling the OnClick that TControl.ActionChange copied from OnExecute skips that, and an action without OnExecute leaves OnClick NIL, so the click would fail. }
   UseControlClick := (Comp is TControl) and (TFmxControlAccess(Comp).ActionLink <> NIL);
-  if UseControlClick then
-    DispatchedVia := 'click'
+  if UseControlClick
+  then DispatchedVia := 'click'
   else
-  begin
-    { FMX has no other protected Click trick on a generic TControl base.
-      Most clickable controls expose OnClick (TNotifyEvent) via RTTI; it is read and invoked. }
-    DispatchedVia := 'onclick';
-    Ctx := TRttiContext.Create;
-    try
-      RT := Ctx.GetType(Comp.ClassType);
-      if RT = NIL then
-      begin
-        Result.Ok := FALSE; Result.ErrorCode := ErrUnsupportedAction;
-        Result.ErrorMessage := Comp.ClassName + ' has no RTTI';
-        exit;
+    begin
+      { FMX has no other protected Click trick on a generic TControl base.
+        Most clickable controls expose OnClick (TNotifyEvent) via RTTI; it is read and invoked. }
+      DispatchedVia := 'onclick';
+      Ctx := TRttiContext.Create;
+      try
+        RT := Ctx.GetType(Comp.ClassType);
+        if RT = NIL then
+          begin
+            Result.Ok := FALSE; Result.ErrorCode := ErrUnsupportedAction;
+            Result.ErrorMessage := Comp.ClassName + ' has no RTTI';
+            exit;
+          end;
+        OnClickProp := RT.GetProperty('OnClick');
+        if (OnClickProp = NIL) or not OnClickProp.IsReadable then
+          begin
+            Result.Ok := FALSE; Result.ErrorCode := ErrUnsupportedAction;
+            Result.ErrorMessage := Comp.ClassName + ' has no OnClick';
+            exit;
+          end;
+        RawValue := OnClickProp.GetValue(Comp);
+        if RawValue.IsEmpty or (RawValue.Kind <> tkMethod) then
+          begin
+            Result.Ok := FALSE; Result.ErrorCode := ErrUnsupportedAction;
+            Result.ErrorMessage := Comp.ClassName + '.OnClick is unset';
+            exit;
+          end;
+        TMethod(Notify) := PMethod(RawValue.GetReferenceToRawData)^;
+        if not Assigned(Notify) then
+          begin
+            Result.Ok := FALSE; Result.ErrorCode := ErrUnsupportedAction;
+            Result.ErrorMessage := Comp.ClassName + '.OnClick is unset';
+            exit;
+          end;
+      finally
+        Ctx.Free;
       end;
-      OnClickProp := RT.GetProperty('OnClick');
-      if (OnClickProp = NIL) or not OnClickProp.IsReadable then
-      begin
-        Result.Ok := FALSE; Result.ErrorCode := ErrUnsupportedAction;
-        Result.ErrorMessage := Comp.ClassName + ' has no OnClick';
-        exit;
-      end;
-      RawValue := OnClickProp.GetValue(Comp);
-      if RawValue.IsEmpty or (RawValue.Kind <> tkMethod) then
-      begin
-        Result.Ok := FALSE; Result.ErrorCode := ErrUnsupportedAction;
-        Result.ErrorMessage := Comp.ClassName + '.OnClick is unset';
-        exit;
-      end;
-      TMethod(Notify) := PMethod(RawValue.GetReferenceToRawData)^;
-      if not Assigned(Notify) then
-      begin
-        Result.Ok := FALSE; Result.ErrorCode := ErrUnsupportedAction;
-        Result.ErrorMessage := Comp.ClassName + '.OnClick is unset';
-        exit;
-      end;
-    finally
-      Ctx.Free;
     end;
-  end;
 
   { An OnClick may free the control, or the form that owns it: Watch learns of the free, and the loop stops with stoppedReason='freed' before Comp is read again (the VCL twin explains more).
     On an action-bound control the FMX RTL itself still reads the freed control once: TControl.Click reads Action in its finally (FMX.Controls.pas).
@@ -1459,31 +1459,31 @@ begin
   Watch := TFreeWatch.Create(Comp);
   try
     while ClicksDone < RequestedCount do
-    begin
-      if Watch.Freed then
       begin
-        StoppedReason := 'freed';
-        Break;
-      end;
-      if TryGetEnabled(Comp, Enabled) and not Enabled then
-      begin
-        StoppedReason := 'disabled';
-        Break;
-      end;
-      try
-        if UseControlClick
-        then TFmxControlAccess(Comp).Click
-        else Notify(Comp);
-        Inc(ClicksDone);
-      except
-        on E: Exception do
-        begin
-          StoppedReason := 'exception:' + E.ClassName;
-          BridgeLogWarn('bridge', 'click loop stopped at iter ' + IntToStr(ClicksDone + 1) + ': ' + E.ClassName + ': ' + E.Message);
-          Break;
+        if Watch.Freed then
+          begin
+            StoppedReason := 'freed';
+            Break;
+          end;
+        if TryGetEnabled(Comp, Enabled) and not Enabled then
+          begin
+            StoppedReason := 'disabled';
+            Break;
+          end;
+        try
+          if UseControlClick
+          then TFmxControlAccess(Comp).Click
+          else Notify(Comp);
+          Inc(ClicksDone);
+        except
+          on E: Exception do
+            begin
+              StoppedReason := 'exception:' + E.ClassName;
+              BridgeLogWarn('bridge', 'click loop stopped at iter ' + IntToStr(ClicksDone + 1) + ': ' + E.ClassName + ': ' + E.Message);
+              Break;
+            end;
         end;
       end;
-    end;
   finally
     FreeAndNil(Watch);   // its destructor unlinks it from Comp when Comp is still alive
   end;
@@ -1491,8 +1491,8 @@ begin
   Wrap := TJSONObject.Create;
   Wrap.AddPair('dispatchedVia', DispatchedVia);
   Wrap.AddPair('clicksDispatched', TJSONNumber.Create(ClicksDone));
-  if StoppedReason <> '' then
-    Wrap.AddPair('stoppedReason', StoppedReason);
+  if StoppedReason <> ''
+  then Wrap.AddPair('stoppedReason', StoppedReason);
   Result.Ok := TRUE;
   Result.ResultJson := Wrap;
 end;
@@ -1515,36 +1515,36 @@ begin
   Result.Id := AReq.Id;
 
   if AReq.Args = NIL then
-  begin
-    Result.Ok := FALSE; Result.ErrorCode := ErrInvalidRequest;
-    Result.ErrorMessage := 'execute_action requires args.path';
-    exit;
-  end;
+    begin
+      Result.Ok := FALSE; Result.ErrorCode := ErrInvalidRequest;
+      Result.ErrorMessage := 'execute_action requires args.path';
+      exit;
+    end;
   PathVal := AReq.Args.GetValue('path');
   if not (PathVal is TJSONString) then
-  begin
-    Result.Ok := FALSE; Result.ErrorCode := ErrInvalidRequest;
-    Result.ErrorMessage := 'execute_action requires args.path (string)';
-    exit;
-  end;
+    begin
+      Result.Ok := FALSE; Result.ErrorCode := ErrInvalidRequest;
+      Result.ErrorMessage := 'execute_action requires args.path (string)';
+      exit;
+    end;
   Path := TJSONString(PathVal).Value;
 
   Comp := ResolvePathOrFail(Path, Result);
   if Comp = NIL then exit;
 
   if not (Comp is TBasicAction) then
-  begin
-    Result.Ok := FALSE; Result.ErrorCode := ErrUnsupportedAction;
-    Result.ErrorMessage := Comp.ClassName + ' is not a TBasicAction - use click for controls';
-    exit;
-  end;
+    begin
+      Result.Ok := FALSE; Result.ErrorCode := ErrUnsupportedAction;
+      Result.ErrorMessage := Comp.ClassName + ' is not a TBasicAction - use click for controls';
+      exit;
+    end;
 
   if TryGetEnabled(Comp, Enabled) and not Enabled then
-  begin
-    Result.Ok := FALSE; Result.ErrorCode := ErrControlDisabled;
-    Result.ErrorMessage := Comp.Name + ' is disabled';
-    exit;
-  end;
+    begin
+      Result.Ok := FALSE; Result.ErrorCode := ErrControlDisabled;
+      Result.ErrorMessage := Comp.Name + ' is disabled';
+      exit;
+    end;
 
   { OnExecute that closes the app / frees forms is the same hazard as a click that does so.
     Don't touch Comp after Execute returns. }
@@ -1552,12 +1552,12 @@ begin
     Executed := TBasicAction(Comp).Execute;
   except
     on E: Exception do
-    begin
-      BridgeLogError('bridge', 'execute_action OnExecute raised: ' + E.ClassName + ': ' + E.Message);
-      Result.Ok := FALSE; Result.ErrorCode := ErrInternalError;
-      Result.ErrorMessage := 'OnExecute raised ' + E.ClassName + ': ' + E.Message;
-      exit;
-    end;
+      begin
+        BridgeLogError('bridge', 'execute_action OnExecute raised: ' + E.ClassName + ': ' + E.Message);
+        Result.Ok := FALSE; Result.ErrorCode := ErrInternalError;
+        Result.ErrorMessage := 'OnExecute raised ' + E.ClassName + ': ' + E.Message;
+        exit;
+      end;
   end;
 
   Wrap := TJSONObject.Create;
@@ -1582,38 +1582,37 @@ begin
   Result := Default(TBridgeResponse);
   Result.Id := AReq.Id;
   if AReq.Args = NIL then
-  begin
-    Result.Ok := FALSE; Result.ErrorCode := ErrInvalidRequest;
-    Result.ErrorMessage := 'set_text requires args.path and args.text';
-    exit;
-  end;
+    begin
+      Result.Ok := FALSE; Result.ErrorCode := ErrInvalidRequest;
+      Result.ErrorMessage := 'set_text requires args.path and args.text';
+      exit;
+    end;
   PathVal := AReq.Args.GetValue('path');
   TextVal := AReq.Args.GetValue('text');
   if not (PathVal is TJSONString) or not (TextVal is TJSONString) then
-  begin
-    Result.Ok := FALSE; Result.ErrorCode := ErrInvalidRequest;
-    Result.ErrorMessage := 'set_text requires args.path (string) and args.text (string)';
-    exit;
-  end;
+    begin
+      Result.Ok := FALSE; Result.ErrorCode := ErrInvalidRequest;
+      Result.ErrorMessage := 'set_text requires args.path (string) and args.text (string)';
+      exit;
+    end;
   Path := TJSONString(PathVal).Value;
   Text := TJSONString(TextVal).Value;
   Comp := ResolvePathOrFail(Path, Result);
   if Comp = NIL then exit;
   if TryGetEnabled(Comp, Enabled) and not Enabled then
-  begin
-    Result.Ok := FALSE; Result.ErrorCode := ErrControlDisabled;
-    Result.ErrorMessage := Comp.Name + ' is disabled';
-    exit;
-  end;
+    begin
+      Result.Ok := FALSE; Result.ErrorCode := ErrControlDisabled;
+      Result.ErrorMessage := Comp.Name + ' is disabled';
+      exit;
+    end;
   if not TrySetTextProperty(Comp, Text, ErrCode) then
-  begin
-    Result.Ok := FALSE; Result.ErrorCode := ErrCode;
-    if ErrCode = ErrUnsupportedAction then
-      Result.ErrorMessage := Comp.ClassName + '.Text/Caption is read-only'
-    else
-      Result.ErrorMessage := Comp.ClassName + ' has no writable Text/Caption property';
-    exit;
-  end;
+    begin
+      Result.Ok := FALSE; Result.ErrorCode := ErrCode;
+      if ErrCode = ErrUnsupportedAction
+      then Result.ErrorMessage := Comp.ClassName + '.Text/Caption is read-only'
+      else Result.ErrorMessage := Comp.ClassName + ' has no writable Text/Caption property';
+      exit;
+    end;
   Wrap := TJSONObject.Create;
   Wrap.AddPair('path', Path);
   Result.Ok := TRUE;
@@ -1635,38 +1634,37 @@ begin
   Result := Default(TBridgeResponse);
   Result.Id := AReq.Id;
   if AReq.Args = NIL then
-  begin
-    Result.Ok := FALSE; Result.ErrorCode := ErrInvalidRequest;
-    Result.ErrorMessage := 'set_checked requires args.path and args.checked';
-    exit;
-  end;
+    begin
+      Result.Ok := FALSE; Result.ErrorCode := ErrInvalidRequest;
+      Result.ErrorMessage := 'set_checked requires args.path and args.checked';
+      exit;
+    end;
   PathVal := AReq.Args.GetValue('path');
   CheckedVal := AReq.Args.GetValue('checked');
   if not (PathVal is TJSONString) or not (CheckedVal is TJSONBool) then
-  begin
-    Result.Ok := FALSE; Result.ErrorCode := ErrInvalidRequest;
-    Result.ErrorMessage := 'set_checked requires args.path (string) and args.checked (boolean)';
-    exit;
-  end;
+    begin
+      Result.Ok := FALSE; Result.ErrorCode := ErrInvalidRequest;
+      Result.ErrorMessage := 'set_checked requires args.path (string) and args.checked (boolean)';
+      exit;
+    end;
   Path := TJSONString(PathVal).Value;
   Checked := TJSONBool(CheckedVal).AsBoolean;
   Comp := ResolvePathOrFail(Path, Result);
   if Comp = NIL then exit;
   if TryGetEnabled(Comp, Enabled) and not Enabled then
-  begin
-    Result.Ok := FALSE; Result.ErrorCode := ErrControlDisabled;
-    Result.ErrorMessage := Comp.Name + ' is disabled';
-    exit;
-  end;
+    begin
+      Result.Ok := FALSE; Result.ErrorCode := ErrControlDisabled;
+      Result.ErrorMessage := Comp.Name + ' is disabled';
+      exit;
+    end;
   if not TrySetCheckedProperty(Comp, Checked, ErrCode) then
-  begin
-    Result.Ok := FALSE; Result.ErrorCode := ErrCode;
-    if ErrCode = ErrUnsupportedAction then
-      Result.ErrorMessage := Comp.ClassName + '.IsChecked/Checked is read-only'
-    else
-      Result.ErrorMessage := Comp.ClassName + ' has no IsChecked/Checked property';
-    exit;
-  end;
+    begin
+      Result.Ok := FALSE; Result.ErrorCode := ErrCode;
+      if ErrCode = ErrUnsupportedAction
+      then Result.ErrorMessage := Comp.ClassName + '.IsChecked/Checked is read-only'
+      else Result.ErrorMessage := Comp.ClassName + ' has no IsChecked/Checked property';
+      exit;
+    end;
   Wrap := TJSONObject.Create;
   Wrap.AddPair('path', Path);
   Wrap.AddPair('checked', TJSONBool.Create(Checked));
@@ -1692,20 +1690,20 @@ begin
   Result.Id := AReq.Id;
 
   if AReq.Args = NIL then
-  begin
-    Result.Ok := FALSE; Result.ErrorCode := ErrInvalidRequest;
-    Result.ErrorMessage := 'set_property requires args.path, args.propName, args.value';
-    exit;
-  end;
+    begin
+      Result.Ok := FALSE; Result.ErrorCode := ErrInvalidRequest;
+      Result.ErrorMessage := 'set_property requires args.path, args.propName, args.value';
+      exit;
+    end;
   PathVal  := AReq.Args.GetValue('path');
   NameVal  := AReq.Args.GetValue('propName');
   ValueVal := AReq.Args.GetValue('value');
   if not (PathVal is TJSONString) or not (NameVal is TJSONString) or not (ValueVal is TJSONString) then
-  begin
-    Result.Ok := FALSE; Result.ErrorCode := ErrInvalidRequest;
-    Result.ErrorMessage := 'set_property requires args.path, args.propName, args.value (all strings)';
-    exit;
-  end;
+    begin
+      Result.Ok := FALSE; Result.ErrorCode := ErrInvalidRequest;
+      Result.ErrorMessage := 'set_property requires args.path, args.propName, args.value (all strings)';
+      exit;
+    end;
   Path     := TJSONString(PathVal).Value;
   PropName := TJSONString(NameVal).Value;
   StrValue := TJSONString(ValueVal).Value;
@@ -1716,32 +1714,32 @@ begin
     Without that exception a control disabled through set_property could never be enabled again by any tool (Gabriel, 2026-10-07).
     click, set_text and set_checked keep their own disabled check. }
   if TryGetEnabled(Comp, Enabled) and not Enabled and not SameText(PropName, 'Enabled') then
-  begin
-    Result.Ok := FALSE; Result.ErrorCode := ErrControlDisabled;
-    Result.ErrorMessage := Comp.Name + ' is disabled';
-    exit;
-  end;
+    begin
+      Result.Ok := FALSE; Result.ErrorCode := ErrControlDisabled;
+      Result.ErrorMessage := Comp.Name + ' is disabled';
+      exit;
+    end;
 
   if not TrySetGenericProperty(Comp, PropName, StrValue, ErrCode, ErrMsg, FailedInstance, Elided) then
-  begin
-    Result.Ok := FALSE;
-    Result.ErrorCode := ErrCode;
-    Result.ErrorMessage := ErrMsg;
-    // For a dotted propName whose INNER name was the typo, FailedInstance is the inner TPersistent: listing its writables gives the AI the right surface.
-    if ErrCode = ErrRttiPropertyMissing then
     begin
-      Result.ErrorData := TJSONObject.Create;
-      if FailedInstance = NIL then FailedInstance := Comp;
-      try
-        Result.ErrorData.AddPair('availableProperties', ListWritableProperties(FailedInstance));
-      except
-        // OOM-class guard: a raise out of the lister must not orphan the just-built ErrorData; the worker's except block sees only the exception, never this record.
-        FreeAndNil(Result.ErrorData);
-        raise;
-      end;
+      Result.Ok := FALSE;
+      Result.ErrorCode := ErrCode;
+      Result.ErrorMessage := ErrMsg;
+      // For a dotted propName whose INNER name was the typo, FailedInstance is the inner TPersistent: listing its writables gives the AI the right surface.
+      if ErrCode = ErrRttiPropertyMissing then
+        begin
+          Result.ErrorData := TJSONObject.Create;
+          if FailedInstance = NIL then FailedInstance := Comp;
+          try
+            Result.ErrorData.AddPair('availableProperties', ListWritableProperties(FailedInstance));
+          except
+            // OOM-class guard: a raise out of the lister must not orphan the just-built ErrorData; the worker's except block sees only the exception, never this record.
+            FreeAndNil(Result.ErrorData);
+            raise;
+          end;
+        end;
+      exit;
     end;
-    exit;
-  end;
 
   Wrap := TJSONObject.Create;
   Wrap.AddPair('path', Path);
@@ -1761,17 +1759,16 @@ begin
   Assert(TThread.CurrentThread.ThreadID = MainThreadID, 'FindFormByName: FMX touched off the main thread');
   Result := NIL;
   if AFormName = '' then
-  begin
-    if Application.MainForm <> NIL then
-      Result := Application.MainForm
-    else
-      if Screen.FormCount > 0 then
-        Result := Screen.Forms[0];
-    exit;
-  end;
+    begin
+      if Application.MainForm <> NIL
+      then Result := Application.MainForm
+      else
+        if Screen.FormCount > 0
+        then Result := Screen.Forms[0];
+      exit;
+    end;
   for i := 0 to Screen.FormCount - 1 do
-    if SameText(Screen.Forms[i].Name, AFormName) then
-      exit(Screen.Forms[i]);
+    if SameText(Screen.Forms[i].Name, AFormName) then exit(Screen.Forms[i]);
 end;
 
 
@@ -1790,65 +1787,66 @@ begin
   ARect  := Default(TRect);
   AError := '';
 
-  if AComp is TCommonCustomForm then
-  begin
-    if not (AComp is TCustomForm) then
+  if AComp is TCommonCustomForm
+  then
     begin
-      AError := ReferenceFor(AComp) + ' (' + AComp.ClassName + ') cannot be painted to a bitmap';
-      EXIT;
-    end;
-    AForm := TCustomForm(AComp);
-    ARect := Rect(0, 0, Round(AForm.ClientWidth), Round(AForm.ClientHeight));
-  end
+      if not (AComp is TCustomForm) then
+        begin
+          AError := ReferenceFor(AComp) + ' (' + AComp.ClassName + ') cannot be painted to a bitmap';
+          EXIT;
+        end;
+      AForm := TCustomForm(AComp);
+      ARect := Rect(0, 0, Round(AForm.ClientWidth), Round(AForm.ClientHeight));
+    end
   else
-  begin
-    if not (AComp is TControl) then
     begin
-      AError := ReferenceFor(AComp) + ' (' + AComp.ClassName + ') is not a visual control';
-      EXIT;
-    end;
-    Ctrl := TControl(AComp);
-    if (Ctrl.Root = NIL) or not (Ctrl.Root.GetObject is TCustomForm) then
-    begin
-      AError := ReferenceFor(Ctrl) + ' is not placed on a form';
-      EXIT;
-    end;
-    AForm := TCustomForm(Ctrl.Root.GetObject);
+      if not (AComp is TControl) then
+        begin
+          AError := ReferenceFor(AComp) + ' (' + AComp.ClassName + ') is not a visual control';
+          EXIT;
+        end;
+      Ctrl := TControl(AComp);
+      if (Ctrl.Root = NIL) or not (Ctrl.Root.GetObject is TCustomForm) then
+        begin
+          AError := ReferenceFor(Ctrl) + ' is not placed on a form';
+          EXIT;
+        end;
+      AForm := TCustomForm(Ctrl.Root.GetObject);
 
-    P := Ctrl;
-    while P <> NIL do
-    begin
-      if not P.Visible then
-      begin
-        AError := ReferenceFor(Ctrl) + ' is not showing: Visible is FALSE on ' + ReferenceFor(P);
-        EXIT;
-      end;
-      P := P.ParentControl;
-    end;
-    if (Ctrl.Width <= 0) or (Ctrl.Height <= 0) then
-    begin
-      AError := ReferenceFor(Ctrl) + ' has zero size';
-      EXIT;
-    end;
+      P := Ctrl;
+      while P <> NIL do
+        begin
+          if not P.Visible then
+            begin
+              AError := ReferenceFor(Ctrl) + ' is not showing: Visible is FALSE on ' + ReferenceFor(P);
+              EXIT;
+            end;
+          P := P.ParentControl;
+        end;
+      if (Ctrl.Width <= 0) or (Ctrl.Height <= 0) then
+        begin
+          AError := ReferenceFor(Ctrl) + ' has zero size';
+          EXIT;
+        end;
 
-    R := Ctrl.AbsoluteRect;
-    R.NormalizeRect;                                     // a rotated or mirrored control can give swapped corners
-    P := Ctrl.ParentControl;
-    while P <> NIL do
-    begin
-      if P.ClipChildren then
-        R.Intersect(P.AbsoluteRect);
-      P := P.ParentControl;
+      R := Ctrl.AbsoluteRect;
+      R.NormalizeRect;                                     // a rotated or mirrored control can give swapped corners
+      P := Ctrl.ParentControl;
+      while P <> NIL do
+        begin
+          if P.ClipChildren
+          then R.Intersect(P.AbsoluteRect);
+          P := P.ParentControl;
+        end;
+      R.Intersect(RectF(0, 0, Round(AForm.ClientWidth), Round(AForm.ClientHeight)));
+      ARect := Rect(Round(R.Left), Round(R.Top), Round(R.Right), Round(R.Bottom));
     end;
-    R.Intersect(RectF(0, 0, Round(AForm.ClientWidth), Round(AForm.ClientHeight)));
-    ARect := Rect(Round(R.Left), Round(R.Top), Round(R.Right), Round(R.Bottom));
-  end;
 
   if ARect.IsEmpty then
-  begin
-    AError := ReferenceFor(AComp) + ' has no part inside the client area of ' + AForm.Name;
-    EXIT;
-  end;
+    begin
+      AError := ReferenceFor(AComp) + ' has no part inside the client area of ' + AForm.Name;
+      EXIT;
+    end;
   Result := TRUE;
 end;
 
@@ -1861,10 +1859,10 @@ begin
   AScaled := FMX.Graphics.TBitmap.Create(AWidth, AHeight);
   try
     if not AScaled.Canvas.BeginScene then
-    begin
-      FreeAndNil(AScaled);
-      EXIT(FALSE);
-    end;
+      begin
+        FreeAndNil(AScaled);
+        EXIT(FALSE);
+      end;
     try
       AScaled.Canvas.Clear(0);
       AScaled.Canvas.DrawBitmap(ASource, RectF(0, 0, ASource.Width, ASource.Height), RectF(0, 0, AWidth, AHeight), 1, FALSE);
@@ -1902,46 +1900,46 @@ begin
   Result.Id := AReq.Id;
   FormName := '';
   if AReq.Args <> NIL then
-  begin
-    FormVal := AReq.Args.GetValue('form');
-    if FormVal is TJSONString then
-      FormName := TJSONString(FormVal).Value;
-  end;
+    begin
+      FormVal := AReq.Args.GetValue('form');
+      if FormVal is TJSONString
+      then FormName := TJSONString(FormVal).Value;
+    end;
   if not TryParseScreenshotArgs(AReq.Args, Path, MaxWidth, ErrMsg) then
-  begin
-    Result.Ok := FALSE; Result.ErrorCode := ErrInvalidRequest;
-    Result.ErrorMessage := ErrMsg;
-    exit;
-  end;
+    begin
+      Result.Ok := FALSE; Result.ErrorCode := ErrInvalidRequest;
+      Result.ErrorMessage := ErrMsg;
+      exit;
+    end;
 
   { # What to capture }
   CropRect := Default(TRect);
-  if Path <> '' then
-  begin
-    Comp := ResolvePathOrFail(Path, Result);
-    if Comp = NIL then exit;
-    if not TryGetCaptureRect(Comp, PaintForm, CropRect, ErrMsg) then
+  if Path <> ''
+  then
     begin
-      Result.Ok := FALSE; Result.ErrorCode := ErrUnsupportedAction;
-      Result.ErrorMessage := 'cannot capture ' + Path + ': ' + ErrMsg;
-      exit;
-    end;
-    Form := PaintForm;
-  end
+      Comp := ResolvePathOrFail(Path, Result);
+      if Comp = NIL then exit;
+      if not TryGetCaptureRect(Comp, PaintForm, CropRect, ErrMsg) then
+        begin
+          Result.Ok := FALSE; Result.ErrorCode := ErrUnsupportedAction;
+          Result.ErrorMessage := 'cannot capture ' + Path + ': ' + ErrMsg;
+          exit;
+        end;
+      Form := PaintForm;
+    end
   else
-  begin
-    Form := FindFormByName(FormName);
-    // PaintTo is declared on TCustomForm (FMX.Forms.pas), so any TCustomForm descendant is accepted, not just TForm: TCustomPopupForm etc. work too.
-    if (Form = NIL) or not (Form is TCustomForm) then
     begin
-      Result.Ok := FALSE; Result.ErrorCode := ErrNotFound;
-      if FormName = '' then
-        Result.ErrorMessage := 'no main FMX form available'
-      else
-        Result.ErrorMessage := 'no FMX form named ' + FormName;
-      exit;
+      Form := FindFormByName(FormName);
+      // PaintTo is declared on TCustomForm (FMX.Forms.pas), so any TCustomForm descendant is accepted, not just TForm: TCustomPopupForm etc. work too.
+      if (Form = NIL) or not (Form is TCustomForm) then
+        begin
+          Result.Ok := FALSE; Result.ErrorCode := ErrNotFound;
+          if FormName = ''
+          then Result.ErrorMessage := 'no main FMX form available'
+          else Result.ErrorMessage := 'no FMX form named ' + FormName;
+          exit;
+        end;
     end;
-  end;
 
   { # Capture, crop, scale, encode }
   { FMX has no TForm.MakeScreenshot (that is on TControl), so PaintTo draws onto a bitmap canvas instead.
@@ -1949,21 +1947,21 @@ begin
   W := Round(TCustomForm(Form).ClientWidth);
   H := Round(TCustomForm(Form).ClientHeight);
   if (W <= 0) or (H <= 0) then
-  begin
-    Result.Ok := FALSE; Result.ErrorCode := ErrUnsupportedAction;
-    Result.ErrorMessage := 'form has zero client size';
-    exit;
-  end;
+    begin
+      Result.Ok := FALSE; Result.ErrorCode := ErrUnsupportedAction;
+      Result.ErrorMessage := 'form has zero client size';
+      exit;
+    end;
   Bmp := FMX.Graphics.TBitmap.Create(W, H);
   try
     { BeginScene can return FALSE if the bitmap context is not ready (DoBeginScene failure on the active FMX graphics backend).
       Without this check, SaveToStream would silently emit a base64 PNG of an uninitialized canvas with Ok=TRUE: a wrong answer and no error. }
     if not Bmp.Canvas.BeginScene then
-    begin
-      Result.Ok := FALSE; Result.ErrorCode := ErrUnsupportedAction;
-      Result.ErrorMessage := 'Canvas.BeginScene returned FALSE; cannot render form';
-      exit;
-    end;
+      begin
+        Result.Ok := FALSE; Result.ErrorCode := ErrUnsupportedAction;
+        Result.ErrorMessage := 'Canvas.BeginScene returned FALSE; cannot render form';
+        exit;
+      end;
     try
       Bmp.Canvas.Clear(0);
       TCustomForm(Form).PaintTo(Bmp.Canvas);
@@ -1973,30 +1971,30 @@ begin
 
     // A path that names the form itself keeps the uncropped bitmap.
     if (Path <> '') and ((CropRect.Left <> 0) or (CropRect.Top <> 0) or (CropRect.Width <> W) or (CropRect.Height <> H)) then
-    begin
-      Tmp := FMX.Graphics.TBitmap.Create(CropRect.Width, CropRect.Height);
-      try
-        Tmp.CopyFromBitmap(Bmp, CropRect, 0, 0);
-      except
-        FreeAndNil(Tmp);
-        raise;
+      begin
+        Tmp := FMX.Graphics.TBitmap.Create(CropRect.Width, CropRect.Height);
+        try
+          Tmp.CopyFromBitmap(Bmp, CropRect, 0, 0);
+        except
+          FreeAndNil(Tmp);
+          raise;
+        end;
+        FreeAndNil(Bmp);
+        Bmp := Tmp;
       end;
-      FreeAndNil(Bmp);
-      Bmp := Tmp;
-    end;
 
     IsScaled := ScreenshotScaledSize(Bmp.Width, Bmp.Height, MaxWidth, NewW, NewH);
     if IsScaled then
-    begin
-      if not TryScaleBitmap(Bmp, NewW, NewH, Tmp) then
       begin
-        Result.Ok := FALSE; Result.ErrorCode := ErrUnsupportedAction;
-        Result.ErrorMessage := 'Canvas.BeginScene returned FALSE; cannot scale the image';
-        exit;
+        if not TryScaleBitmap(Bmp, NewW, NewH, Tmp) then
+          begin
+            Result.Ok := FALSE; Result.ErrorCode := ErrUnsupportedAction;
+            Result.ErrorMessage := 'Canvas.BeginScene returned FALSE; cannot scale the image';
+            exit;
+          end;
+        FreeAndNil(Bmp);
+        Bmp := Tmp;
       end;
-      FreeAndNil(Bmp);
-      Bmp := Tmp;
-    end;
     W := Bmp.Width;
     H := Bmp.Height;
 
@@ -2013,8 +2011,8 @@ begin
   end;
   Wrap := TJSONObject.Create;
   Wrap.AddPair('form', Form.Name);
-  if Path <> '' then
-    Wrap.AddPair('path', Path);
+  if Path <> ''
+  then Wrap.AddPair('path', Path);
   // Same field set as the VCL twin: the image size, one pixel per dp; without path and maxWidth that is the client size.
   Wrap.AddPair('width', TJSONNumber.Create(W));
   Wrap.AddPair('height', TJSONNumber.Create(H));
@@ -2046,41 +2044,39 @@ begin
       RT := Ctx.GetType(AInstance.ClassType);
       if RT = NIL then exit;
       for Prop in RT.GetProperties do
-      begin
-        if not Prop.IsReadable then Continue;
-        case Prop.PropertyType.TypeKind of
-          tkString, tkLString, tkWString, tkUString: KindName := 'string';
-          tkInteger:
-            if Prop.PropertyType.Handle = TypeInfo(TAlphaColor) then
-              KindName := 'alphacolor'
-            else
-              KindName := 'integer';
-          tkInt64:                                    KindName := 'int64';
-          tkEnumeration:
-            // The ByteBool/WordBool/LongBool family reads back as 'True'/'False' through GetEnumName (System.TypInfo.pas) and set_property takes it as a boolean, so tag it 'boolean': 'enum' would send the AI hunting for enum identifiers this family does not have.
-            if (Prop.PropertyType.Handle = TypeInfo(Boolean)) or IsBoolFamilyType(Prop.PropertyType.Handle) then
-              KindName := 'boolean'
-            else
-              KindName := 'enum';
-          tkSet:                                      KindName := 'set';
-          tkFloat:                                    KindName := 'float';
-          tkClass:                                    KindName := 'class';
-        else
-          Continue;
+        begin
+          if not Prop.IsReadable then Continue;
+          case Prop.PropertyType.TypeKind of
+            tkString, tkLString, tkWString, tkUString: KindName := 'string';
+            tkInteger:
+              if Prop.PropertyType.Handle = TypeInfo(TAlphaColor)
+              then KindName := 'alphacolor'
+              else KindName := 'integer';
+            tkInt64:                                    KindName := 'int64';
+            tkEnumeration:
+              // The ByteBool/WordBool/LongBool family reads back as 'True'/'False' through GetEnumName (System.TypInfo.pas) and set_property takes it as a boolean, so tag it 'boolean': 'enum' would send the AI hunting for enum identifiers this family does not have.
+              if (Prop.PropertyType.Handle = TypeInfo(Boolean)) or IsBoolFamilyType(Prop.PropertyType.Handle)
+              then KindName := 'boolean'
+              else KindName := 'enum';
+            tkSet:                                      KindName := 'set';
+            tkFloat:                                    KindName := 'float';
+            tkClass:                                    KindName := 'class';
+          else
+            Continue;
+          end;
+          Node := TJSONObject.Create;
+          try
+            Node.AddPair('name', Prop.Name);
+            Node.AddPair('kind', KindName);
+            if Prop.PropertyType.TypeKind <> tkClass then
+              if TryReadPropertyAsString(AInstance, Prop, CurStr)
+              then Node.AddPair('currentValue', CurStr);
+            Result.AddElement(Node);   // ownership moves to Result
+          except
+            FreeAndNil(Node);
+            raise;
+          end;
         end;
-        Node := TJSONObject.Create;
-        try
-          Node.AddPair('name', Prop.Name);
-          Node.AddPair('kind', KindName);
-          if Prop.PropertyType.TypeKind <> tkClass then
-            if TryReadPropertyAsString(AInstance, Prop, CurStr) then
-              Node.AddPair('currentValue', CurStr);
-          Result.AddElement(Node);   // ownership moves to Result
-        except
-          FreeAndNil(Node);
-          raise;
-        end;
-      end;
     finally
       Ctx.Free;
     end;
@@ -2115,103 +2111,101 @@ begin
 
   DotPos := Pos('.', APropName);
   if DotPos > 0 then
-  begin
-    OuterName := Copy(APropName, 1, DotPos - 1);
-    InnerName := Copy(APropName, DotPos + 1, MaxInt);
-    if Pos('.', InnerName) > 0 then
     begin
-      AErrCode := ErrUnsupportedAction;
-      AErrMsg := 'read_property supports at most one level of nesting; got "' + APropName + '"';
-      exit;
-    end;
-    if (OuterName = '') or (InnerName = '') then
-    begin
-      AErrCode := ErrUnsupportedAction;
-      AErrMsg := 'invalid dotted propName "' + APropName + '"';
-      exit;
-    end;
-    Ctx := TRttiContext.Create;
-    try
-      RT := Ctx.GetType(AInstance.ClassType);
-      if RT = NIL then
-      begin
-        AErrMsg := AInstance.ClassName + ' has no RTTI';
-        exit;
-      end;
-      Prop := RT.GetProperty(OuterName);
-      if Prop = NIL then
-      begin
-        AErrMsg := AInstance.ClassName + ' has no published property "' + OuterName + '"';
-        exit;
-      end;
-      if Prop.PropertyType.TypeKind <> tkClass then
-      begin
-        AErrCode := ErrUnsupportedAction;
-        AErrMsg := AInstance.ClassName + '.' + OuterName + ' is not a class-typed property (dotted propName requires tkClass outer)';
-        exit;
-      end;
-      if not Prop.IsReadable then
-      begin
-        AErrCode := ErrUnsupportedAction;
-        AErrMsg := AInstance.ClassName + '.' + OuterName + ' is not readable';
-        exit;
-      end;
-      try
-        Inner := Prop.GetValue(AInstance).AsObject;
-      except
-        on E: Exception do
+      OuterName := Copy(APropName, 1, DotPos - 1);
+      InnerName := Copy(APropName, DotPos + 1, MaxInt);
+      if Pos('.', InnerName) > 0 then
         begin
           AErrCode := ErrUnsupportedAction;
-          AErrMsg := AInstance.ClassName + '.' + OuterName + ' getter raised ' + E.ClassName;
+          AErrMsg := 'read_property supports at most one level of nesting; got "' + APropName + '"';
           exit;
         end;
+      if (OuterName = '') or (InnerName = '') then
+        begin
+          AErrCode := ErrUnsupportedAction;
+          AErrMsg := 'invalid dotted propName "' + APropName + '"';
+          exit;
+        end;
+      Ctx := TRttiContext.Create;
+      try
+        RT := Ctx.GetType(AInstance.ClassType);
+        if RT = NIL then
+          begin
+            AErrMsg := AInstance.ClassName + ' has no RTTI';
+            exit;
+          end;
+        Prop := RT.GetProperty(OuterName);
+        if Prop = NIL then
+          begin
+            AErrMsg := AInstance.ClassName + ' has no published property "' + OuterName + '"';
+            exit;
+          end;
+        if Prop.PropertyType.TypeKind <> tkClass then
+          begin
+            AErrCode := ErrUnsupportedAction;
+            AErrMsg := AInstance.ClassName + '.' + OuterName + ' is not a class-typed property (dotted propName requires tkClass outer)';
+            exit;
+          end;
+        if not Prop.IsReadable then
+          begin
+            AErrCode := ErrUnsupportedAction;
+            AErrMsg := AInstance.ClassName + '.' + OuterName + ' is not readable';
+            exit;
+          end;
+        try
+          Inner := Prop.GetValue(AInstance).AsObject;
+        except
+          on E: Exception do
+            begin
+              AErrCode := ErrUnsupportedAction;
+              AErrMsg := AInstance.ClassName + '.' + OuterName + ' getter raised ' + E.ClassName;
+              exit;
+            end;
+        end;
+        if Inner = NIL then
+          begin
+            AErrCode := ErrUnsupportedAction;
+            AErrMsg := AInstance.ClassName + '.' + OuterName + ' is nil';
+            exit;
+          end;
+      finally
+        Ctx.Free;
       end;
-      if Inner = NIL then
-      begin
-        AErrCode := ErrUnsupportedAction;
-        AErrMsg := AInstance.ClassName + '.' + OuterName + ' is nil';
-        exit;
-      end;
-    finally
-      Ctx.Free;
+      exit(TryReadGenericProperty(Inner, InnerName, AValue, AKind, AErrCode, AErrMsg, AFailedInstance));
     end;
-    exit(TryReadGenericProperty(Inner, InnerName, AValue, AKind, AErrCode, AErrMsg, AFailedInstance));
-  end;
 
   Ctx := TRttiContext.Create;
   try
     RT := Ctx.GetType(AInstance.ClassType);
     if RT = NIL then
-    begin
-      AErrMsg := AInstance.ClassName + ' has no RTTI';
-      exit;
-    end;
+      begin
+        AErrMsg := AInstance.ClassName + ' has no RTTI';
+        exit;
+      end;
     Prop := RT.GetProperty(APropName);
     if Prop = NIL then
-    begin
-      AErrMsg := AInstance.ClassName + ' has no published property "' + APropName + '"';
-      exit;
-    end;
+      begin
+        AErrMsg := AInstance.ClassName + ' has no published property "' + APropName + '"';
+        exit;
+      end;
     if not Prop.IsReadable then
-    begin
-      AErrCode := ErrUnsupportedAction;
-      AErrMsg := AInstance.ClassName + '.' + APropName + ' is write-only';
-      exit;
-    end;
+      begin
+        AErrCode := ErrUnsupportedAction;
+        AErrMsg := AInstance.ClassName + '.' + APropName + ' is write-only';
+        exit;
+      end;
     case Prop.PropertyType.TypeKind of
       tkString, tkLString, tkWString, tkUString: AKind := 'string';
       tkInteger:
-        if Prop.PropertyType.Handle = TypeInfo(TAlphaColor) then
-          AKind := 'alphacolor'
-        else
-          AKind := 'integer';
+        if Prop.PropertyType.Handle = TypeInfo(TAlphaColor)
+        then AKind := 'alphacolor'
+        else AKind := 'integer';
       tkInt64:                                    AKind := 'int64';
       tkEnumeration:
         // Same bool-family rule as ListReadableProperties above — the two must agree, or the AI sees 'boolean' in availableProperties and 'enum' on the read.
-        if (Prop.PropertyType.Handle = TypeInfo(Boolean)) or IsBoolFamilyType(Prop.PropertyType.Handle) then
-          AKind := 'boolean'
-        else
-          AKind := 'enum';
+        if (Prop.PropertyType.Handle = TypeInfo(Boolean)) or IsBoolFamilyType(Prop.PropertyType.Handle)
+        then AKind := 'boolean'
+        else AKind := 'enum';
       tkSet:                                      AKind := 'set';
       tkFloat:                                    AKind := 'float';
       tkClass:
@@ -2226,11 +2220,11 @@ begin
       exit;
     end;
     if not TryReadPropertyAsString(AInstance, Prop, AValue) then
-    begin
-      AErrCode := ErrUnsupportedAction;
-      AErrMsg := AInstance.ClassName + '.' + APropName + ' getter raised or returned no value';
-      exit;
-    end;
+      begin
+        AErrCode := ErrUnsupportedAction;
+        AErrMsg := AInstance.ClassName + '.' + APropName + ' getter raised or returned no value';
+        exit;
+      end;
     Result := TRUE;
   finally
     Ctx.Free;
@@ -2253,19 +2247,19 @@ begin
   Result.Id := AReq.Id;
 
   if AReq.Args = NIL then
-  begin
-    Result.Ok := FALSE; Result.ErrorCode := ErrInvalidRequest;
-    Result.ErrorMessage := 'read_property requires args.path and args.propName';
-    exit;
-  end;
+    begin
+      Result.Ok := FALSE; Result.ErrorCode := ErrInvalidRequest;
+      Result.ErrorMessage := 'read_property requires args.path and args.propName';
+      exit;
+    end;
   PathVal := AReq.Args.GetValue('path');
   NameVal := AReq.Args.GetValue('propName');
   if not (PathVal is TJSONString) or not (NameVal is TJSONString) then
-  begin
-    Result.Ok := FALSE; Result.ErrorCode := ErrInvalidRequest;
-    Result.ErrorMessage := 'read_property requires args.path and args.propName (strings)';
-    exit;
-  end;
+    begin
+      Result.Ok := FALSE; Result.ErrorCode := ErrInvalidRequest;
+      Result.ErrorMessage := 'read_property requires args.path and args.propName (strings)';
+      exit;
+    end;
   Path := TJSONString(PathVal).Value;
   PropName := TJSONString(NameVal).Value;
 
@@ -2274,23 +2268,23 @@ begin
   // No Enabled check — reading a disabled control is exactly what a debug session needs.
 
   if not TryReadGenericProperty(Comp, PropName, Value, Kind, ErrCode, ErrMsg, FailedInstance) then
-  begin
-    Result.Ok := FALSE;
-    Result.ErrorCode := ErrCode;
-    Result.ErrorMessage := ErrMsg;
-    if ErrCode = ErrRttiPropertyMissing then
     begin
-      Result.ErrorData := TJSONObject.Create;
-      if FailedInstance = NIL then FailedInstance := Comp;
-      try
-        Result.ErrorData.AddPair('availableProperties', ListReadableProperties(FailedInstance));
-      except
-        FreeAndNil(Result.ErrorData);   // same OOM-class guard as HandleSetProperty
-        raise;
-      end;
+      Result.Ok := FALSE;
+      Result.ErrorCode := ErrCode;
+      Result.ErrorMessage := ErrMsg;
+      if ErrCode = ErrRttiPropertyMissing then
+        begin
+          Result.ErrorData := TJSONObject.Create;
+          if FailedInstance = NIL then FailedInstance := Comp;
+          try
+            Result.ErrorData.AddPair('availableProperties', ListReadableProperties(FailedInstance));
+          except
+            FreeAndNil(Result.ErrorData);   // same OOM-class guard as HandleSetProperty
+            raise;
+          end;
+        end;
+      exit;
     end;
-    exit;
-  end;
 
   Wrap := TJSONObject.Create;
   Wrap.AddPair('path', Path);
@@ -2340,26 +2334,26 @@ begin
   HasButton := FALSE;
   TargetDlg := 0;
   if AReq.Args <> NIL then
-  begin
-    ButtonVal := AReq.Args.GetValue('button');
-    if ButtonVal is TJSONString then
     begin
-      Selector := TJSONString(ButtonVal).Value;
-      HasButton := Trim(Selector) <> '';
+      ButtonVal := AReq.Args.GetValue('button');
+      if ButtonVal is TJSONString then
+        begin
+          Selector := TJSONString(ButtonVal).Value;
+          HasButton := Trim(Selector) <> '';
+        end;
+      HwndVal := AReq.Args.GetValue('hwnd');
+      if HwndVal <> NIL then
+        begin
+          // Reject a present-but-malformed hwnd (fractional / out-of-range / non-number) with ErrInvalidRequest rather than silently falling back to the topmost dialog: a typo'd handle must not dismiss an unintended dialog, and AsInt64 would otherwise raise here.
+          if not TryJsonInt64(HwndVal, HwndInt) then
+            begin
+              Result.Ok := FALSE; Result.ErrorCode := ErrInvalidRequest;
+              Result.ErrorMessage := 'dismiss_dialog args.hwnd must be an integer window handle';
+              exit;
+            end;
+          TargetDlg := NativeUInt(HwndInt);
+        end;
     end;
-    HwndVal := AReq.Args.GetValue('hwnd');
-    if HwndVal <> NIL then
-    begin
-      // Reject a present-but-malformed hwnd (fractional / out-of-range / non-number) with ErrInvalidRequest rather than silently falling back to the topmost dialog: a typo'd handle must not dismiss an unintended dialog, and AsInt64 would otherwise raise here.
-      if not TryJsonInt64(HwndVal, HwndInt) then
-      begin
-        Result.Ok := FALSE; Result.ErrorCode := ErrInvalidRequest;
-        Result.ErrorMessage := 'dismiss_dialog args.hwnd must be an integer window handle';
-        exit;
-      end;
-      TargetDlg := NativeUInt(HwndInt);
-    end;
-  end;
 
   Exclude := NIL;   // FMX forms never match the dialog filter (see the comment above HandleDismissDialog)
 
@@ -2373,24 +2367,25 @@ begin
     Wrap.AddPair('supported', TJSONBool.Create(NativeDialogsSupported));
     Wrap.AddPair('platform', PlatformName);
     if HasButton then
-    begin
-      Clicked := ClickNativeDialogButton(Exclude, TargetDlg, Selector, ClickedId, ClickedCap, ResolvedDlg, Reason, Via);
-      Wrap.AddPair('clicked', TJSONBool.Create(Clicked));
-      if Clicked then
       begin
-        Wrap.AddPair('clickedId', TJSONNumber.Create(ClickedId));
-        Wrap.AddPair('clickedCaption', ClickedCap);
-        Wrap.AddPair('dialogHwnd', TJSONNumber.Create(Int64(ResolvedDlg)));
-        Wrap.AddPair('via', Via);
-      end
-      else
-        Wrap.AddPair('reason', Reason);
-    end;
+        Clicked := ClickNativeDialogButton(Exclude, TargetDlg, Selector, ClickedId, ClickedCap, ResolvedDlg, Reason, Via);
+        Wrap.AddPair('clicked', TJSONBool.Create(Clicked));
+        if Clicked
+        then
+          begin
+            Wrap.AddPair('clickedId', TJSONNumber.Create(ClickedId));
+            Wrap.AddPair('clickedCaption', ClickedCap);
+            Wrap.AddPair('dialogHwnd', TJSONNumber.Create(Int64(ResolvedDlg)));
+            Wrap.AddPair('via', Via);
+          end
+        else Wrap.AddPair('reason', Reason);
+      end;
     Result.Ok := TRUE;
     Result.ResultJson := Wrap;
     Wrap := NIL;
   finally
-    if Wrap <> NIL then FreeAndNil(Wrap);
+    if Wrap <> NIL
+    then FreeAndNil(Wrap);
   end;
 end;
 
@@ -2411,18 +2406,18 @@ begin
   Result := Default(TBridgeResponse);
   Result.Id := AReq.Id;
   if AReq.Args = NIL then
-  begin
-    Result.Ok := FALSE; Result.ErrorCode := ErrInvalidRequest;
-    Result.ErrorMessage := 'set_keep_awake requires args.enabled';
-    exit;
-  end;
+    begin
+      Result.Ok := FALSE; Result.ErrorCode := ErrInvalidRequest;
+      Result.ErrorMessage := 'set_keep_awake requires args.enabled';
+      exit;
+    end;
   EnabledVal := AReq.Args.GetValue('enabled');
   if not (EnabledVal is TJSONBool) then
-  begin
-    Result.Ok := FALSE; Result.ErrorCode := ErrInvalidRequest;
-    Result.ErrorMessage := 'set_keep_awake requires args.enabled (boolean)';
-    exit;
-  end;
+    begin
+      Result.Ok := FALSE; Result.ErrorCode := ErrInvalidRequest;
+      Result.ErrorMessage := 'set_keep_awake requires args.enabled (boolean)';
+      exit;
+    end;
   Enable := TJSONBool(EnabledVal).AsBoolean;
 
   ApplyKeepScreenOn(Enable);     // no-op off Android
@@ -2464,10 +2459,8 @@ var
   FNum: Integer;
 begin
   N := UpperCase(AName);
-  if (Length(N) = 1) and CharInSet(N[1], ['A'..'Z', '0'..'9']) then
-    exit(Ord(N[1]));    // vkA..vkZ and vk0..vk9 equal the ASCII codes (System.UITypes)
-  if (Length(N) in [2, 3]) and (N[1] = 'F') and TryStrToInt(Copy(N, 2, 2), FNum) and (FNum >= 1) and (FNum <= 12) then
-    exit(vkF1 + FNum - 1);
+  if (Length(N) = 1) and CharInSet(N[1], ['A'..'Z', '0'..'9']) then exit(Ord(N[1]));    // vkA..vkZ and vk0..vk9 equal the ASCII codes (System.UITypes)
+  if (Length(N) in [2, 3]) and (N[1] = 'F') and TryStrToInt(Copy(N, 2, 2), FNum) and (FNum >= 1) and (FNum <= 12) then exit(vkF1 + FNum - 1);
   if N = 'ENTER'     then exit(vkReturn);
   if (N = 'ESCAPE') or (N = 'ESC') then exit(vkEscape);
   if N = 'TAB'       then exit(vkTab);
@@ -2504,14 +2497,14 @@ var
     Start := 1;
     for k := 1 to Length(S) + 1 do
       if (k > Length(S)) or (S[k] = ASep) then
-      begin
-        if AKeepEmpty or (k > Start) then
         begin
-          SetLength(Result, Length(Result) + 1);
-          Result[High(Result)] := Copy(S, Start, k - Start);
+          if AKeepEmpty or (k > Start) then
+            begin
+              SetLength(Result, Length(Result) + 1);
+              Result[High(Result)] := Copy(S, Start, k - Start);
+            end;
+          Start := k + 1;
         end;
-        Start := k + 1;
-      end;
   end;
 
 begin
@@ -2521,32 +2514,35 @@ begin
   Count := 0;
   SetLength(AChords, Length(Tokens));
   for Token in Tokens do
-  begin
-    Chord := Default(TKeyChord);
-    Parts := SplitOn(Token, '+', TRUE);
-    for i := 0 to High(Parts) - 1 do
     begin
-      Part := UpperCase(Parts[i]);
-      if Part = 'CTRL' then Chord.Ctrl := TRUE
-      else
-        if Part = 'SHIFT' then Chord.Shift := TRUE
-        else
-          if Part = 'ALT' then Chord.Alt := TRUE
+      Chord := Default(TKeyChord);
+      Parts := SplitOn(Token, '+', TRUE);
+      for i := 0 to High(Parts) - 1 do
+        begin
+          Part := UpperCase(Parts[i]);
+          if Part = 'CTRL'
+          then Chord.Ctrl := TRUE
           else
-          begin
-            AError := 'unknown modifier "' + Parts[i] + '" in "' + Token + '" (use Ctrl, Shift, Alt)';
-            exit(FALSE);
-          end;
+            if Part = 'SHIFT'
+            then Chord.Shift := TRUE
+            else
+              if Part = 'ALT'
+              then Chord.Alt := TRUE
+              else
+                begin
+                  AError := 'unknown modifier "' + Parts[i] + '" in "' + Token + '" (use Ctrl, Shift, Alt)';
+                  exit(FALSE);
+                end;
+        end;
+      Chord.Key := KeyNameToVk(Parts[High(Parts)]);
+      if Chord.Key = 0 then
+        begin
+          AError := 'unknown key name "' + Parts[High(Parts)] + '" in "' + Token + '"';
+          exit(FALSE);
+        end;
+      AChords[Count] := Chord;
+      Inc(Count);
     end;
-    Chord.Key := KeyNameToVk(Parts[High(Parts)]);
-    if Chord.Key = 0 then
-    begin
-      AError := 'unknown key name "' + Parts[High(Parts)] + '" in "' + Token + '"';
-      exit(FALSE);
-    end;
-    AChords[Count] := Chord;
-    Inc(Count);
-  end;
   Result := TRUE;
 end;
 
@@ -2561,33 +2557,37 @@ var
   Ch: Char;
 begin
   Shift := [];
-  if AChord.Ctrl  then Include(Shift, ssCtrl);
-  if AChord.Shift then Include(Shift, ssShift);
-  if AChord.Alt   then Include(Shift, ssAlt);
+  if AChord.Ctrl
+  then Include(Shift, ssCtrl);
+  if AChord.Shift
+  then Include(Shift, ssShift);
+  if AChord.Alt
+  then Include(Shift, ssAlt);
 
   Key := AChord.Key;
   Ch  := #0;
   AForm.KeyDown(Key, Ch, Shift);
 
   if (Key <> 0) and not AChord.Ctrl and not AChord.Alt then
-  begin
-    Ch := #0;
-    if (AChord.Key >= Ord('A')) and (AChord.Key <= Ord('Z')) then
-      if AChord.Shift
-      then Ch := Char(AChord.Key)
-      else Ch := Char(AChord.Key + 32)
-    else
-      if (AChord.Key >= Ord('0')) and (AChord.Key <= Ord('9')) and not AChord.Shift then
-        Ch := Char(AChord.Key)
-      else
-        if AChord.Key = vkSpace then
-          Ch := ' ';
-    if Ch <> #0 then
     begin
-      Key := 0;
-      AForm.KeyDown(Key, Ch, Shift);
+      Ch := #0;
+      if (AChord.Key >= Ord('A')) and (AChord.Key <= Ord('Z'))
+      then
+        if AChord.Shift
+        then Ch := Char(AChord.Key)
+        else Ch := Char(AChord.Key + 32)
+      else
+        if (AChord.Key >= Ord('0')) and (AChord.Key <= Ord('9')) and not AChord.Shift
+        then Ch := Char(AChord.Key)
+        else
+          if AChord.Key = vkSpace
+          then Ch := ' ';
+      if Ch <> #0 then
+        begin
+          Key := 0;
+          AForm.KeyDown(Key, Ch, Shift);
+        end;
     end;
-  end;
 
   Key := AChord.Key;
   Ch  := #0;
@@ -2631,99 +2631,103 @@ begin
   Keys := '';
   Text := '';
   if AReq.Args <> NIL then
-  begin
-    PathVal := AReq.Args.GetValue('path');
-    KeysVal := AReq.Args.GetValue('keys');
-    TextVal := AReq.Args.GetValue('text');
-    if ((PathVal <> NIL) and not (PathVal is TJSONString)) or ((KeysVal <> NIL) and not (KeysVal is TJSONString)) or ((TextVal <> NIL) and not (TextVal is TJSONString)) then
     begin
-      Result.ErrorMessage := 'send_keys args.path, args.keys and args.text must be strings';
+      PathVal := AReq.Args.GetValue('path');
+      KeysVal := AReq.Args.GetValue('keys');
+      TextVal := AReq.Args.GetValue('text');
+      if ((PathVal <> NIL) and not (PathVal is TJSONString)) or ((KeysVal <> NIL) and not (KeysVal is TJSONString)) or ((TextVal <> NIL) and not (TextVal is TJSONString)) then
+        begin
+          Result.ErrorMessage := 'send_keys args.path, args.keys and args.text must be strings';
+          exit;
+        end;
+      if PathVal <> NIL
+      then Path := TJSONString(PathVal).Value;
+      if KeysVal <> NIL
+      then Keys := TJSONString(KeysVal).Value;
+      if TextVal <> NIL
+      then Text := TJSONString(TextVal).Value;
+    end;
+  if (Trim(Keys) = '') and (Text = '') then
+    begin
+      Result.ErrorMessage := 'send_keys requires args.keys or args.text';
       exit;
     end;
-    if PathVal <> NIL then Path := TJSONString(PathVal).Value;
-    if KeysVal <> NIL then Keys := TJSONString(KeysVal).Value;
-    if TextVal <> NIL then Text := TJSONString(TextVal).Value;
-  end;
-  if (Trim(Keys) = '') and (Text = '') then
-  begin
-    Result.ErrorMessage := 'send_keys requires args.keys or args.text';
-    exit;
-  end;
   if not ParseKeyChords(Keys, Chords, ParseError) then
-  begin
-    Result.ErrorMessage := 'send_keys: ' + ParseError;
-    exit;
-  end;
+    begin
+      Result.ErrorMessage := 'send_keys: ' + ParseError;
+      exit;
+    end;
 
   { # Target }
-  if Path <> '' then
-  begin
-    Comp := ResolvePathOrFail(Path, Result);
-    if Comp = NIL then exit;
-    if TryGetEnabled(Comp, Enabled) and not Enabled then
+  if Path <> ''
+  then
     begin
-      Result.ErrorCode := ErrControlDisabled;
-      Result.ErrorMessage := Comp.Name + ' is disabled';
-      exit;
-    end;
-    if Comp is TCommonCustomForm then
-      Form := TCommonCustomForm(Comp)
-    else
-    begin
-      if not (Comp is TControl) or not TControl(Comp).CanFocus or (TControl(Comp).Root = NIL) or not (TControl(Comp).Root.GetObject is TCommonCustomForm) then
-      begin
-        Result.ErrorCode := ErrUnsupportedAction;
-        Result.ErrorMessage := Comp.ClassName + ' cannot take the keyboard focus';
-        exit;
-      end;
-      Form := TCommonCustomForm(TControl(Comp).Root.GetObject);
-      { Focus inside the form only (TCommonCustomForm.SetFocused): no window is activated. }
-      if Form.Focused <> TControl(Comp) as IControl then
-        try
-          Form.Focused := TControl(Comp);
-        except
-          on E: EInvalidOperation do
-          begin
-            Result.ErrorCode := ErrUnsupportedAction;
-            Result.ErrorMessage := Comp.Name + ' cannot take the keyboard focus now: ' + E.Message;
-            exit;
-          end;
+      Comp := ResolvePathOrFail(Path, Result);
+      if Comp = NIL then exit;
+      if TryGetEnabled(Comp, Enabled) and not Enabled then
+        begin
+          Result.ErrorCode := ErrControlDisabled;
+          Result.ErrorMessage := Comp.Name + ' is disabled';
+          exit;
         end;
-    end;
-    TargetPath := ReferenceFor(Comp);
-  end
+      if Comp is TCommonCustomForm
+      then Form := TCommonCustomForm(Comp)
+      else
+        begin
+          if not (Comp is TControl) or not TControl(Comp).CanFocus or (TControl(Comp).Root = NIL) or not (TControl(Comp).Root.GetObject is TCommonCustomForm) then
+            begin
+              Result.ErrorCode := ErrUnsupportedAction;
+              Result.ErrorMessage := Comp.ClassName + ' cannot take the keyboard focus';
+              exit;
+            end;
+          Form := TCommonCustomForm(TControl(Comp).Root.GetObject);
+          { Focus inside the form only (TCommonCustomForm.SetFocused): no window is activated. }
+          if Form.Focused <> TControl(Comp) as IControl then
+            try
+              Form.Focused := TControl(Comp);
+            except
+              on E: EInvalidOperation do
+                begin
+                  Result.ErrorCode := ErrUnsupportedAction;
+                  Result.ErrorMessage := Comp.Name + ' cannot take the keyboard focus now: ' + E.Message;
+                  exit;
+                end;
+            end;
+        end;
+      TargetPath := ReferenceFor(Comp);
+    end
   else
-  begin
-    Form := Screen.ActiveForm;
-    if Form = NIL then
-      Form := Application.MainForm;
-    if Form = NIL then
     begin
-      Result.ErrorCode := ErrNotFound;
-      Result.ErrorMessage := 'send_keys: no path given and the app has no active form';
-      exit;
+      Form := Screen.ActiveForm;
+      if Form = NIL
+      then Form := Application.MainForm;
+      if Form = NIL then
+        begin
+          Result.ErrorCode := ErrNotFound;
+          Result.ErrorMessage := 'send_keys: no path given and the app has no active form';
+          exit;
+        end;
+      if (Form.Focused <> NIL) and (Form.Focused.GetObject is TComponent)
+      then TargetPath := ReferenceFor(TComponent(Form.Focused.GetObject))
+      else TargetPath := ReferenceFor(Form);
     end;
-    if (Form.Focused <> NIL) and (Form.Focused.GetObject is TComponent)
-    then TargetPath := ReferenceFor(TComponent(Form.Focused.GetObject))
-    else TargetPath := ReferenceFor(Form);
-  end;
 
   { # Send: text first, then the chords. A handler may free the form (Escape closing it): Watch stops the rest. }
   Sent := 0;
   Watch := TFreeWatch.Create(Form);
   try
     for i := 1 to Length(Text) do
-    begin
-      if Watch.Freed then Break;
-      TypeCharToForm(Form, Text[i]);
-      Inc(Sent);
-    end;
+      begin
+        if Watch.Freed then Break;
+        TypeCharToForm(Form, Text[i]);
+        Inc(Sent);
+      end;
     for i := 0 to High(Chords) do
-    begin
-      if Watch.Freed then Break;
-      SendChordToForm(Form, Chords[i]);
-      Inc(Sent);
-    end;
+      begin
+        if Watch.Freed then Break;
+        SendChordToForm(Form, Chords[i]);
+        Inc(Sent);
+      end;
   finally
     FreeAndNil(Watch);
   end;
@@ -2746,64 +2750,64 @@ begin
     FreeAndNil clears GWorker BEFORE running the destructor, and both StopBridge and this proc run on the main thread, so the test is race-free.
     It does NOT interfere with the documented short-timeoutMs recipe (fire a click, take -32004, then dismiss_dialog): the bridge is still running there, so the queued click fires as before. }
   if GWorker = NIL then
-  begin
-    Result := Default(TBridgeResponse);
-    Result.Id := AReq.Id;
-    Result.Ok := FALSE;
-    Result.ErrorCode := ErrInternalError;
-    Result.ErrorMessage := 'bridge stopped';
-    exit;
-  end;
-  if SameText(AReq.Cmd, 'list_tree') then
-    Result := HandleListTree(AReq)
+    begin
+      Result := Default(TBridgeResponse);
+      Result.Id := AReq.Id;
+      Result.Ok := FALSE;
+      Result.ErrorCode := ErrInternalError;
+      Result.ErrorMessage := 'bridge stopped';
+      exit;
+    end;
+  if SameText(AReq.Cmd, 'list_tree')
+  then Result := HandleListTree(AReq)
   else
-    if SameText(AReq.Cmd, 'click') then
-      Result := HandleClick(AReq)
+    if SameText(AReq.Cmd, 'click')
+    then Result := HandleClick(AReq)
     else
-      if SameText(AReq.Cmd, 'get_text') then
-        Result := HandleGetText(AReq)
+      if SameText(AReq.Cmd, 'get_text')
+      then Result := HandleGetText(AReq)
       else
-        if SameText(AReq.Cmd, 'set_text') then
-          Result := HandleSetText(AReq)
+        if SameText(AReq.Cmd, 'set_text')
+        then Result := HandleSetText(AReq)
         else
-          if SameText(AReq.Cmd, 'set_checked') then
-            Result := HandleSetChecked(AReq)
+          if SameText(AReq.Cmd, 'set_checked')
+          then Result := HandleSetChecked(AReq)
           else
-            if SameText(AReq.Cmd, 'set_property') then
-              Result := HandleSetProperty(AReq)
+            if SameText(AReq.Cmd, 'set_property')
+            then Result := HandleSetProperty(AReq)
             else
-              if SameText(AReq.Cmd, 'read_property') then
-                Result := HandleReadProperty(AReq)
+              if SameText(AReq.Cmd, 'read_property')
+              then Result := HandleReadProperty(AReq)
               else
-                if SameText(AReq.Cmd, 'screenshot') then
-                  Result := HandleScreenshot(AReq)
+                if SameText(AReq.Cmd, 'screenshot')
+                then Result := HandleScreenshot(AReq)
                 else
-                  if SameText(AReq.Cmd, 'execute_action') then
-                    Result := HandleExecuteAction(AReq)
+                  if SameText(AReq.Cmd, 'execute_action')
+                  then Result := HandleExecuteAction(AReq)
                   else
-                    if SameText(AReq.Cmd, 'set_keep_awake') then
-                      Result := HandleSetKeepAwake(AReq)
+                    if SameText(AReq.Cmd, 'set_keep_awake')
+                    then Result := HandleSetKeepAwake(AReq)
                     else
-                      if SameText(AReq.Cmd, 'dismiss_dialog') then
-                        Result := HandleDismissDialog(AReq)
+                      if SameText(AReq.Cmd, 'dismiss_dialog')
+                      then Result := HandleDismissDialog(AReq)
                       else
-                        if SameText(AReq.Cmd, 'send_keys') then
-                          Result := HandleSendKeys(AReq)
+                        if SameText(AReq.Cmd, 'send_keys')
+                        then Result := HandleSendKeys(AReq)
                         else
-                        begin
-                          Result := Default(TBridgeResponse);
-                          Result.Id := AReq.Id;
-                          Result.Ok := FALSE;
-                          Result.ErrorCode := ErrUnsupportedAction;
-                          Result.ErrorMessage := 'unknown cmd: ' + AReq.Cmd;
-                        end;
+                          begin
+                            Result := Default(TBridgeResponse);
+                            Result.Id := AReq.Id;
+                            Result.Ok := FALSE;
+                            Result.ErrorCode := ErrUnsupportedAction;
+                            Result.ErrorMessage := 'unknown cmd: ' + AReq.Cmd;
+                          end;
 end;
 
 
 procedure EnsureLock;
 begin
-  if GLock = NIL then
-    GLock := TCriticalSection.Create;
+  if GLock = NIL
+  then GLock := TCriticalSection.Create;
 end;
 
 
@@ -2890,10 +2894,10 @@ initialization
 
 finalization
 {$IFDEF AUTOPILOT}
-  if GWorker <> NIL then
-    StopBridge;
-  if GLock <> NIL then
-    FreeAndNil(GLock);
+  if GWorker <> NIL
+  then StopBridge;
+  if GLock <> NIL
+  then FreeAndNil(GLock);
 {$ENDIF}
 
 

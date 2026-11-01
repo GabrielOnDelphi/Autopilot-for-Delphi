@@ -33,9 +33,9 @@ type
   Returns '' if not found. }
 function FindAdb: String;
 
-// Build the REMOTE (device-side) endpoint spec string for `adb forward`.
-//   rkTcp           -> 'tcp:<DeviceSpec>'            (DeviceSpec is the port number)
-//   rkLocalAbstract -> 'localabstract:<DeviceSpec>'  (DeviceSpec is the abstract name)
+{ Build the REMOTE (device-side) endpoint spec string for `adb forward`.
+    rkTcp           -> 'tcp:<DeviceSpec>'            (DeviceSpec is the port number)
+    rkLocalAbstract -> 'localabstract:<DeviceSpec>'  (DeviceSpec is the abstract name) }
 function BuildRemoteSpec(AKind: TAdbRemoteKind; const ADeviceSpec: String): String;
 
 { Run `adb forward tcp:<AHostPort> <ARemoteSpec>`.
@@ -66,10 +66,10 @@ function FindAdb: String;
     if ADir = '' then Exit;
     Candidate := TPath.Combine(TPath.Combine(ADir, 'platform-tools'), 'adb.exe');
     if TFile.Exists(Candidate) then
-    begin
-      FindAdb := Candidate;
-      Result  := True;
-    end;
+      begin
+        FindAdb := Candidate;
+        Result  := True;
+      end;
   end;
 
 var
@@ -81,11 +81,11 @@ begin
   { # On PATH }
   PathDirs := GetEnvironmentVariable('PATH').Split([';']);
   for Dir in PathDirs do
-  begin
-    if Dir.Trim = '' then Continue;
-    Candidate := TPath.Combine(Dir.Trim, 'adb.exe');
-    if TFile.Exists(Candidate) then Exit(Candidate);
-  end;
+    begin
+      if Dir.Trim = '' then Continue;
+      Candidate := TPath.Combine(Dir.Trim, 'adb.exe');
+      if TFile.Exists(Candidate) then Exit(Candidate);
+    end;
 
   { # SDK env vars }
   if TryDir(GetEnvironmentVariable('ANDROID_HOME')) then Exit;
@@ -130,8 +130,8 @@ begin
   Sa.bInheritHandle := True;
 
   NulIn := INVALID_HANDLE_VALUE;
-  if not CreatePipe(ReadPipe, WritePipe, @Sa, 0) then
-    raise Exception.CreateFmt('CreatePipe failed (code %d)', [GetLastError]);
+  if not CreatePipe(ReadPipe, WritePipe, @Sa, 0)
+  then raise Exception.CreateFmt('CreatePipe failed (code %d)', [GetLastError]);
   try
     // The read end must NOT be inherited by the child.
     SetHandleInformation(ReadPipe, HANDLE_FLAG_INHERIT, 0);
@@ -139,8 +139,8 @@ begin
     { The child must NOT inherit our real stdin either: that handle IS the MCP JSON-RPC channel from the AI host, and the long-lived adb SERVER a cold adb run forks would keep holding it (and could read from it, stealing protocol bytes).
       Hand the child an inheritable NUL handle instead. }
     NulIn := CreateFileW('NUL', GENERIC_READ, FILE_SHARE_READ or FILE_SHARE_WRITE, @Sa, OPEN_EXISTING, 0, 0);
-    if NulIn = INVALID_HANDLE_VALUE then
-      raise Exception.CreateFmt('CreateFile(NUL) failed (code %d)', [GetLastError]);
+    if NulIn = INVALID_HANDLE_VALUE
+    then raise Exception.CreateFmt('CreateFile(NUL) failed (code %d)', [GetLastError]);
 
     Si := Default(TStartupInfo);
     Si.cb         := SizeOf(Si);
@@ -155,8 +155,8 @@ begin
     UniqueString(FullCmd);
 
     Pi := Default(TProcessInformation);
-    if not CreateProcessW(nil, PWideChar(FullCmd), nil, nil, True, CREATE_NO_WINDOW, nil, nil, Si, Pi) then
-      raise Exception.CreateFmt('CreateProcess failed for adb (code %d)', [GetLastError]);
+    if not CreateProcessW(nil, PWideChar(FullCmd), nil, nil, True, CREATE_NO_WINDOW, nil, nil, Si, Pi)
+    then raise Exception.CreateFmt('CreateProcess failed for adb (code %d)', [GetLastError]);
     try
       { Close our copy of the write end.
         We must NOT then read to EOF: a cold `adb` invocation forks a long-lived adb SERVER that inherits this (inheritable) write end, so EOF never arrives and a blocking read-to-EOF would hang the single-threaded MCP server forever (documented adb-on-Windows behaviour — robotframework/robotframework#2085).
@@ -176,13 +176,14 @@ begin
           The deadline caps the loop in case the inherited server fd ever gets chatty. }
         DrainDeadline := GetTickCount64 + 2000;
         while (GetTickCount64 < DrainDeadline) and PeekNamedPipe(ReadPipe, nil, 0, nil, @Avail, nil) and (Avail > 0) do
-        begin
-          if Avail > DWORD(SizeOf(Buf)) then Avail := SizeOf(Buf);
-          if not (ReadFile(ReadPipe, Buf, Avail, BytesRead, nil) and (BytesRead > 0)) then Break;
-          SetLength(Chunk, BytesRead);
-          Move(Buf[0], Chunk[0], BytesRead);
-          Acc.Append(TEncoding.ANSI.GetString(Chunk));
-        end;
+          begin
+            if Avail > DWORD(SizeOf(Buf))
+            then Avail := SizeOf(Buf);
+            if not (ReadFile(ReadPipe, Buf, Avail, BytesRead, nil) and (BytesRead > 0)) then Break;
+            SetLength(Chunk, BytesRead);
+            Move(Buf[0], Chunk[0], BytesRead);
+            Acc.Append(TEncoding.ANSI.GetString(Chunk));
+          end;
         Result := Acc.ToString;
       finally
         Acc.Free;
@@ -192,8 +193,10 @@ begin
       CloseHandle(Pi.hProcess);
     end;
   finally
-    if NulIn <> INVALID_HANDLE_VALUE then CloseHandle(NulIn);
-    if WritePipe <> 0 then CloseHandle(WritePipe);
+    if NulIn <> INVALID_HANDLE_VALUE
+    then CloseHandle(NulIn);
+    if WritePipe <> 0
+    then CloseHandle(WritePipe);
     CloseHandle(ReadPipe);
   end;
 end;
@@ -204,8 +207,8 @@ var
   Adb: String;
 begin
   Adb := FindAdb;
-  if Adb = '' then
-    raise Exception.Create('adb.exe not found. Put it on PATH or set ANDROID_HOME / ANDROID_SDK_ROOT.');
+  if Adb = ''
+  then raise Exception.Create('adb.exe not found. Put it on PATH or set ANDROID_HOME / ANDROID_SDK_ROOT.');
   Result := Default(TAdbResult);
   Result.Output   := RunCaptured(Adb, AArgs, Result.ExitCode);
   Result.Success  := Result.ExitCode = 0;

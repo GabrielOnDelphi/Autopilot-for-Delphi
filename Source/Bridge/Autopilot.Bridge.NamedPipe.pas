@@ -113,8 +113,8 @@ end;
 function DiscoveryFolder: String;
 begin
   Result := TPath.Combine(TPath.GetTempPath, 'Autopilot\active');
-  if not TDirectory.Exists(Result) then
-    TDirectory.CreateDirectory(Result);
+  if not TDirectory.Exists(Result)
+  then TDirectory.CreateDirectory(Result);
 end;
 
 
@@ -144,11 +144,11 @@ begin
     This fires when the worker died from an unhandled exception that bypassed its own close path.
     The worker releases the transport AFTER `inherited` (WaitFor) in its own destructor, so this cannot race the worker thread. }
   if FPipeHandle <> INVALID_HANDLE_VALUE then
-  begin
-    DisconnectNamedPipe(FPipeHandle);
-    CloseHandle(FPipeHandle);
-    FPipeHandle := INVALID_HANDLE_VALUE;
-  end;
+    begin
+      DisconnectNamedPipe(FPipeHandle);
+      CloseHandle(FPipeHandle);
+      FPipeHandle := INVALID_HANDLE_VALUE;
+    end;
   DeleteDiscoveryFile;
   inherited;
 end;
@@ -168,14 +168,14 @@ begin
   TempPath := FDiscoveryPath + '.tmp';
   TFile.WriteAllText(TempPath, FPipeName, TEncoding.UTF8);
   if not MoveFileExW(PWideChar(TempPath), PWideChar(FDiscoveryPath), MOVEFILE_REPLACE_EXISTING) then
-  begin
-    { Capture the rename failure code BEFORE the fallback TFile calls - those make their own Win32 calls (DeleteFile / CreateFile) that overwrite GetLastError, so reading it after them would log a misleading (usually 0) code. }
-    MoveErr := GetLastError;
-    // Fall back to a direct write so the bridge stays discoverable even if rename fails.
-    TFile.Delete(TempPath);
-    TFile.WriteAllText(FDiscoveryPath, FPipeName, TEncoding.UTF8);
-    BridgeLogWarn('bridge', 'discovery file atomic rename failed (' + IntToStr(MoveErr) + '); fell back to direct write');
-  end;
+    begin
+      { Capture the rename failure code BEFORE the fallback TFile calls - those make their own Win32 calls (DeleteFile / CreateFile) that overwrite GetLastError, so reading it after them would log a misleading (usually 0) code. }
+      MoveErr := GetLastError;
+      // Fall back to a direct write so the bridge stays discoverable even if rename fails.
+      TFile.Delete(TempPath);
+      TFile.WriteAllText(FDiscoveryPath, FPipeName, TEncoding.UTF8);
+      BridgeLogWarn('bridge', 'discovery file atomic rename failed (' + IntToStr(MoveErr) + '); fell back to direct write');
+    end;
 end;
 
 
@@ -207,21 +207,23 @@ begin
   SD     := NIL;
   SAPtr  := NIL;
   UserSid := GetCurrentUserSidString;
-  if UserSid <> '' then
-  begin
-    Sddl := 'D:(A;;GA;;;' + UserSid + ')';
-    if ConvertStringSecurityDescriptorToSecurityDescriptorW(PWideChar(Sddl), SDDL_REVISION_1, SD, NIL) then
+  if UserSid <> ''
+  then
     begin
-      FillChar(SA, SizeOf(SA), 0);
-      SA.nLength              := SizeOf(SA);
-      SA.lpSecurityDescriptor := SD;
-      SA.bInheritHandle       := FALSE;
-      SAPtr := @SA;
+      Sddl := 'D:(A;;GA;;;' + UserSid + ')';
+      if ConvertStringSecurityDescriptorToSecurityDescriptorW(PWideChar(Sddl), SDDL_REVISION_1, SD, NIL)
+      then
+        begin
+          FillChar(SA, SizeOf(SA), 0);
+          SA.nLength              := SizeOf(SA);
+          SA.lpSecurityDescriptor := SD;
+          SA.bInheritHandle       := FALSE;
+          SAPtr := @SA;
+        end
+      else
+        // Fall back to default ACL but record why. The bridge stays usable; admins can audit.
+        BridgeLogWarn('bridge', 'owner-only SD conversion failed (' + IntToStr(GetLastError) + '); falling back to default ACL');
     end
-    else
-      // Fall back to default ACL but record why. The bridge stays usable; admins can audit.
-      BridgeLogWarn('bridge', 'owner-only SD conversion failed (' + IntToStr(GetLastError) + '); falling back to default ACL');
-  end
   else
     BridgeLogWarn('bridge', 'could not resolve current user SID; falling back to default ACL');
 
@@ -236,17 +238,16 @@ begin
                 0,                  // default timeout
                 SAPtr);
     if Result = INVALID_HANDLE_VALUE then
-    begin
-      LastErr := GetLastError;
-      raise EOSError.Create('CreateNamedPipeW failed: ' + IntToStr(LastErr) + ' (' + SysErrorMessage(LastErr) + ')');
-    end;
-    if SAPtr <> NIL then
-      BridgeLogInfo('bridge', 'pipe ready, ACL restricted to user SID ' + UserSid)
-    else
-      BridgeLogInfo('bridge', 'pipe ready (default ACL)');
+      begin
+        LastErr := GetLastError;
+        raise EOSError.Create('CreateNamedPipeW failed: ' + IntToStr(LastErr) + ' (' + SysErrorMessage(LastErr) + ')');
+      end;
+    if SAPtr <> NIL
+    then BridgeLogInfo('bridge', 'pipe ready, ACL restricted to user SID ' + UserSid)
+    else BridgeLogInfo('bridge', 'pipe ready (default ACL)');
   finally
-    if SD <> NIL then
-      LocalFree(HLOCAL(SD));
+    if SD <> NIL
+    then LocalFree(HLOCAL(SD));
   end;
 end;
 
@@ -256,15 +257,15 @@ begin
   { Discovery file is best-effort, attempted ONCE (written even if pipe creation later fails).
     If TFile.WriteAllText raises (disk full, permission denied, virus scanner locking the dir), the bridge can still serve clients that already know the pipe name via attach(pid). }
   if not FDiscoveryTried then
-  begin
-    FDiscoveryTried := TRUE;
-    try
-      WriteDiscoveryFile;
-    except
-      on E: Exception do
-        BridgeLogError('bridge', 'WriteDiscoveryFile failed: ' + E.ClassName + ': ' + E.Message + ' — bridge will not auto-discover; attach(pid) still works');
+    begin
+      FDiscoveryTried := TRUE;
+      try
+        WriteDiscoveryFile;
+      except
+        on E: Exception do
+          BridgeLogError('bridge', 'WriteDiscoveryFile failed: ' + E.ClassName + ': ' + E.Message + ' — bridge will not auto-discover; attach(pid) still works');
+      end;
     end;
-  end;
 
   { (Re-)create a pipe instance for each client session.
     FILE_FLAG_FIRST_PIPE_INSTANCE on the first call rejects an existing same-named pipe, which is what we want - if another instance of this exe is up, we want to know. }
@@ -281,21 +282,21 @@ begin
     That's actually success.
     Returns FALSE with ERROR_OPERATION_ABORTED if WakeAndStop called CancelSynchronousIo. }
   if (not Connected) and (GetLastError <> ERROR_PIPE_CONNECTED) then
-  begin
-    CloseHandle(FPipeHandle);
-    FPipeHandle := INVALID_HANDLE_VALUE;
-    exit(FALSE);
-  end;
+    begin
+      CloseHandle(FPipeHandle);
+      FPipeHandle := INVALID_HANDLE_VALUE;
+      exit(FALSE);
+    end;
 
   { WakeAndStop self-connects via CreateFileW to unblock us - that produces a successful "connection" that must not be handshaken with: serving it on this thread while the main thread concurrently frees handles races the RTL's exception machinery (an access violation in @HandleAnyException).
     Swallow it. }
   if FStopping then
-  begin
-    DisconnectNamedPipe(FPipeHandle);
-    CloseHandle(FPipeHandle);
-    FPipeHandle := INVALID_HANDLE_VALUE;
-    exit(FALSE);
-  end;
+    begin
+      DisconnectNamedPipe(FPipeHandle);
+      CloseHandle(FPipeHandle);
+      FPipeHandle := INVALID_HANDLE_VALUE;
+      exit(FALSE);
+    end;
 
   Result := TRUE;
 end;
@@ -311,11 +312,11 @@ end;
 procedure TPipeTransport.RecycleConnection;
 begin
   if FPipeHandle <> INVALID_HANDLE_VALUE then
-  begin
-    DisconnectNamedPipe(FPipeHandle);
-    CloseHandle(FPipeHandle);
-    FPipeHandle := INVALID_HANDLE_VALUE;
-  end;
+    begin
+      DisconnectNamedPipe(FPipeHandle);
+      CloseHandle(FPipeHandle);
+      FPipeHandle := INVALID_HANDLE_VALUE;
+    end;
 end;
 
 
@@ -332,8 +333,8 @@ begin
     Two cooperating mechanisms cover the small race window where the worker is between CreatePipeInstance and ConnectNamedPipe (CSI is a no-op there) and the larger window where it's blocked inside ConnectNamedPipe:
       (1) CSI cancels in-flight sync I/O.
       (2) Self-connect via CreateFileW satisfies ConnectNamedPipe. }
-  if (AWorkerThread <> NIL) and (AWorkerThread.Handle <> 0) then
-    CancelSynchronousIo(AWorkerThread.Handle);
+  if (AWorkerThread <> NIL) and (AWorkerThread.Handle <> 0)
+  then CancelSynchronousIo(AWorkerThread.Handle);
 
   { Retry briefly.
     The pipe is in one of three states:
@@ -346,10 +347,10 @@ begin
   begin
     WakeClient := CreateFileW(PWideChar(FPipeName), GENERIC_READ or GENERIC_WRITE, 0, NIL, OPEN_EXISTING, 0, 0);
     if WakeClient <> INVALID_HANDLE_VALUE then
-    begin
-      CloseHandle(WakeClient);
-      Break;
-    end;
+      begin
+        CloseHandle(WakeClient);
+        Break;
+      end;
     Err := GetLastError;
     if (Err <> ERROR_PIPE_BUSY) and (Err <> ERROR_ACCESS_DENIED) and (Err <> ERROR_FILE_NOT_FOUND) then Break;
     Sleep(5);

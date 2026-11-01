@@ -71,9 +71,12 @@ var
   Args: TJSONObject;
 begin
   Args := TJSONObject.Create;
-  if Params.Path <> '' then Args.AddPair('path', Params.Path);
-  if Params.Keys <> '' then Args.AddPair('keys', Params.Keys);
-  if Params.Text <> '' then Args.AddPair('text', Params.Text);
+  if Params.Path <> ''
+  then Args.AddPair('path', Params.Path);
+  if Params.Keys <> ''
+  then Args.AddPair('keys', Params.Keys);
+  if Params.Text <> ''
+  then Args.AddPair('text', Params.Text);
   // The bridge's per-command default is 2000 ms for a command it does not list; key handlers run user code like a click, so ask for the click budget.
   Result := RunCommandOnTarget(Cardinal(Params.Pid), BuildRequest(1, 'send_keys', Args, DefaultTimeoutClickMs), DefaultTimeoutClickMs);
 end;

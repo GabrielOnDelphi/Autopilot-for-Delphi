@@ -61,12 +61,11 @@ var
 begin
   if APid = 0 then Exit(False);
   H := OpenProcess(SYNCHRONIZE, False, APid);
-  if H = 0 then
-    { Same "err on alive" principle as the wait below, applied to the open itself.
-      ERROR_INVALID_PARAMETER (87) is the code Windows returns when no process has this pid — the only failure that genuinely means dead.
-      Anything else (notably ERROR_ACCESS_DENIED, 5) means a process with that pid EXISTS but we may not open it, so reporting "dead" would delete a live target's discovery file, and StartBridge writes that file only once at startup — the target would stay undiscoverable for the rest of its run.
-      Measured 2026-08-11: a free pid gives 87, a live SYSTEM-owned process gives 5. }
-    EXIT(GetLastError <> ERROR_INVALID_PARAMETER);
+  { Same "err on alive" principle as the wait below, applied to the open itself.
+    ERROR_INVALID_PARAMETER (87) is the code Windows returns when no process has this pid — the only failure that genuinely means dead.
+    Anything else (notably ERROR_ACCESS_DENIED, 5) means a process with that pid EXISTS but we may not open it, so reporting "dead" would delete a live target's discovery file, and StartBridge writes that file only once at startup — the target would stay undiscoverable for the rest of its run.
+    Measured 2026-08-11: a free pid gives 87, a live SYSTEM-owned process gives 5. }
+  if H = 0 then EXIT(GetLastError <> ERROR_INVALID_PARAMETER);
   try
     { A zero-timeout wait is the unambiguous liveness probe: WAIT_TIMEOUT = still running.
       The old GetExitCodeProcess check compared against STILL_ACTIVE (259), so a process that had EXITED with code 259 read as alive forever.
@@ -92,44 +91,44 @@ begin
   try
     Folder := DiscoveryFolderPath;
     if not TDirectory.Exists(Folder) then
-    begin
-      Result := nil;
-      Exit;
-    end;
+      begin
+        Result := nil;
+        Exit;
+      end;
     Files := TDirectory.GetFiles(Folder, '*.pipe');
     for i := 0 to High(Files) do
-    begin
-      PidStr := TPath.GetFileNameWithoutExtension(Files[i]);
-      if not TryStrToUInt(PidStr, PidVal) then Continue;
-      if not IsPidAlive(PidVal) then
       begin
-        // Stale entry — process is gone. Sweep the file so the next caller doesn't see it.
+        PidStr := TPath.GetFileNameWithoutExtension(Files[i]);
+        if not TryStrToUInt(PidStr, PidVal) then Continue;
+        if not IsPidAlive(PidVal) then
+          begin
+            // Stale entry — process is gone. Sweep the file so the next caller doesn't see it.
+            try
+              TFile.Delete(Files[i]);
+            except
+              // Best effort. Another process may be racing us. Log, don't crash the scan.
+              on E: Exception do
+                BridgeLogWarn('discovery', 'stale-file delete race on ' + Files[i] + ': ' + E.Message);
+            end;
+            Continue;
+          end;
+        Line := '';
         try
-          TFile.Delete(Files[i]);
+          Line := TFile.ReadAllText(Files[i], TEncoding.UTF8).Trim;
         except
-          // Best effort. Another process may be racing us. Log, don't crash the scan.
+          // Same file write/read race — skip this entry, next scan will pick it up.
           on E: Exception do
-            BridgeLogWarn('discovery', 'stale-file delete race on ' + Files[i] + ': ' + E.Message);
+            begin
+              BridgeLogWarn('discovery', 'file read race on ' + Files[i] + ': ' + E.Message);
+              Continue;
+            end;
         end;
-        Continue;
+        if Line = '' then Continue;
+        Entry := Default(TTargetEntry);
+        Entry.Pid      := PidVal;
+        Entry.PipeName := Line;
+        Acc.Add(Entry);
       end;
-      Line := '';
-      try
-        Line := TFile.ReadAllText(Files[i], TEncoding.UTF8).Trim;
-      except
-        // Same file write/read race — skip this entry, next scan will pick it up.
-        on E: Exception do
-        begin
-          BridgeLogWarn('discovery', 'file read race on ' + Files[i] + ': ' + E.Message);
-          Continue;
-        end;
-      end;
-      if Line = '' then Continue;
-      Entry := Default(TTargetEntry);
-      Entry.Pid      := PidVal;
-      Entry.PipeName := Line;
-      Acc.Add(Entry);
-    end;
     Result := Acc.ToArray;
   finally
     Acc.Free;
@@ -181,13 +180,15 @@ begin
   FPipe      := APipe;
   FTimeoutMs := ATimeoutMs;
   FEvent := CreateEventW(nil, True, False, nil);
-  if FEvent = 0 then RaiseLastOSError;
+  if FEvent = 0
+  then RaiseLastOSError;
 end;
 
 
 destructor TDeadlinePipeStream.Destroy;
 begin
-  if FEvent <> 0 then CloseHandle(FEvent);
+  if FEvent <> 0
+  then CloseHandle(FEvent);
   inherited;
 end;
 
@@ -212,37 +213,38 @@ begin
   else Started := WriteFile(FPipe, Buffer, Count, Dummy, @Ov);
 
   if not Started then
-  begin
-    Err := GetLastError;
-    if Err <> ERROR_IO_PENDING then
     begin
-      { Immediate failure.
-        A closed peer reads as EOF (0) so TBridgeWire.TryReadFrame takes its normal FALSE path; anything else is a genuine OS error. }
-      if AIsRead and ((Err = ERROR_BROKEN_PIPE) or (Err = ERROR_PIPE_NOT_CONNECTED))
-      then Exit(0)
-      else RaiseLastOSError(Err);
-    end;
+      Err := GetLastError;
+      if Err <> ERROR_IO_PENDING then
+        begin
+          { Immediate failure.
+            A closed peer reads as EOF (0) so TBridgeWire.TryReadFrame takes its normal FALSE path; anything else is a genuine OS error. }
+          if AIsRead and ((Err = ERROR_BROKEN_PIPE) or (Err = ERROR_PIPE_NOT_CONNECTED))
+          then Exit(0)
+          else RaiseLastOSError(Err);
+        end;
 
-    if WaitForSingleObject(FEvent, FTimeoutMs) <> WAIT_OBJECT_0 then
       { Deadline hit: cancel the pending operation.
         ERROR_NOT_FOUND (it completed in the race window) is fine — GetOverlappedResult below resolves either way. }
-      CancelIoEx(FPipe, @Ov);
-  end;
+      if WaitForSingleObject(FEvent, FTimeoutMs) <> WAIT_OBJECT_0
+      then CancelIoEx(FPipe, @Ov);
+    end;
 
   { Single collection point for every path (synchronous completion, signaled wait, post-cancel).
     bWait=TRUE also guarantees the kernel is DONE with Ov and Buffer before they leave scope — mandatory after CancelIoEx. }
   if not GetOverlappedResult(FPipe, Ov, N, True) then
-  begin
-    Err := GetLastError;
-    if Err = ERROR_OPERATION_ABORTED then
     begin
-      if AIsRead then OpWord := 'reply' else OpWord := 'accept data';
-      raise ETargetNotResponding.CreateFmt('target accepted the pipe connection but did not %s within %u ms — frozen on a breakpoint or hung?', [OpWord, FTimeoutMs]);
+      Err := GetLastError;
+      if Err = ERROR_OPERATION_ABORTED then
+        begin
+          if AIsRead
+          then OpWord := 'reply'
+          else OpWord := 'accept data';
+          raise ETargetNotResponding.CreateFmt('target accepted the pipe connection but did not %s within %u ms — frozen on a breakpoint or hung?', [OpWord, FTimeoutMs]);
+        end;
+      if AIsRead and ((Err = ERROR_BROKEN_PIPE) or (Err = ERROR_PIPE_NOT_CONNECTED)) then Exit(0);
+      RaiseLastOSError(Err);
     end;
-    if AIsRead and ((Err = ERROR_BROKEN_PIPE) or (Err = ERROR_PIPE_NOT_CONNECTED)) then
-      Exit(0);
-    RaiseLastOSError(Err);
-  end;
   Result := Longint(N);
 end;
 
@@ -289,8 +291,8 @@ begin
     Sleep(25);
   until GetTickCount64 >= Deadline;
 
-  if LErr = ERROR_PIPE_BUSY then
-    raise ETargetNotResponding.CreateFmt('pipe "%s" stayed busy for %u ms: the target is busy with another client, or frozen (stopped on a breakpoint or hung)', [APipeName, ATimeoutMs]);
+  if LErr = ERROR_PIPE_BUSY
+  then raise ETargetNotResponding.CreateFmt('pipe "%s" stayed busy for %u ms: the target is busy with another client, or frozen (stopped on a breakpoint or hung)', [APipeName, ATimeoutMs]);
   raise Exception.CreateFmt('CallTarget: could not open pipe "%s" (code %d)', [APipeName, LErr]);
 end;
 
@@ -307,24 +309,24 @@ begin
     Stream := TDeadlinePipeStream.Create(Pipe, ATimeoutMs + IoDeadlineGraceMs);
     try
       // Bridge writes hello first. We don't verify contents here — the bridge owns the wire format.
-      if not TBridgeWire.TryReadFrame(Stream, HelloRaw) then
-        raise Exception.Create('CallTarget: bridge did not send hello');
+      if not TBridgeWire.TryReadFrame(Stream, HelloRaw)
+      then raise Exception.Create('CallTarget: bridge did not send hello');
 
       WriteHelloAck(Stream);
 
       // Send our request, read response.
       TBridgeWire.WriteFrame(Stream, ARequestJson.ToJSON);
-      if not TBridgeWire.TryReadFrame(Stream, Frame) then
-        raise Exception.Create('CallTarget: no response from bridge');
+      if not TBridgeWire.TryReadFrame(Stream, Frame)
+      then raise Exception.Create('CallTarget: no response from bridge');
 
       Parsed := TJSONObject.ParseJSONValue(Frame);
-      if Parsed IS TJSONObject then
-        Result := TJSONObject(Parsed)
+      if Parsed IS TJSONObject
+      then Result := TJSONObject(Parsed)
       else
-      begin
-        Parsed.Free;
-        raise Exception.Create('CallTarget: response is not a JSON object');
-      end;
+        begin
+          Parsed.Free;
+          raise Exception.Create('CallTarget: response is not a JSON object');
+        end;
     finally
       Stream.Free;
     end;
