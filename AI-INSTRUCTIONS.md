@@ -478,7 +478,7 @@ Three checks, in order:
 
 When the `mcp__autopilot__*` tools are not loaded (you just registered the server this session, you're on a host that hasn't picked it up, or you're scripting from a shell), you can talk to the bridge directly over its Windows named pipe.
 
-**For repeatable tests written in Delphi, do not write a pipe client:** use `TAutopilotApp` (`Source\Client\README.md`).
+**For repeatable tests written in Delphi, do not write a pipe client:** use `TAutopilotApp` (`Source\Client\Autopilot.Client - how to write GUI tests without AI.md`).
 
 **Wire format** (from `Autopilot.Bridge.Core.pas`): every frame is a **4-byte little-endian length** followed by that many bytes of **UTF-8 JSON**.
 
@@ -514,7 +514,7 @@ Use the raw pipe only when the tools are genuinely unavailable in the current se
 ## Repeatable tests without AI: DUnitX with Autopilot.Client
 
 For GUI tests that run again and again with no AI (a regression suite, a build step), write a DUnitX test project that drives the app through the class `TAutopilotApp` in `Source\Client\Autopilot.Client.pas`: no AI, no MCP server, about 0.8 ms per command, Windows targets only.
-Before you write such a test project, read `Source\Client\README.md`: how to set the project up, every method, the exceptions, the rules for the test writer and an example.
+Before you write such a test project, read `Source\Client\Autopilot.Client - how to write GUI tests without AI.md`: how to set the project up, every method, the exceptions, the rules for the test writer and an example.
 
 ---
 
