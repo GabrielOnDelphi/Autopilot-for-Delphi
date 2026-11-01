@@ -2,10 +2,11 @@
 
 **There is a big gap between Claude and your Delphi app. Autopilot closes it.**
 
-An AI assistant can write your Delphi code and compile it, but then it stops: it cannot run the program and click its buttons.
-Autopilot for Delphi hands the controls of your running VCL or FMX app to the AI.
-The AI can click all controls, type text into edit boxes, read the labels, set and read any property, and take screenshots - the same loop a human operator runs, with no human at the keyboard.
-It works in the background and never moves the mouse, so you can keep working while the AI tests.
+You already work hand in hand with an AI assistant: you give a prompt, Claude writes the code and compiles it. And then it stops dead. It cannot test/debug the program for you. If your program has an OK button, you have to click it. The AI can’t.
+
+Everything past “compile” is on the far side of a chasm. The AI needs you at the keyboard to push the buttons and report back.
+
+What if magic exists? What if without adding a single line of code to your project you can remove that gap? 
 
 The full description on: **[GabrielMoraru.com/autopilot](https://gabrielmoraru.com/my-delphi-code/autopilot-for-delphi/)**.
 
@@ -51,7 +52,9 @@ The full description on: **[GabrielMoraru.com/autopilot](https://gabrielmoraru.c
 * [Found a bug?](https://gabrielmoraru.com/my-delphi-code/autopilot-for-delphi-details/#found-a-bug)
 * [Automated GUI testing in Delphi](https://gabrielmoraru.com/my-delphi-code/automated-gui-testing-delphi/)
 * [What's new](https://gabrielmoraru.com/my-delphi-code/autopilot-for-delphi-whats-new/)
-* [LICENSE](LICENSE)
+* [License](LICENSE)
+
+## Your support
 
 Did Autopilot change your life? (I know, you are not the first one to say that 😊)   
 Give it a star on GitHub.
