@@ -10,17 +10,13 @@ It works in the background and never moves the mouse, so you can keep working wh
 The full description lives on the website: **[GabrielMoraru.com/autopilot](https://gabrielmoraru.com/my-delphi-code/autopilot-for-delphi/)**.
 When this file and the website disagree, the website is right.
 
+![Autopilot for Delphi closes the gap between the AI and your running Delphi app](https://gabrielmoraru.com/wp-content/uploads/2026/10/Logo-Autopilot-Closes-the-Gap-small-robots2-768x429.jpg)
+
 ## How to install it
 
-1. Download or clone this repository to a folder, for example `c:\Autopilot For Delphi\`.
-2. Give your AI assistant (Claude, Gemini, etc.) a prompt like this:
-
-   > I have a new MCP server for you in `c:\Autopilot For Delphi\`. Install it as its README.md says.
-   > Add this line to your global CLAUDE.md:
-   > "To test the GUI of my Delphi programs, use Autopilot. See: c:\Autopilot For Delphi\AI-INSTRUCTIONS.md."
-   > Tell me when I must restart you.
-
-3. Restart the AI session when it asks you to, so it can use the new MCP server.
+Clone this repository to a folder, then ask your AI assistant to install the MCP server from that folder.
+The AI builds it, registers it and tells you when to restart it.
+Step by step, with the exact prompt: **[How to install it](https://gabrielmoraru.com/my-delphi-code/autopilot-for-delphi/)**.
 
 ### Install steps for the AI
 
@@ -35,15 +31,6 @@ The repository holds the source of the MCP server, not the EXE, so the first ste
 3. Check that `<repo>\Source\McpServer\Win32_Release\Autopilot.Mcp.exe` exists.
 4. Register it (Claude Code): `claude mcp add autopilot -- "<repo>\Source\McpServer\Win32_Release\Autopilot.Mcp.exe"`
 5. Tell the user to restart the AI session.
-
-To do it by hand instead: open `Source\McpServer\Autopilot.Mcp.dproj` in Delphi, build it (Win32, Release), then register the EXE with the command of step 4.
-
-An EXE with madExcept built in saves a crash report on your PC when it crashes and never sends it.
-To send the report to SciVance Tech instead, add `--crash-report` at the end of that command.
-A build on a PC without madExcept has no crash reporter, so it never sends a report.
-
-`AI-INSTRUCTIONS.md` is a briefing for the AI, not for you: you write nothing in it.
-Without it everything still works, but the AI finds its way more slowly and spends more tokens.
 
 ## How to use it
 
