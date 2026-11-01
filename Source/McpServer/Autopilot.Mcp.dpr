@@ -25,7 +25,8 @@
      set_keep_awake - keep the device screen on while driving (Android; no-op on Windows)
      dismiss_dialog - list / dismiss native OS dialogs (MessageBox / Task Dialog / file dialogs)
 
-   Command-line parameters, in any order: `--target adb:<port>` (an Android target), `--no-crash-report` (save a crash report, never upload it).
+   Command-line parameters, in any order: `--target adb:<port>` (an Android target), `--crash-report` (upload a crash report).
+   Without `--crash-report` a crash report is only saved beside the log. `--no-crash-report` is still accepted: it keeps that default and wins over `--crash-report`.
    No HTTP transport, no settings.ini.
    The minimal MCP units under Mcp\ derive from GDKsoftware/Delphi-MCP-Server (MIT, see thirdparty-notices.txt).
 
@@ -98,24 +99,27 @@ begin
   BridgeLogInfo('mcp', 'server starting (stdio) v' + McpServerVersion);
 
   { # Crash report switch }
-  // `--no-crash-report`, put by the user into the MCP registration: madExcept saves the crash report to a file
-  // beside this log and never uploads it. Without the switch the .mes alone decides, as before.
+  // By default madExcept saves the crash report to a file beside this log and never uploads it.
+  // Only `--crash-report`, put by the user into the MCP registration, lets the .mes upload it.
+  // `--no-crash-report` keeps the default and wins over `--crash-report`.
   // It runs after the first log line because BridgeLogPath is empty until a line is written.
-  if NoCrashReportRequested then
+  {$IFDEF madshi}
+  if CrashReportUploadRequested
+  then BridgeLogInfo('mcp', 'crash report upload is ON (' + CrashReportSwitch + ')')
+  else
     begin
-      {$IFDEF madshi}
       // These writes land in the module settings that madExcept holds for the whole run (mySettings,
       // madExcept.pas:19150). The exception object built at crash time has no settings of its own and reads
       // them there (TIMEException.FindProp, madExcept.pas:16078), and the upload is gated on that value
       // (DoExceptionAutoStuff, madExcept.pas:13263).
       MESettings.AutoSend:= FALSE;
       MESettings.AutoSave:= TRUE;
-      MESettings.BugReportFile:= NoCrashReportFile(BridgeLogPath);
-      BridgeLogInfo('mcp', 'crash report upload is OFF (' + NoCrashReportSwitch + '): a crash report is saved to ' + MESettings.BugReportFile + ' and never sent');
-      {$ELSE}
-      BridgeLogInfo('mcp', NoCrashReportSwitch + ' given: this build has no crash reporter, so nothing is ever sent');
-      {$ENDIF}
+      MESettings.BugReportFile:= CrashReportFile(BridgeLogPath);
+      BridgeLogInfo('mcp', 'crash report upload is OFF (only ' + CrashReportSwitch + ' without ' + NoCrashReportSwitch + ' allows it): a crash report is saved to ' + MESettings.BugReportFile + ' and never sent');
     end;
+  {$ELSE}
+  BridgeLogInfo('mcp', 'this build has no crash reporter, so nothing is ever sent');
+  {$ENDIF}
 
   BridgeLogInfo('license', LicenseHint);
   TrackUsageAndMaybePromoteBook;
