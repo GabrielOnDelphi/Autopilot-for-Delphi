@@ -1,7 +1,7 @@
 ﻿# Autopilot for Delphi - instructions for AI sessions
 
 > **This file is a briefing** for an AI coding assistant (Claude Code, Claude Desktop, Cursor, Cline, or any MCP-aware host) that has the `autopilot` MCP server registered and wants to drive a running Delphi VCL or FMX application.
-> Read it once at the start of a session; you do not need to re-read.
+> Read it once at the start of a session.
 >
 > **How it is used:** one line in the user's global `CLAUDE.md` points at this file (`README.md`, section "How to install it").
 
@@ -12,32 +12,30 @@
 1. **Minimize turns, not tool calls.** The cost is the LLM turn, not the bridge (the numbers: "Efficiency rules" below).
    Ten tool calls in one turn is ~10× cheaper than one call per turn for ten turns.
 2. **Use `count=N` on `click` for repetitive same-action work.** One tool call, one turn, regardless of N.
-3. **Bundle independent tool calls into a single assistant turn (parallel tool_use).** If you need to click A, set text on B, and read C, emit all three tool_use blocks in one response - do not split into three turns.
+3. **Bundle independent tool calls into a single assistant turn (parallel tool_use).** To click A, set text on B and read C, emit all three tool_use blocks in one response.
 4. **Don't pre-flight with `list_tree` if you already know the path.** Discovery once, then act.
 5. **`set_property` returns `availableProperties` on a typo.** A single failed call gives you every writable property with its `kind` and live `currentValue`.
-   Use it - do not blind-guess property names twice.
+   Use it instead of guessing names again.
 6. **`screenshot` is a fallback, not a verification.** For correctness checks, `get_text(...)` returns the exact string in a few ms with no image tokens: ~1000× cheaper.
-   Reserve `screenshot` for layout/visual bugs you cannot read structurally - and then pass `path` to capture only the control you care about and `maxWidth` (for example 800) to shrink the image: both cut the image tokens.
-7. **`set_property` skips writes that wouldn't change the value (write-side elision).** The response carries `elided: true|false` - `true` means `OnChange` did NOT fire.
-   Use that to distinguish "I caused a change" from "the value was already correct".
+   Reserve `screenshot` for layout/visual bugs you cannot read structurally, and then pass `path` (only that control) and `maxWidth` (for example 800) to cut the image tokens.
+7. **`set_property` skips writes that wouldn't change the value (write-side elision).** The response carries `elided: true|false`: `true` means the value was already correct and `OnChange` did NOT fire.
 8. **Hand off scripted sequences of ≥ 5 sequential tool calls to a dedicated subagent** - on Claude Code only: see "Subagent dispatch" below.
 
 **Launching an app can leave the keyboard focus where it is.**
 A LightSaber VCL app built with `AUTOPILOT` comes up visible but unfocused (`TLightForm` gates its startup windows with `WS_EX_NOACTIVATE`), so you can launch and drive it while the user keeps typing elsewhere.
-This does NOT apply to FMX, nor to an app that calls `SetForegroundWindow` / `Application.BringToFront` during startup - including an app with a `TCoolTrayIcon` whose `FocusFormOnShow` is still TRUE (that component grabs the foreground on every show of its owner form; clear the field in `FormCreate`, under an AUTOPILOT conditional).
+This does NOT apply to FMX, nor to an app that calls `SetForegroundWindow` / `Application.BringToFront` during startup - including an app with a `TCoolTrayIcon` whose `FocusFormOnShow` is still TRUE (it grabs the foreground on every show of its owner form; set it to FALSE in `FormCreate`, under an AUTOPILOT conditional).
 
 ---
 
 ## The fourteen MCP tools - full reference
 
-The MCP server is registered as `autopilot`.
-Tool names appear in your tool list as `mcp__autopilot__<name>`.
-Every tool accepts an optional `pid` argument when more than one Delphi target is running - omit it when only one target is present: the tools attach to it on their own.
+The MCP server is registered as `autopilot`, so tool names appear in your tool list as `mcp__autopilot__<name>`.
+Every tool accepts an optional `pid`, needed only when more than one Delphi target runs; with one target the tools attach to it on their own.
 
-**Crash report of the MCP server.** When `Autopilot.Mcp.exe` crashes, it saves a crash report to `%TEMP%\Autopilot\bugreport Autopilot.Mcp.txt` and never sends it; the first lines of the server's log `%TEMP%\Autopilot\Autopilot.Mcp-<pid>.log` say so.
+**Crash report of the MCP server.** When `Autopilot.Mcp.exe` crashes, it saves a crash report to `%TEMP%\Autopilot\bugreport Autopilot.Mcp.txt` and never sends it; the first lines of the server's log `%TEMP%\Autopilot\Autopilot.Mcp-<pid>.log` say so (a server built without madExcept has no crash reporter, and its log says that instead).
 A user who wants the report sent to SciVance Tech, the maker of Autopilot, registers the server with the parameter `--crash-report` (in either order with `--target adb:<port>`): `claude mcp add autopilot -- <path>\Autopilot.Mcp.exe --crash-report`.
 The older parameter `--no-crash-report` is still accepted: it keeps the report on the PC, even beside `--crash-report`.
-None of these changes anything in the tools or their answers.
+None of these changes the tools or their answers.
 
 ### `attach`
 
@@ -47,12 +45,11 @@ Lists the running targets, or checks that the target with `pid` is reachable.
 **You almost never need to call it:** every other tool finds the target on its own.
 Call `attach` only:
 
-- When the previous tool returned `-32099 target_not_running` AND you want to retry after the user has restarted the target.
-- When more than one live target runs and you need to choose by PID.
+- After `-32099 target_not_running`, to retry once the user has restarted the target.
+- When several targets run and you must choose by PID.
 - When the user asks you to wire Autopilot into a project: its `setup` field holds the steps.
 
-Return shape: `{targets:[{pid, pipe}], count, setup}`.
-`setup` is always there: the steps to link the bridge into a Delphi app.
+Return shape: `{targets:[{pid, pipe}], count, setup}`; `setup` is always there.
 Its step 1 names the full path of the bridge source folder when the server finds it near its own EXE (`Source\Bridge`, for an EXE in `Source\McpServer\` or in its build folder `Source\McpServer\Win32_<config>\`); use that path as given.
 When `count` is 0 the answer also carries `hint`: the next step (start the app, or link the bridge in).
 
@@ -65,7 +62,7 @@ Each node carries:
 
 - `form` - owning form name (e.g. `"frmMain"`).
 - `name` - component name, or a synthetic `@TButton#N` for an unnamed component (flagged `synthetic: true`).
-- `path` - the dotted path you paste directly into `click`/`get_text`/`set_text` etc.
+- `path` - the dotted path every other tool takes.
 - `class` - Delphi class name.
 - Optional `text` - `Caption`/`Text`/`Lines.Text` where readable.
   Missing on classes that have no text property, where `Text`/`Caption` is not a string (some third-party components), OR where the getter raised.
@@ -108,13 +105,12 @@ Other controls fall back to `OnClick(Self)`: VCL non-windowed visuals like TLabe
 
 - `count` (1..1000, default 1) - fires N clicks in one round-trip.
   `Enabled` is re-checked between clicks: the loop stops early with `stoppedReason='disabled'` if the control becomes disabled, and with `stoppedReason='freed'` if a click frees the control (or its form).
-- `timeoutMs` - overrides the bridge's main-thread wait for this call, in milliseconds.
-  Default 5000 for a single click, 5000 + (count-1)*100 for batched clicks.
+- `timeoutMs` - the bridge's main-thread wait for this call, in milliseconds: default 5000, plus 100 per extra click (5000 + (count-1)*100).
   A short value is the fallback recipe for a click that opens a modal dialog (see `dismiss_dialog`).
 - `mode` - omit it, or pass `'auto'`, for the normal click described above.
 - `mode='message'` (VCL-on-Windows only) - posts `BM_CLICK` to the control and returns at once; the click runs when the app next pumps messages, AFTER this response.
   On a minimized form, where a posted `BM_CLICK` is lost, the click is queued to the main thread instead; it still runs after the response.
-  Only button-class controls handle `BM_CLICK` (`TButton`/`TBitBtn`/`TCheckBox`/`TRadioButton`): any other class is rejected with `-32005` instead of being silently ignored, and FMX targets reject the mode with `-32005` too.
+  Only button-class controls handle `BM_CLICK` (`TButton`/`TBitBtn`/`TCheckBox`/`TRadioButton`): any other class is rejected with `-32005`, and FMX targets reject the mode with `-32005` too.
   **The main use: a button whose `OnClick` opens a modal dialog** (see `dismiss_dialog`).
 
 Return shape: `{dispatchedVia: 'click' | 'onclick' | 'message', clicksDispatched: N, stoppedReason?: 'disabled' | 'freed' | 'exception:<ClassName>'}`.
@@ -122,14 +118,13 @@ Return shape: `{dispatchedVia: 'click' | 'onclick' | 'message', clicksDispatched
 `'exception:<ClassName>'` = the event handler raised (see "What this bridge deliberately does NOT do").
 With `mode='message'` + `count`, all posted clicks run after the response returns, so the between-iterations `Enabled` re-check cannot see those clicks' own effects.
 
-**Click the control, not the `TAction` - or use `execute_action`.** A `TAction` / `TBasicAction` has no `OnClick` (it carries `OnExecute`), so `click(path='Form.actFileExit')` fails with `-32005 unsupported_action` ("has no OnClick").
+**Click the control, not the `TAction` - or use `execute_action`.** A `TAction` / `TBasicAction` has no `OnClick`, so `click(path='Form.actFileExit')` fails with `-32005 unsupported_action` ("has no OnClick").
 Two ways out:
-- **`execute_action(path='Form.actFileExit')`** - fires the action's `OnExecute` directly (when to prefer it: `execute_action` below).
-- **`click(path='Form.btnExit')`** - click the control bound to the action: runs the action's `OnExecute` through the normal action dispatch.
-  Use this when you want to verify the *control's* binding, not just the action.
+- **`execute_action(path='Form.actFileExit')`** - fires the action directly.
+- **`click(path='Form.btnExit')`** - clicks the control bound to the action, through the normal action dispatch: this also tests the *control's* binding.
 
 Errors: `-32001 not_found`, `-32003 control_disabled`, `-32005 unsupported_action`, `-32600 invalid_request` (a `count` outside 1..1000, or an unknown `mode`).
-A non-integer `count` like `1.5` never reaches the app: the MCP server answers an `isError` result that names `count` (section "Error envelope").
+A non-integer `count` like `1.5` never reaches the app (section "Error envelope").
 
 ### `execute_action`
 
@@ -139,16 +134,14 @@ Fires `TBasicAction.Execute` directly - runs the action's `OnExecute` handler.
 Use this when the command is bound to a `TAction` whose handler carries the logic:
 
 - **Shortcut-only actions** that no control clicks (e.g. `actFileExit` triggered only by Alt+F4 / a hotkey).
-  `click` cannot reach these; `execute_action` runs them directly, and `send_keys` presses their shortcut.
-- **Actions shared by several controls** (toolbar button + menu item + shortcut): one `execute_action` is more direct than picking one of the bound controls and clicking it.
+  `click` cannot reach these; `send_keys` can press their shortcut.
+- **Actions shared by several controls** (toolbar button + menu item + shortcut): one `execute_action` is more direct than clicking one of the bound controls.
 
 `path` must resolve to a `TBasicAction` descendant (`class:"TAction"` in `list_tree`).
-
-`execute_action` honors `Enabled`: a disabled action refuses with `-32003 control_disabled`.
-(The base `TBasicAction.Execute` fires `OnExecute` regardless of `Enabled`; the bridge adds the guard.)
+A disabled action refuses with `-32003 control_disabled`.
 
 Return shape: `{path, dispatchedVia: 'Execute', executed: true | false}`.
-`executed: false` means the action had no `OnExecute` handler assigned - a real, reportable state, not an error.
+`executed: false` means nothing handled the action: no `OnExecute` handler (and, for a `TAction`, no `TActionList` or application handler either) - a real, reportable state, not an error.
 
 Errors: `-32001 not_found`, `-32003 control_disabled`, `-32005 unsupported_action` (path resolved but isn't a `TBasicAction` - use `click`), `-32603 internal_error` (the `OnExecute` handler raised).
 
@@ -164,16 +157,15 @@ Use this (NOT `screenshot`) to verify that a click produced the expected state (
 `set_text(path, text, pid?)`
 
 Writes `Text` (or `Caption` for label-class controls) via RTTI.
-`OnChange` fires synchronously as a side effect of the RTL setter chain.
+`OnChange` fires synchronously, through the property setter.
 There is no `mode='message'` opt-in.
 
 **Data-aware VCL controls** (anything with a published `DataField <> ''` and a `DataSource` whose `DataSet` is assigned; verified with `TDBEdit` and `TDBMemo`) get the same chain a typing user triggers: `DataSource.Edit` BEFORE the write (the dataset enters `dsEdit`) and `CM_EXIT` AFTER it (`DataLink.UpdateRecord`, then the regular `OnExit`).
-Without that chain, a plain RTTI write only changes the window text and the dataset discards it on the next scroll.
 The response carries `dataBound: true` when the chain ran.
-The value then sits in the field buffer: it is persisted by whatever the form does next (`Post`, a Save button, …), exactly as for a user.
-FMX is unchanged.
+The value then sits in the field buffer: whatever the form does next (`Post`, a Save button, …) persists it, exactly as for a user.
+FMX has no such chain.
 
-The same rules a user hits apply, and each is reported as `-32005 unsupported_action` with the reason in the message instead of writing blindly: control `ReadOnly = TRUE`, field not modifiable (read-only, calculated, lookup), dataset `CanModify = FALSE` (read-only cursor), `DataSource.AutoEdit = FALSE` while the dataset is not already in `dsEdit`/`dsInsert`, `OnBeforeEdit` aborting, or a data-aware control without a writable `Text` (`TDBLookupComboBox`, `TDBRadioGroup` - use `click`/`set_property` there).
+The rules a user hits apply too; each answers `-32005 unsupported_action` with the reason in the message: control `ReadOnly = TRUE`, field not modifiable (read-only, calculated, lookup), dataset `CanModify = FALSE` (read-only cursor), `DataSource.AutoEdit = FALSE` while the dataset is not already in `dsEdit`/`dsInsert`, `OnBeforeEdit` aborting, or a data-aware control without a writable `Text` (`TDBLookupComboBox`, `TDBRadioGroup` - use `click`/`set_property` there).
 A dataset the app already put into edit mode is left alone.
 `TDBComboBox` is untested: `WM_SETTEXT` does not reach its `Change`, so expect the field to stay unchanged there.
 
@@ -203,14 +195,13 @@ Examples:
 - `set_property(path='frmMain.rectBox', propName='Fill.Color', value='#FF8000')` - FMX TAlphaColor: `#RRGGBB` (alpha=FF), `#AARRGGBB`, `claName`, or decimal.
 - `set_property(path='frmMain.cmbItems', propName='ItemIndex', value='2')`
 - `set_property(path='frmMain.pnlToolbar', propName='BevelEdges', value='[beLeft,beTop]')` - set-of-enum: `[a,b]`, `a,b`, `[]`, or ordinal.
-- `set_property(path='frmMain.btnSave', propName='Font.Size', value='14')` - one-level dotted path through a tkClass outer to a simple inner.
+- `set_property(path='frmMain.btnSave', propName='Font.Size', value='14')` - one-level dotted path into a class-typed property.
 - `set_property(path='frmMain.lstLog', propName='Lines.Text', value='line one'#10'line two')`
 
 **Supported property kinds:** string (and L/W/U variants), integer, int64, boolean, other enumerations (by identifier `'poDesigned'` or ordinal `'1'`), set-of-enum (see above), float (Single / Double / TDateTime), TAlphaColor (FMX), TColor (VCL).
 
 **Disabled controls:** on a disabled control `set_property` answers `-32003 control_disabled`, with one exception: the property `Enabled` itself (that exact name in any letter case, no dotted path) may be set to `true` or `false`, so a control you disabled with `set_property` can be enabled again.
 `false` on a control that is already disabled answers `elided: true`.
-Every other property (for example `Caption`, or a dotted `Font.Size`) still answers `-32003`.
 
 **Discovery on unknown property name** (TL;DR rule 5): the failure response carries `error.data.availableProperties` - a JSON array of `{name, kind, currentValue?}` entries covering every writable published property.
 `kind:'class'` entries (Font, Lines, Brush, Fill, …) are candidates for one-level dotted writes.
@@ -219,33 +210,29 @@ Every other property (for example `Caption`, or a dotted `Font.Size`) still answ
 `elided: false` means a real write happened, and `OnChange` did fire (if the control has one).
 Comparison is type-aware: string identity, integer/int64 equality (TAlphaColor/TColor as 32-bit), boolean equality, enum/set ordinal equality (so `[fcRed,fcBlue]` elides against `[fcBlue,fcRed]`), float exact-bits (no epsilon).
 
-**Parent-inheritance auto-flip (VCL only):** when a write to `Font.*`, `Color`, `BiDiMode`, `ShowHint`, `DoubleBuffered`, `CustomHint`, or `Ctl3D` SUCCEEDS (including an elided resend), the bridge sets the matching `Parent<X>:=FALSE`, so the state is always "the control owns this property".
-Success only: a REJECTED value (bad coercion, read-only inner) leaves `Parent<X>` untouched.
-Silent (no response field).
+**Parent-inheritance auto-flip (VCL only):** when a write to `Font.*`, `Color`, `BiDiMode`, `ShowHint`, `DoubleBuffered`, `CustomHint`, or `Ctl3D` SUCCEEDS (including an elided resend), the bridge silently (no response field) sets the matching `Parent<X>:=FALSE`.
+A REJECTED value (bad coercion, read-only inner) leaves `Parent<X>` untouched.
 To restore inheritance, write `ParentFont:=true` (or the matching `Parent<X>`) afterward.
-FMX has no equivalent and does not flip.
 
 ### `read_property`
 
 `read_property(path, propName, pid?)`
 
 Returns any readable published property by RTTI.
-The returned `value` string is exactly what `set_property` would accept back - round-trip-safe.
+The returned `value` string is exactly what `set_property` would accept back.
+Examples:
 
-- Examples:
-  - `read_property(path='frmMain.btnSave', propName='Tag')` → `{value: '42', kind: 'integer'}`
-  - `read_property(path='frmMain.lblStatus', propName='Color')` → `{value: 'clRed', kind: 'color'}` (VCL `TColor`)
-  - `read_property(path='frmMain.rectBox', propName='Fill.Color')` → `{value: 'claRed', kind: 'alphacolor'}` (a named `TAlphaColor`, VCL and FMX); a color with no name reads as `'#AARRGGBB'`, e.g. `{value: '#FFFF8000', kind: 'alphacolor'}`
-  - `read_property(path='frmMain.cmbItems', propName='ItemIndex')` → `{value: '2', kind: 'integer'}`
-  - `read_property(path='frmMain.btnSave', propName='Font.Size')` → `{value: '14', kind: 'integer'}` (one-level dotted)
-  - `read_property(path='frmMain.pnlToolbar', propName='BevelEdges')` → `{value: '[beLeft,beTop]', kind: 'set'}`
+- `read_property(path='frmMain.btnSave', propName='Tag')` → `{value: '42', kind: 'integer'}`
+- `read_property(path='frmMain.lblStatus', propName='Color')` → `{value: 'clRed', kind: 'color'}` (VCL `TColor`)
+- `read_property(path='frmMain.rectBox', propName='Fill.Color')` → `{value: 'claRed', kind: 'alphacolor'}` (a named `TAlphaColor`, VCL and FMX); a color with no name reads as `'#AARRGGBB'`, e.g. `{value: '#FFFF8000', kind: 'alphacolor'}`
+- `read_property(path='frmMain.cmbItems', propName='ItemIndex')` → `{value: '2', kind: 'integer'}`
+- `read_property(path='frmMain.btnSave', propName='Font.Size')` → `{value: '14', kind: 'integer'}` (one-level dotted)
+- `read_property(path='frmMain.pnlToolbar', propName='BevelEdges')` → `{value: '[beLeft,beTop]', kind: 'set'}`
 
-**Use this instead of writing diagnostic files in the target:** a published property of a discoverable component comes back in one round-trip with **no recompile** (the other cases: "Debug-channel selection" below).
+**Does NOT enforce Enabled:** reading a disabled control is a legitimate debug case ("why is btnSave greyed out? what's its Tag? its Action.Enabled?").
+`click`, `set_text`, `set_checked` and `set_property` refuse a disabled control with `-32003` (except `set_property` of `Enabled` itself).
 
-**Does NOT enforce Enabled.** Reading state off a disabled control is a legitimate debug case ("why is btnSave greyed out? what's its Tag? what's its Action.Enabled?").
-Contrast with `click`, `set_text`, `set_checked` and `set_property`, which refuse to act on a disabled control with `-32003` (the one exception: `set_property` of `Enabled` itself, see `set_property`).
-
-**Discovery on unknown propName:** the `rtti_property_missing` response carries `error.data.availableProperties` - same shape as `set_property`, but filtered by `IsReadable` instead of `IsWritable`, so read-only properties are listed too.
+**Discovery on unknown propName:** the `rtti_property_missing` response carries `error.data.availableProperties` - same shape as for `set_property`, but read-only properties are listed too.
 
 **Class-typed leaves** (`Font`, `Brush`, `Lines`, `Fill`) cannot be read directly: the tool returns `unsupported_action` with a hint to use a dotted propName (`Font.Size`, `Lines.Text`, `Fill.Color`).
 
@@ -269,8 +256,8 @@ Any other poll error (for example `-32001` for a control that does not exist yet
 `screenshot(form?, path?, maxWidth?, pid?)`
 
 Captures the named form (or the main form if `form` omitted) as a PNG.
-The result holds two content blocks: first an MCP image block (`type: image`, `mimeType: image/png`), so the picture reaches you as an image you can look at; then a text block with the rest of the answer: `form`, `width`, `height`, `scaled`, `format`, `encoding` (no image data), plus `path` when you passed one.
-A failed screenshot is one text block with the error envelope, as for every other tool.
+The result holds two content blocks: first an MCP image block (`type: image`, `mimeType: image/png`) that you see as a picture, then a text block with the rest of the answer: `form`, `width`, `height`, `scaled`, `format`, `encoding` (no image data), plus `path` when you passed one.
+A failed screenshot answers one text block with the error envelope.
 
 - **`path`** - a control path, resolved like every other tool's path (`-32001` / `-32002` as usual).
   The image shows only that control's rectangle as it appears on its form, children included, clipped to the visible part of the form.
@@ -285,30 +272,26 @@ A failed screenshot is one text block with the error envelope, as for every othe
   The form stays minimized: the screenshot does not restore or activate it.
 
 **Use sparingly** (TL;DR rule 6): PNGs cost image tokens in the LLM context, and the encode round-trip is the most expensive single bridge call (~30 ms for a typical form vs sub-ms for everything else).
-Justified for: layout bugs, color/theme issues, font rendering glitches, "the AI cannot tell whether the form is in the state it thinks it's in" tiebreakers.
+Justified for layout bugs, color/theme issues, font rendering glitches, and as a tiebreaker when you cannot tell the form's state otherwise.
 
 ### `set_keep_awake`
 
 `set_keep_awake(enabled, pid?)`
 
-Android only - keeps the device screen on while you drive the app, by setting the `FLAG_KEEP_SCREEN_ON` window flag.
-The FMX bridge turns this ON automatically at startup, so you rarely call it; pass `enabled=false` to release it, `enabled=true` to re-assert it.
-On a Windows target (VCL or FMX) it is a no-op (`applied:false`, `platform:windows`) - a desktop app is never OS-frozen while you drive it.
+Android only - keeps the device screen on (window flag `FLAG_KEEP_SCREEN_ON`), because Android freezes a backgrounded or screen-off app (no CPU), which stalls the bridge.
+The FMX bridge turns it ON at startup, so you rarely call it: `enabled=false` releases it, `enabled=true` re-asserts it.
+It does NOT cover the cold-start window before the bridge starts - keep the device screen on through app launch.
+On a Windows target (VCL or FMX) it is a no-op (`applied:false`, `platform:windows`).
 
 Response: `{enabled, platform:'android'|'windows', applied}`.
 `applied:true` means the window flag was changed; `applied:false` means the platform ignores it.
-
-On Android a backgrounded or screen-off app is frozen by the OS (it gets no CPU), which stalls the bridge.
-Keep-awake holds the screen on, so the foreground app keeps running.
-It does NOT cover the cold-start window before the bridge starts - keep the device screen on through app launch.
 
 ### `dismiss_dialog`
 
 `dismiss_dialog(button?, hwnd?, pid?)`
 
 Lists and dismisses native OS dialogs that the component tools cannot see.
-`Application.MessageBox`, a default `ShowMessage`/`MessageDlg` (a Vista Task Dialog), and the common file dialogs are raw Win32 windows with no `TComponent`, so `list_tree`/`click` return `-32001 not_found` against them.
-This tool reaches them through Win32 directly.
+`Application.MessageBox`, a default `ShowMessage`/`MessageDlg` (a Vista Task Dialog), and the common file dialogs are raw Win32 windows with no `TComponent`, so `list_tree`/`click` return `-32001 not_found` against them; this tool reaches them through Win32.
 
 - Call with **no `button`** to LIST the dialogs currently up.
   Response: `{dialogs:[{hwnd, class, caption, text, buttons:[{id, caption, enabled}]}], supported, platform}`.
@@ -331,7 +314,7 @@ Two recipes:
 A `send_keys` key whose handler opens a modal dialog blocks the same way: expect `-32004 main_thread_blocked` after 5000 ms, then call `dismiss_dialog`.
 Either way the dialog's own modal loop still pumps the bridge, so the dismiss lands and the app unblocks.
 
-Windows targets only: against an Android FMX target the response is `supported:false` (Android dialogs are ART windows, out of Win32 reach).
+Windows targets only: against an Android FMX target the response is `supported:false`.
 
 ### `send_keys`
 
@@ -365,14 +348,12 @@ A key whose handler opens a **modal dialog** blocks the app: see `dismiss_dialog
 
 ## Debug-channel selection - read live state without a recompile
 
-When you need to inspect the host app's state during a debug session, pick the cheapest channel that works.
-In order:
+To inspect the host app's state while debugging, use the cheapest channel that works, in this order:
 
 1. **`get_text` / `read_property`** - for any value that lives on a published property of a discoverable component.
    Both are one round-trip with no host changes, and cover ~70% of debug cases.
 2. **`read_property` with a deliberate bogus propName** - when you don't know the property name yet: its `availableProperties` returns every readable property, read-only ones included, in one round-trip (`set_property` gives the same list for the writable ones only, TL;DR rule 5).
-   Once you know the name, use `read_property` on subsequent calls.
-3. **Host-side `BridgeLogInfo` / `RamLog.AddInfo`** - when the value is NOT a published property (a local variable, a function return like `IsDarkStyle`, an intermediate computed value, or state inside a method during a specific code path).
+3. **Host-side `BridgeLogInfo` / `RamLog.AddInfo`** - when the value is NOT a published property (a local variable, a function result like `IsDarkStyle`, an intermediate value, state inside a method).
    Add a logging call in the host source, recompile, run, then read the log: `BridgeLogInfo(Tag, Msg)` (unit `Autopilot.Bridge.Log`) appends to the bridge's own log `%TEMP%\Autopilot\<ExeBaseName>-<PID>.log`; in LightSaber projects `AppData.RamLog.AddInfo` goes to `AppData.RamLog`'s file.
    **When a recompile IS unavoidable**, batch every value you want into ONE logging block - one cycle, one read.
 4. **Host-side `Diag.SaveToFile` scratchpad** - last resort, only when (1)-(3) all fail to fit.
@@ -417,14 +398,14 @@ All bridge errors use JSON-RPC error envelopes with custom codes:
 | -32002 | `ambiguous_path` | The path matched 2+ controls through the visual tree | The owner path found nothing and several shown controls fit. The message lists each by its owner path - retry with one of them |
 | -32003 | `control_disabled` | Found but `Enabled = False` | The UI deliberately blocks this action. `set_property` of `Enabled` itself is still allowed |
 | -32004 | `main_thread_blocked` | Dispatch timed out | Target main thread is busy (long handler, modal with custom message loop) |
-| -32005 | `unsupported_action` | Class doesn't support the request | e.g. clicking a `TPanel` with no `OnClick`, set_property on a non-writable kind |
+| -32005 | `unsupported_action` | Class doesn't support the request | e.g. clicking a `TLabel` with no `OnClick`, set_property on a non-writable kind |
 | -32006 | `rtti_property_missing` | Property not exposed via RTTI | Property isn't `published`, or doesn't exist. The error carries `availableProperties` (TL;DR rule 5) |
 | -32098 | `target_not_responding` | The target stopped answering (MCP side) | It accepted the connection but did not reply in time (the call fails after the per-call timeout + 2 s instead of hanging), or its pipe stayed busy for the whole per-call timeout. Typical: the whole app is stopped on an IDE breakpoint or hung |
 | -32099 | `target_not_running` | No target to connect to (MCP side) | App not running, unknown `pid`, or (Android) no `adb forward`. The message carries the steps to start the app or link the bridge in - follow them instead of retrying |
 
 Two more answers come from the MCP server itself, before anything reaches the app:
 - A `tools/call` with an unknown tool name, a missing `name`, or `arguments` that are not an object answers the JSON-RPC error `-32602`.
-- An argument of the wrong type, or a required argument that is missing (`"abc"` for `pid`, `1.5` for `count`, `1` for `checked`), answers an `isError: true` result whose text names the argument. Fix the argument and call again.
+- An argument of the wrong type, or a required argument that is missing (`"abc"` for `pid`, `1.5` for `count`, `1` for `checked`), answers an `isError: true` result whose text names the argument.
 
 ---
 
@@ -433,16 +414,16 @@ Two more answers come from the MCP server itself, before anything reaches the ap
 - **No `SendInput`: no global mouse or keyboard input.** This bridge acts directly on Delphi objects, inside the app: `send_keys` delivers key presses, shortcuts and the Default/Cancel buttons as window messages, and `mode='message'` on `click` posts a real `BM_CLICK` to a button.
   Bugs that only reproduce through the real Windows input pipeline are not testable: focus-driven validation (`OnExit`, `EN_KILLFOCUS`; the exception is the `CM_EXIT` that `set_text` sends to a data-aware control and `set_checked` to a `TDBCheckBox`), IME composition, keys routed through `IsDialogMessage` (a native dialog box), hover (`CM_MOUSEENTER`), real drag-drop initiated from a mouse-down + mouse-move.
   If your test relies on those, this is the wrong layer - use `SendInput`-based tools (AutoIt, TestComplete, Ranorex).
-- **No workflow engine / test-recorder.** You write the scenarios in conversation or in your test harness: the bridge gives you the primitives.
+- **No workflow engine / test-recorder.** You write the scenarios; the bridge gives you the primitives.
 - **No source modification of the target.** The integration cost is one `uses` clause and one `StartBridge` call.
 - **No propagation of exceptions raised inside an event handler - the bridge is an exception firewall.** `click` dispatches inside `try..except`: it catches anything the event handler raises, returns `stoppedReason: "exception:<ClassName>"`, and lets the session continue.
   That is deliberate (one crashing click must not kill the automation run), but it means the exception **never reaches `Application.HandleException`**, so anything hanging off the global handler does not fire: madExcept, `Application.OnException`, `LightFmx.Common.CrashHandler`, a custom `TApplicationEvents.OnException`.
   `execute_action` (`OnExecute`), `set_property` (the setter) and `set_checked` (`OnClick`) catch the exception the same way and answer `-32603`.
   Measured on VCL, `set_text` (`OnChange`) and `send_keys` (`OnKeyDown`) are NOT behind the firewall: the exception reaches `Application.OnException` (or madExcept), and the tool answers ok.
 
-  So **you cannot test a global error path by clicking a button that raises.** Measured in SciVance Tester against a binary verified armed with madExcept: the click returned `stoppedReason:"exception:Exception"`, no dialog appeared and no crash report was written - which looks exactly like "madExcept is broken" when in fact it was never invoked.
+  So **you cannot test a global error path by clicking a button that raises.** Measured against a binary verified armed with madExcept: the click returned `stoppedReason:"exception:Exception"`, no dialog appeared and no crash report was written - which looks exactly like "madExcept is broken" when in fact it was never invoked.
 
-  **Trigger the crash off the click instead.** A short `TTimer` armed by the event handler works and is the smallest change: the tick runs from the normal message loop, outside the bridge's protected call, so the exception takes the same route it would from any real user action.
+  **Trigger the crash off the click instead.** A short `TTimer` armed by the event handler is the smallest change: the tick runs from the normal message loop, outside the bridge's protected call, so the exception takes the route of a real user action.
   A clean `clicksDispatched: 1` with **no** `stoppedReason` is the tell that the raise happened outside the dispatch.
 
 ---
@@ -469,7 +450,7 @@ Three checks, in order:
 
 3. **Is the MCP server registered?** Tool names appear in your tool list as `mcp__autopilot__*`.
    If absent, the user needs to re-register the MCP server with their host (`claude mcp add autopilot ...` on Claude Code; keep `--crash-report` or `--no-crash-report` at the end if the old registration had it).
-   **Registering does NOT help the session you are in right now** - an MCP host reads its server list once at session start, so `mcp__autopilot__*` tools only appear in the *next* session.
+   **Registering does NOT help the session you are in right now:** an MCP host reads its server list at session start, so the tools appear only in the *next* session.
    Confirm with `claude mcp list` that it shows `✓ Connected`, then either start a fresh session, or, if you need to act in the current one, drive the pipe directly (next section).
 
 ---
@@ -488,14 +469,15 @@ When the `mcp__autopilot__*` tools are not loaded (you just registered the serve
 2. Connect: the target sends a `{"hello":{"protocolVersion":1,...}}` frame **first**.
 3. Reply with `{"helloAck":{"protocolVersion":1}}` (a mismatched version → the worker drops the session).
 4. Send requests `{"id":N,"cmd":"...","args":{...}}`; read one response frame `{"id":N,"ok":true,"result":{...}}` per request.
-   `args` keys are `path`, `count`, `text`, `checked`, `propName`, `value`, `form` (camelCase, matching the tool args above); `timeoutMs` goes beside `cmd`, not into `args`.
+   `args` holds the tool's arguments under the same camelCase names (`path`, `count`, `text`, `checked`, `propName`, `value`, `form`, ...), without `pid`; `timeoutMs` goes beside `cmd`, not into `args`.
+   `attach` and `wait_for` exist only in the MCP server, not in the bridge: poll `get_text` yourself.
 
 **Minimal PowerShell client** (handshake + one command):
 
 ```powershell
 $full = [System.IO.Directory]::GetFiles("\\.\pipe\") |
         Where-Object { $_ -like "*Autopilot.<ExeBaseName>.*" } | Select-Object -First 1
-$name = ($full -split '\\')[-1]   # strip the \\.\pipe\ prefix ( -split is an operator, not a Select-Object arg )
+$name = ($full -split '\\')[-1]   # strip the \\.\pipe\ prefix
 $c = New-Object System.IO.Pipes.NamedPipeClientStream(".", $name, "InOut"); $c.Connect(5000)
 function RF($s){ $b=[byte[]]::new(4); $g=0; while($g-lt4){$n=$s.Read($b,$g,4-$g); if($n-le0){throw "EOF"}; $g+=$n}
   $len=[BitConverter]::ToUInt32($b,0); if($len-eq0){return ""}; $p=[byte[]]::new($len); $g=0
@@ -507,14 +489,12 @@ WF $c '{"helloAck":{"protocolVersion":1}}'           # send ack
 WF $c '{"id":1,"cmd":"list_tree"}'; RF $c            # one command + its response
 ```
 
-Use the raw pipe only when the tools are genuinely unavailable in the current session.
-
 ---
 
 ## Repeatable tests without AI: DUnitX with Autopilot.Client
 
-For GUI tests that run again and again with no AI (a regression suite, a build step), write a DUnitX test project that drives the app through the class `TAutopilotApp` in `Source\Client\Autopilot.Client.pas`: no AI, no MCP server, about 0.8 ms per command, Windows targets only.
-Before you write such a test project, read `Source\Client\Autopilot.Client - how to write GUI tests without AI.md`: how to set the project up, every method, the exceptions, the rules for the test writer and an example.
+For GUI tests that run again and again with no AI (a regression suite, a build step), write a DUnitX test project that drives the app through the class `TAutopilotApp` in `Source\Client\Autopilot.Client.pas`: no MCP server, about 0.8 ms per command, Windows targets only.
+Before you write such a test project, read `Source\Client\Autopilot.Client - how to write GUI tests without AI.md`: project setup, every method, the exceptions, the rules and an example.
 
 ---
 
@@ -525,8 +505,7 @@ The app runs `OnCloseQuery`/`OnClose`/`FormPreRelease`, writes its INI, deletes 
 One tool call, one turn, ~1 ms.
 
 - `click(path='frmMain.mniFileExit')` - whatever the host names its File→Exit item.
-  Click the menu item or button, NOT the `TAction` behind it (`-32005`, see the `click` reference).
-  If the only close path is an action that no control is bound to, fire it with `execute_action`.
+  Click the menu item or button, NOT the `TAction` behind it (`-32005`); an exit action that no control is bound to fires with `execute_action`.
 
 **Kill path** - `Stop-Process` when the app is hung, its saved state is disposable, or the bridge close path doesn't work for this target.
 Just kill, in one line - no `Get-Process` pre-check, no screenshot, no window-rect math (it fails on minimized/renamed targets); `-ErrorAction SilentlyContinue` makes the no-such-process case a no-op:
