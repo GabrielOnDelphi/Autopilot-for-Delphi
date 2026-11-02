@@ -1,7 +1,7 @@
-unit Autopilot.Mcp.ToolBase;
+﻿unit Autopilot.Mcp.ToolBase;
 
 {=============================================================================================================
-   2026.09.21
+   2026.11.02
    www.GabrielMoraru.com
 --------------------------------------------------------------------------------------------------------------
    - Shared logic for all Autopilot MCP tools.
@@ -20,8 +20,7 @@ uses
   Autopilot.Bridge.Log,
   Autopilot.Mcp.PipeClient,
   Autopilot.Mcp.SocketClient,
-  Autopilot.Mcp.TargetMode,
-  Autopilot.Mcp.UsageCounter;
+  Autopilot.Mcp.TargetMode;
 
 
 const
@@ -249,13 +248,6 @@ begin
         end;
       end;
     try
-      { The very first successful tool call on this machine carries the licence reminder.
-        It rides an extra top-level field rather than the log file the old nudge used, because a tool response is the one place the driving AI is guaranteed to read.
-        Every documented field is untouched and JSON parsers ignore unknown keys, so the envelope contract holds.
-        Success path only: a target that never answered has no response to attach it to, and ClaimLicenseNotice would then have burnt the one-shot flag on nobody. }
-      if ClaimLicenseNotice
-      then Resp.AddPair('licenseNotice', LicenseNoticeText);
-
       Result := Resp.ToJSON;
       BridgeLogInfo('mcp', 'out cmd=' + CmdName + ' elapsedMs=' + IntToStr(GetTickCount64 - T0));
     finally

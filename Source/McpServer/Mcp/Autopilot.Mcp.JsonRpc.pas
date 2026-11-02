@@ -26,7 +26,7 @@ CONST
   { The version of Autopilot.Mcp.exe: serverInfo.version in the initialize answer, the startup log line and the Version field of a crash report.
     Keep it equal to FileVersion in Autopilot.Mcp.dproj (Win32).
     Separate from Autopilot.Bridge.Core.BridgeVersion, which the bridge sends in its hello frame. }
-  McpServerVersion = '3.1.4';
+  McpServerVersion = '3.5.0';
 
 
 { Process one JSON-RPC line.

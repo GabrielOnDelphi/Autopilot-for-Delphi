@@ -39,6 +39,8 @@
 {$R *.res}   // Version resource (SciVance Tech., from the VerInfo keys of the .dproj). A build creates the .res from the .dproj when it is missing.
 
 USES
+  madListHardware,
+  madListProcesses,
   {$IFDEF madshi}
   madExcept,                     // Must stay first: its initialization installs the unhandled-exception hook.
   madLinkDisAsm,                 // Disassembles the faulting frames into the report.
@@ -122,7 +124,7 @@ begin
   {$ENDIF}
 
   BridgeLogInfo('license', LicenseHint);
-  TrackUsageAndMaybePromoteBook;
+  TrackUsage;
 
   // Transport selection. No flag: the Windows named-pipe path. The `--target adb:<hostPort>` flag routes
   // every command over a loopback socket that `adb forward` has tunnelled to an Android target's bridge,

@@ -12,7 +12,7 @@
 interface
 
 uses
-  System.SysUtils, System.Classes, System.SyncObjs;
+  System.SysUtils, System.SyncObjs;
 
 type
   TBridgeLogLevel = (llDebug, llInfo, llWarn, llError);

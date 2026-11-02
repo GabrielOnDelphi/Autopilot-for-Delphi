@@ -1,7 +1,7 @@
 unit Autopilot.Mcp.Tool.Screenshot;
 
 {=============================================================================================================
-   2026.10.12
+   2026.11.02
    www.GabrielMoraru.com
 --------------------------------------------------------------------------------------------------------------
    - MCP tool: screenshot
@@ -9,7 +9,7 @@ unit Autopilot.Mcp.Tool.Screenshot;
      Form name optional; defaults to the target's main form.
    - Optional path crops the image to one control; optional maxWidth scales it down (both done in the bridge).
    - The bridge answers with the PNG as base64 in result.image.
-     ExtractImage moves it out, so the tools/call result is an MCP image content block (which a host shows as a picture), followed by a text block with the rest of the bridge's answer: form, width, height, licenseNotice and any other field, but no base64.
+     ExtractImage moves it out, so the tools/call result is an MCP image content block (which a host shows as a picture), followed by a text block with the rest of the bridge's answer: form, width, height and any other field, but no base64.
      Until 1.1.0 the base64 went out inside the text block: the model never saw a picture, and a 64 KB result was written to a file instead (Kai, 2026-08-25).
    - Runs in Autopilot.Mcp.exe (Windows PC-side MCP server); target may be any platform.
 =============================================================================================================}
@@ -105,7 +105,7 @@ begin
 end;
 
 
-{ AText is the bridge's answer: ("id":..,"ok":true,"result":("form":..,"width":..,"height":..,"encoding":"base64","format":"png","image":"<base64>")), plus "licenseNotice" on the first answer of an installation.
+{ AText is the bridge's answer: ("id":..,"ok":true,"result":("form":..,"width":..,"height":..,"encoding":"base64","format":"png","image":"<base64>")).
   Only "image" leaves AText.
   FALSE (AText untouched) for any answer without a picture, a failed capture or a -3209x envelope among them. }
 function TScreenshotTool.ExtractImage(var AText: String; OUT AImageBase64, AMimeType: String): Boolean;

@@ -15,7 +15,7 @@ interface
 
 uses
   Winapi.Windows,
-  System.SysUtils, System.Classes;
+  System.SysUtils;
 
 type
   // Which device-side endpoint form to forward to.
