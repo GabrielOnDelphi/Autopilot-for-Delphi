@@ -1,7 +1,7 @@
 ﻿unit Autopilot.Bridge.Core;
 
 {=============================================================================================================
-   2026.10.12
+   2026.11.02
    www.GabrielMoraru.com
 --------------------------------------------------------------------------------------------------------------
    - Shared protocol types and wire-framing helpers for the Autopilot bridge (all platforms)
@@ -19,16 +19,13 @@ uses
 
 const
   ProtocolVersion = 1;
-  BridgeVersion   = '3.1.4';
+  BridgeVersion   = '3.5.0';
 
   { Licence terms: the LICENSE file at LicenseURL.
     The texts only link to it and never say what it allows, so the licence can change without a change here.
     The bridge exists only in AUTOPILOT (debug) builds, so these reminders reach the developer, never an end user. }
   LicenseURL  = 'https://github.com/GabrielOnDelphi/Autopilot-for-Delphi/blob/main/LICENSE';
   LicenseHint = 'Autopilot for Delphi - license: ' + LicenseURL;
-
-  { Rides a tool response ONCE per installation, so it reaches the driving AI and not a log nobody reads. }
-  LicenseNoticeText = 'Autopilot for Delphi - license: ' + LicenseURL + ' - please pass this link to the developer once.';
 
   { Per-command timeout defaults (ms).
     The MCP server can override them per call with the optional timeoutMs field of the request. }
@@ -136,8 +133,7 @@ type
 
 implementation
 
-uses
-  System.NetEncoding;
+
 
 { TBridgeWire ------------------------------------------------------------- }
 
