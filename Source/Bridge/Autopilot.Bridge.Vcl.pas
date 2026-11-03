@@ -2682,8 +2682,94 @@ begin
 end;
 
 
+{ TRUE for the controls that RepaintNativeControls paints again: TLinkLabel and TComboBoxEx, and their descendants.
+  TCustomComboBoxEx is matched by class name, so the bridge does not link Vcl.ComCtrls into every app that uses it. }
+function NeedsNativeRepaint(AControl: TWinControl): Boolean;
+var
+  Cls: TClass;
+begin
+  if AControl is TCustomLinkLabel then EXIT(TRUE);
+  Cls := AControl.ClassType;
+  while Cls <> NIL do
+    begin
+      if Cls.ClassNameIs('TCustomComboBoxEx') then EXIT(TRUE);
+      Cls := Cls.ClassParent;
+    end;
+  Result := FALSE;
+end;
+
+
+{ The recursive part of RepaintNativeControls: the windowed children of AParent.
+  AClip: the client area of AParent and of all its parents, in AForm's client coordinates (= ABmp's coordinates). }
+procedure RepaintNativeControlsIn(AForm: TCustomForm; AParent: TWinControl; DC: HDC; const AClip: TRect);
+var
+  i, SaveIndex: Integer;
+  Ctrl: TWinControl;
+  R, ClipR: TRect;
+begin
+  for i := 0 to AParent.ControlCount - 1 do
+    if (AParent.Controls[i] is TWinControl) and AParent.Controls[i].Visible then
+      begin
+        Ctrl := TWinControl(AParent.Controls[i]);
+        if not Ctrl.HandleAllocated then Continue;   // no window: nothing native to print, and no window below it either
+
+        if NeedsNativeRepaint(Ctrl)
+        then
+          begin
+            R := Ctrl.BoundsRect;                          // where PaintTo paints it: Left/Top in the parent's client area
+            MapWindowPoints(AParent.Handle, AForm.Handle, R, 2);
+            ClipR := R;
+            ClipR.Intersect(AClip);
+            if ClipR.IsEmpty then Continue;
+            SaveIndex := SaveDC(DC);
+            try
+              IntersectClipRect(DC, ClipR.Left, ClipR.Top, ClipR.Right, ClipR.Bottom);
+              SetViewportOrgEx(DC, R.Left, R.Top, NIL);
+              SendMessage(Ctrl.Handle, WM_PRINT, WPARAM(DC), PRF_CLIENT or PRF_ERASEBKGND or PRF_CHILDREN or PRF_NONCLIENT);
+            finally
+              RestoreDC(DC, SaveIndex);
+            end;
+          end
+        else
+          if Ctrl.ControlCount > 0 then
+            begin
+              Winapi.Windows.GetClientRect(Ctrl.Handle, ClipR);
+              MapWindowPoints(Ctrl.Handle, AForm.Handle, ClipR, 2);
+              ClipR.Intersect(AClip);
+              if not ClipR.IsEmpty
+              then RepaintNativeControlsIn(AForm, Ctrl, DC, ClipR);
+            end;
+      end;
+end;
+
+
+{ Paints every TLinkLabel and TComboBoxEx of AForm again, over ABmp, with WM_PRINT.
+  ABmp is AForm's client area at (0,0), as GetFormImage and GetMinimizedFormImage return it.
+  Why: both come out blank in those captures.
+  TWinControl.PaintTo (Vcl.Controls.pas) sends each control WM_ERASEBKGND and WM_PAINT with the bitmap's DC, then recurses only into the VCL's own FWinControls list.
+  SysLink (TLinkLabel) ignores the DC of that WM_PAINT.
+  ComboBoxEx32 (TComboBoxEx) keeps its picture in a native ComboBox child window that the VCL does not know (ControlCount = 0), so PaintTo never reaches it.
+  WM_PRINT with PRF_CHILDREN does: DefWindowProc then sends "each visible child window a WM_PRINT message" (https://learn.microsoft.com/en-us/windows/win32/gdi/wm-print).
+  THotKey is left out on purpose: WM_PRINT does not draw its text either, and under a VCL style it would overwrite the correct styled image with an empty box.
+  The walk follows PaintTo's rule: a control whose Visible, or a parent's Visible, is FALSE is skipped; so is one without a window.
+  Each repaint is clipped to the client area of every parent, so a control partly scrolled out of a TScrollBox does not paint over its neighbours.
+  The outer clip is the bitmap, not Win32 GetClientRect of the form, which answers 0 x 0 while the form is minimized. }
+procedure RepaintNativeControls(AForm: TCustomForm; ABmp: TBitmap);
+begin
+  Assert(GetCurrentThreadId = MainThreadID, 'RepaintNativeControls: VCL touched off the main thread');
+  if not AForm.HandleAllocated then EXIT;   // then no child has a window either
+  ABmp.Canvas.Lock;
+  try
+    RepaintNativeControlsIn(AForm, AForm, ABmp.Canvas.Handle, Rect(0, 0, ABmp.Width, ABmp.Height));
+  finally
+    ABmp.Canvas.Unlock;
+  end;
+end;
+
+
 { Optional args: form (ignored when path is given), path (crop to that control), maxWidth (scale down to that width).
-  Every image comes from Form.GetFormImage, or from GetMinimizedFormImage when the form is minimized: the controls paint themselves into a memory bitmap (TWinControl.PaintTo), so the crop shows the control even where another window covers it on screen. }
+  Every image comes from Form.GetFormImage, or from GetMinimizedFormImage when the form is minimized: the controls paint themselves into a memory bitmap (TWinControl.PaintTo), so the crop shows the control even where another window covers it on screen.
+  RepaintNativeControls then draws the native controls that this paint leaves blank. }
 function HandleScreenshot(const AReq: TBridgeRequest): TBridgeResponse;
 var
   FormVal: TJSONValue;
@@ -2751,6 +2837,7 @@ begin
   then Bmp := GetMinimizedFormImage(Form)
   else Bmp := Form.GetFormImage;
   try
+    RepaintNativeControls(Form, Bmp);
     // A path that names the form itself keeps the uncropped bitmap.
     if (Path <> '') and ((CropRect.Left <> 0) or (CropRect.Top <> 0) or (CropRect.Width <> Bmp.Width) or (CropRect.Height <> Bmp.Height)) then
       begin
