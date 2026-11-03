@@ -26,6 +26,7 @@ type
     edtName     : TEdit;
     lblNameEcho : TLabel;
     lblHeader   : TLabel;
+    imgLogo     : TImage;
     cbxFlag     : TCheckBox;
     lblFlag     : TLabel;
     btnDialog      : TButton;
@@ -44,6 +45,7 @@ type
     lblLastKey     : TLabel;
     lblSaveCount   : TLabel;
     actSave        : TAction;
+    lblWebsite     : TLabel;
     procedure btnIncrementClick(Sender: TObject);
     procedure edtNameKeyDown(Sender: TObject; var Key: Word; var KeyChar: WideChar; Shift: TShiftState);
     procedure actSaveExecute(Sender: TObject);
@@ -53,6 +55,7 @@ type
     procedure actFixtureExecute(Sender: TObject);
     procedure btnDelayedClick(Sender: TObject);
     procedure tmrDelayedTimer(Sender: TObject);
+    procedure lblWebsiteClick(Sender: TObject);
   private
     FCounter: Integer;
     FActionRuns: Integer;
@@ -67,6 +70,18 @@ var
 implementation
 
 {$R *.fmx}
+
+{$IFDEF MSWINDOWS}
+uses
+  Winapi.Windows, Winapi.ShellAPI;
+{$ENDIF}
+{$IFDEF ANDROID}
+uses
+  Androidapi.Helpers, Androidapi.JNI.GraphicsContentViewText;
+{$ENDIF}
+
+const
+  HomePageUrl = 'https://gabrielmoraru.com/my-delphi-code/autopilot-for-delphi/';
 
 
 procedure TfrmFmxMain.btnIncrementClick(Sender: TObject);
@@ -140,6 +155,17 @@ begin
   tmrDelayed.Enabled := FALSE;
   Inc(FDelayedRuns);
   lblDelayed.Text := 'Delayed done ' + IntToStr(FDelayedRuns);
+end;
+
+
+procedure TfrmFmxMain.lblWebsiteClick(Sender: TObject);
+begin
+  {$IFDEF MSWINDOWS}
+  ShellExecute(0, 'open', HomePageUrl, NIL, NIL, SW_SHOWNORMAL);
+  {$ENDIF}
+  {$IFDEF ANDROID}
+  TAndroidHelper.Activity.startActivity(TJIntent.JavaClass.init(TJIntent.JavaClass.ACTION_VIEW, StrToJURI(HomePageUrl)));
+  {$ENDIF}
 end;
 
 
