@@ -17,10 +17,11 @@ interface
 uses
   Winapi.Windows, Winapi.Messages,
   System.SysUtils, System.Variants, System.Classes, System.Actions,
-  Vcl.Graphics, Vcl.Controls, Vcl.Forms, Vcl.Dialogs, Vcl.StdCtrls, Vcl.ExtCtrls, Vcl.Buttons, Vcl.ActnList;
+  Vcl.Graphics, Vcl.Controls, Vcl.Forms, Vcl.Dialogs, Vcl.StdCtrls, Vcl.ExtCtrls, Vcl.Buttons, Vcl.ActnList, Vcl.Imaging.jpeg;
 
 type
   TfrmMain = class(TForm)
+    imgLogo     : TImage;
     btnIncrement: TButton;
     lblCounter  : TLabel;
     edtName     : TEdit;
@@ -42,6 +43,7 @@ type
     lblLastKey     : TLabel;
     lblSaveCount   : TLabel;
     actSave        : TAction;
+    lblWebsite     : TLinkLabel;
     procedure btnIncrementClick(Sender: TObject);
     procedure edtNameKeyDown(Sender: TObject; var Key: Word; Shift: TShiftState);
     procedure actSaveExecute(Sender: TObject);
@@ -51,6 +53,7 @@ type
     procedure chkFixtureClick(Sender: TObject);
     procedure btnDelayedClick(Sender: TObject);
     procedure tmrDelayedTimer(Sender: TObject);
+    procedure lblWebsiteLinkClick(Sender: TObject; const Link: string; LinkType: TSysLinkType);
   private
     FCounter: Integer;
     FActionRuns: Integer;
@@ -65,6 +68,9 @@ var
 implementation
 
 {$R *.dfm}
+
+uses
+  Winapi.ShellAPI;
 
 
 procedure TfrmMain.btnIncrementClick(Sender: TObject);
@@ -134,6 +140,13 @@ begin
   tmrDelayed.Enabled := FALSE;
   Inc(FDelayedRuns);
   lblDelayed.Caption := 'Delayed done ' + IntToStr(FDelayedRuns);
+end;
+
+
+// TLinkLabel only reports the click; opening the browser is our job.
+procedure TfrmMain.lblWebsiteLinkClick(Sender: TObject; const Link: string; LinkType: TSysLinkType);
+begin
+  ShellExecute(Handle, 'open', PChar(Link), NIL, NIL, SW_SHOWNORMAL);
 end;
 
 
