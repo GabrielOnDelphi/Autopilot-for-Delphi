@@ -28,6 +28,10 @@ const
   LicenseURL  = 'https://github.com/GabrielOnDelphi/Autopilot-for-Delphi/blob/main/LICENSE';
   LicenseHint = 'Autopilot for Delphi - license: ' + LicenseURL;
 
+  { The product pages on the website. }
+  HomePageURL = 'https://gabrielmoraru.com/my-delphi-code/autopilot-for-delphi/';
+  WhatsNewURL = 'https://gabrielmoraru.com/my-delphi-code/autopilot-for-delphi-whats-new/';
+
   { Per-command timeout defaults (ms).
     The MCP server can override them per call with the optional timeoutMs field of the request. }
   DefaultTimeoutListMs       = 2000;

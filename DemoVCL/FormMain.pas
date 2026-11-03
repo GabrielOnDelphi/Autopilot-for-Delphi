@@ -76,11 +76,7 @@ implementation
 {$R *.dfm}
 
 uses
-  Winapi.ShellAPI;
-
-const
-  HomePageUrl = 'https://gabrielmoraru.com/my-delphi-code/autopilot-for-delphi/';
-  WhatsNewUrl = 'https://gabrielmoraru.com/my-delphi-code/autopilot-for-delphi-whats-new/';
+  Winapi.ShellAPI, Autopilot.Bridge.Core;
 
 
 procedure TfrmMain.btnIncrementClick(Sender: TObject);
@@ -153,10 +149,10 @@ begin
 end;
 
 
-// TLinkLabel only reports the click; opening the browser is our job.
+// TLinkLabel only reports the click; opening the browser is our job. The <a> in the DFM has no href, so the URL lives only in Autopilot.Bridge.Core.
 procedure TfrmMain.lblWebsiteLinkClick(Sender: TObject; const Link: string; LinkType: TSysLinkType);
 begin
-  ShellExecute(Handle, 'open', PChar(Link), NIL, NIL, SW_SHOWNORMAL);
+  ShellExecute(Handle, 'open', HomePageURL, NIL, NIL, SW_SHOWNORMAL);
 end;
 
 

@@ -2250,8 +2250,7 @@ object frmMain: TfrmMain
     Height = 19
     Hint = 'Open the Autopilot for Delphi home page in the browser'
     Caption = 
-      'Autopilot for Delphi - <a href="https://gabrielmoraru.com/my-del' +
-      'phi-code/autopilot-for-delphi/">www.GabrielMoraru.com</a>'
+      'Autopilot for Delphi - <a>www.GabrielMoraru.com</a>'
     ParentShowHint = False
     ShowHint = True
     TabOrder = 7

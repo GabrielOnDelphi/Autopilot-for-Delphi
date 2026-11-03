@@ -77,18 +77,14 @@ implementation
 
 {$R *.fmx}
 
-{$IFDEF MSWINDOWS}
 uses
-  Winapi.Windows, Winapi.ShellAPI;
-{$ENDIF}
-{$IFDEF ANDROID}
-uses
-  Androidapi.Helpers, Androidapi.JNI.App, Androidapi.JNI.GraphicsContentViewText, Androidapi.JNI.Net;
-{$ENDIF}
-
-const
-  HomePageUrl = 'https://gabrielmoraru.com/my-delphi-code/autopilot-for-delphi/';
-  WhatsNewUrl = 'https://gabrielmoraru.com/my-delphi-code/autopilot-for-delphi-whats-new/';
+  {$IFDEF MSWINDOWS}
+  Winapi.Windows, Winapi.ShellAPI,
+  {$ENDIF}
+  {$IFDEF ANDROID}
+  Androidapi.Helpers, Androidapi.JNI.App, Androidapi.JNI.GraphicsContentViewText, Androidapi.JNI.Net,
+  {$ENDIF}
+  Autopilot.Bridge.Core;
 
 
 procedure OpenUrl(const Url: string);
