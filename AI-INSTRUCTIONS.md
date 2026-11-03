@@ -25,6 +25,17 @@
 A LightSaber VCL app built with `AUTOPILOT` comes up visible but unfocused (`TLightForm` gates its startup windows with `WS_EX_NOACTIVATE`), so you can launch and drive it while the user keeps typing elsewhere.
 This does NOT apply to FMX, nor to an app that calls `SetForegroundWindow` / `Application.BringToFront` during startup - including an app with a `TCoolTrayIcon` whose `FocusFormOnShow` is still TRUE (it grabs the foreground on every show of its owner form; set it to FALSE in `FormCreate`, under an AUTOPILOT conditional).
 
+## Never drive the app with mouse or keyboard scripts - add a named action instead
+
+Do a job through the bridge: `execute_action`, `click`, `set_text`, `set_checked`, `set_property`.
+Never move the mouse or send global keys (SendInput, AutoIt, screen-coordinate scripts) to do a job; such tools are only for testing the real Windows input pipeline (section "What this bridge deliberately does NOT do").
+The bridge lives only in a build that defines `AUTOPILOT`, normally Debug: never drive a build without the bridge.
+When a job still cannot be done with the tools - it opens a modal dialog or a Windows file/folder picker, or it takes many steps that sessions repeat - add a named action to the app.
+A named action is a small `TComponent` owned by the main form, created under `{$IFDEF AUTOPILOT}` only, with two published string properties: writing `Command` (an action name, a space, a parameter) runs the action, and `Answer` holds the result text.
+Each action calls the same routine the GUI calls after its dialog closes, never a copy of it, with `TAppDataCore.Unattended` (LightSaber) or the app's own switch set so no message box blocks the call.
+The getter of `Command` returns `''`, so a repeated command is never skipped by write-side elision (TL;DR rule 7).
+Call it with `set_property(path='frmMain.Autopilot', propName='Command', value='load_file C:\Data\a.txt')`, then `read_property(path='frmMain.Autopilot', propName='Answer')`.
+
 ---
 
 ## The fourteen MCP tools - full reference
