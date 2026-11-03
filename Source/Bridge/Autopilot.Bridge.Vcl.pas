@@ -3235,36 +3235,7 @@ type
   end;
 
 
-{ Maps a key name of args.keys (case-insensitive) to its virtual-key code. 0 = unknown name.
-  The same table is in Autopilot.Bridge.Fmx.pas; keep the two identical. }
-function KeyNameToVk(const AName: String): Word;
-var
-  N: String;
-  FNum: Integer;
-begin
-  N := UpperCase(AName);
-  if (Length(N) = 1) and CharInSet(N[1], ['A'..'Z', '0'..'9']) then exit(Ord(N[1]));    // vkA..vkZ and vk0..vk9 equal the ASCII codes (System.UITypes)
-  if (Length(N) in [2, 3]) and (N[1] = 'F') and TryStrToInt(Copy(N, 2, 2), FNum) and (FNum >= 1) and (FNum <= 12) then exit(vkF1 + FNum - 1);
-  if N = 'ENTER'     then exit(vkReturn);
-  if (N = 'ESCAPE') or (N = 'ESC') then exit(vkEscape);
-  if N = 'TAB'       then exit(vkTab);
-  if N = 'SPACE'     then exit(vkSpace);
-  if N = 'BACKSPACE' then exit(vkBack);
-  if N = 'DELETE'    then exit(vkDelete);
-  if N = 'INSERT'    then exit(vkInsert);
-  if N = 'HOME'      then exit(vkHome);
-  if N = 'END'       then exit(vkEnd);
-  if N = 'PAGEUP'    then exit(vkPrior);
-  if N = 'PAGEDOWN'  then exit(vkNext);
-  if N = 'UP'        then exit(vkUp);
-  if N = 'DOWN'      then exit(vkDown);
-  if N = 'LEFT'      then exit(vkLeft);
-  if N = 'RIGHT'     then exit(vkRight);
-  Result := 0;
-end;
-
-
-{ Parses args.keys: chords separated by spaces, a chord = optional modifiers (Ctrl, Shift, Alt) joined by '+', then one key name.
+{ Parses args.keys (key names: KeyNameToVk in Autopilot.Bridge.Core): chords separated by spaces, a chord = optional modifiers (Ctrl, Shift, Alt) joined by '+', then one key name.
   Parses everything before anything is sent: on the first bad token returns FALSE and AError names it. }
 function ParseKeyChords(const AKeys: String; OUT AChords: TArray<TKeyChord>; OUT AError: String): Boolean;
 var
