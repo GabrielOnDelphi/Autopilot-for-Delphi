@@ -8,6 +8,7 @@
    - Stdlib-only: no VCL, no FMX, no LightSaber — usable by both the pipe and socket transports
    - Defines TBridgeRequest, TBridgeResponse, TBridgeDispatcher, TBridgeWire, and JSON-RPC error codes
    - The screenshot argument and scale-size helpers that the VCL and FMX bridges share
+   - KeyNameToVk, the key-name table of send_keys that the VCL and FMX bridges share
    - How the bridge links your app to the AI: the book "Delphi in All Its Glory" Part 5, "AI-Assisted Development for Delphi", chapter "We Need a Hero - Enter Autopilot for Delphi", sections "The Bridge" and "How it Works?".
      https://gabrielmoraru.com/the-delphi-in-all-its-glory-book-5-ai-assisted-development-for-delphi/
 =============================================================================================================}
@@ -130,8 +131,15 @@ type
     FALSE, with the size unchanged, when AMaxWidth is 0 or not smaller than AWidth: an image is never scaled up. }
   function ScreenshotScaledSize(AWidth, AHeight, AMaxWidth: Integer; OUT ANewWidth, ANewHeight: Integer): Boolean;
 
+  { Maps a key name of the send_keys argument keys (case-insensitive) to its virtual-key code. 0 = unknown name.
+    The one copy, shared by the VCL and FMX bridges. }
+  function KeyNameToVk(const AName: String): Word;
+
 
 implementation
+
+uses
+  System.UITypes;
 
 
 
@@ -302,6 +310,33 @@ begin
   if ANewHeight < 1
   then ANewHeight := 1;
   Result := TRUE;
+end;
+
+
+function KeyNameToVk(const AName: String): Word;
+var
+  N: String;
+  FNum: Integer;
+begin
+  N := UpperCase(AName);
+  if (Length(N) = 1) and CharInSet(N[1], ['A'..'Z', '0'..'9']) then exit(Ord(N[1]));    // vkA..vkZ and vk0..vk9 equal the ASCII codes (System.UITypes)
+  if (Length(N) in [2, 3]) and (N[1] = 'F') and TryStrToInt(Copy(N, 2, 2), FNum) and (FNum >= 1) and (FNum <= 12) then exit(vkF1 + FNum - 1);
+  if N = 'ENTER'     then exit(vkReturn);
+  if (N = 'ESCAPE') or (N = 'ESC') then exit(vkEscape);
+  if N = 'TAB'       then exit(vkTab);
+  if N = 'SPACE'     then exit(vkSpace);
+  if N = 'BACKSPACE' then exit(vkBack);
+  if N = 'DELETE'    then exit(vkDelete);
+  if N = 'INSERT'    then exit(vkInsert);
+  if N = 'HOME'      then exit(vkHome);
+  if N = 'END'       then exit(vkEnd);
+  if N = 'PAGEUP'    then exit(vkPrior);
+  if N = 'PAGEDOWN'  then exit(vkNext);
+  if N = 'UP'        then exit(vkUp);
+  if N = 'DOWN'      then exit(vkDown);
+  if N = 'LEFT'      then exit(vkLeft);
+  if N = 'RIGHT'     then exit(vkRight);
+  Result := 0;
 end;
 
 
