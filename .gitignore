@@ -118,6 +118,8 @@ dunitx-results.xml
 /DemoFmx/*.xml
 /DemoFmx/*.prjmgc
 /DemoFmx/DeployAndroid.cmd
+/DemoFmx/Autopilot.DemoFmx/
+/DemoFmx/Autopilot.DemoFmx.classes/
 *.deployproj
 
 # Build output of the demos and the demo tests ($(Platform)_$(Config))
