@@ -17,7 +17,7 @@ interface
 uses
   Winapi.Windows, Winapi.Messages,
   System.SysUtils, System.Variants, System.Classes, System.Actions,
-  Vcl.Graphics, Vcl.Controls, Vcl.Forms, Vcl.Dialogs, Vcl.StdCtrls, Vcl.ExtCtrls, Vcl.Buttons, Vcl.ActnList, Vcl.Imaging.jpeg;
+  Vcl.Graphics, Vcl.Controls, Vcl.Forms, Vcl.Dialogs, Vcl.StdCtrls, Vcl.ExtCtrls, Vcl.Buttons, Vcl.ActnList, Vcl.Imaging.jpeg, Vcl.Menus;
 
 type
   TfrmMain = class(TForm)
@@ -44,6 +44,10 @@ type
     lblSaveCount   : TLabel;
     actSave        : TAction;
     lblWebsite     : TLinkLabel;
+    mnuMain        : TMainMenu;
+    mnuHelp        : TMenuItem;
+    mnuCheckUpdates: TMenuItem;
+    mnuAbout       : TMenuItem;
     procedure btnIncrementClick(Sender: TObject);
     procedure edtNameKeyDown(Sender: TObject; var Key: Word; Shift: TShiftState);
     procedure actSaveExecute(Sender: TObject);
@@ -54,6 +58,8 @@ type
     procedure btnDelayedClick(Sender: TObject);
     procedure tmrDelayedTimer(Sender: TObject);
     procedure lblWebsiteLinkClick(Sender: TObject; const Link: string; LinkType: TSysLinkType);
+    procedure mnuCheckUpdatesClick(Sender: TObject);
+    procedure mnuAboutClick(Sender: TObject);
   private
     FCounter: Integer;
     FActionRuns: Integer;
@@ -71,6 +77,10 @@ implementation
 
 uses
   Winapi.ShellAPI;
+
+const
+  HomePageUrl = 'https://gabrielmoraru.com/my-delphi-code/autopilot-for-delphi/';
+  WhatsNewUrl = 'https://gabrielmoraru.com/my-delphi-code/autopilot-for-delphi-whats-new/';
 
 
 procedure TfrmMain.btnIncrementClick(Sender: TObject);
@@ -147,6 +157,18 @@ end;
 procedure TfrmMain.lblWebsiteLinkClick(Sender: TObject; const Link: string; LinkType: TSysLinkType);
 begin
   ShellExecute(Handle, 'open', PChar(Link), NIL, NIL, SW_SHOWNORMAL);
+end;
+
+
+procedure TfrmMain.mnuCheckUpdatesClick(Sender: TObject);
+begin
+  ShellExecute(Handle, 'open', WhatsNewUrl, NIL, NIL, SW_SHOWNORMAL);
+end;
+
+
+procedure TfrmMain.mnuAboutClick(Sender: TObject);
+begin
+  ShellExecute(Handle, 'open', HomePageUrl, NIL, NIL, SW_SHOWNORMAL);
 end;
 
 
