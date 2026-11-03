@@ -17,7 +17,7 @@ interface
 uses
   System.SysUtils, System.Classes, System.UITypes, System.Actions,
   FMX.Types, FMX.Controls, FMX.Forms, FMX.StdCtrls, FMX.Edit, FMX.Controls.Presentation, FMX.Objects, FMX.ActnList,
-  FMX.DialogService;
+  FMX.DialogService, FMX.Menus;
 
 type
   TfrmFmxMain = class(TForm)
@@ -46,6 +46,10 @@ type
     lblSaveCount   : TLabel;
     actSave        : TAction;
     lblWebsite     : TLabel;
+    mnuMain        : TMainMenu;
+    mnuHelp        : TMenuItem;
+    mnuCheckUpdates: TMenuItem;
+    mnuAbout       : TMenuItem;
     procedure btnIncrementClick(Sender: TObject);
     procedure edtNameKeyDown(Sender: TObject; var Key: Word; var KeyChar: WideChar; Shift: TShiftState);
     procedure actSaveExecute(Sender: TObject);
@@ -56,6 +60,8 @@ type
     procedure btnDelayedClick(Sender: TObject);
     procedure tmrDelayedTimer(Sender: TObject);
     procedure lblWebsiteClick(Sender: TObject);
+    procedure mnuCheckUpdatesClick(Sender: TObject);
+    procedure mnuAboutClick(Sender: TObject);
   private
     FCounter: Integer;
     FActionRuns: Integer;
@@ -77,11 +83,23 @@ uses
 {$ENDIF}
 {$IFDEF ANDROID}
 uses
-  Androidapi.Helpers, Androidapi.JNI.App, Androidapi.JNI.GraphicsContentViewText;
+  Androidapi.Helpers, Androidapi.JNI.App, Androidapi.JNI.GraphicsContentViewText, Androidapi.JNI.Net;
 {$ENDIF}
 
 const
   HomePageUrl = 'https://gabrielmoraru.com/my-delphi-code/autopilot-for-delphi/';
+  WhatsNewUrl = 'https://gabrielmoraru.com/my-delphi-code/autopilot-for-delphi-whats-new/';
+
+
+procedure OpenUrl(const Url: string);
+begin
+  {$IFDEF MSWINDOWS}
+  ShellExecute(0, 'open', PChar(Url), NIL, NIL, SW_SHOWNORMAL);
+  {$ENDIF}
+  {$IFDEF ANDROID}
+  TAndroidHelper.Activity.startActivity(TJIntent.JavaClass.init(TJIntent.JavaClass.ACTION_VIEW, StrToJURI(Url)));
+  {$ENDIF}
+end;
 
 
 procedure TfrmFmxMain.btnIncrementClick(Sender: TObject);
@@ -160,12 +178,19 @@ end;
 
 procedure TfrmFmxMain.lblWebsiteClick(Sender: TObject);
 begin
-  {$IFDEF MSWINDOWS}
-  ShellExecute(0, 'open', HomePageUrl, NIL, NIL, SW_SHOWNORMAL);
-  {$ENDIF}
-  {$IFDEF ANDROID}
-  TAndroidHelper.Activity.startActivity(TJIntent.JavaClass.init(TJIntent.JavaClass.ACTION_VIEW, StrToJURI(HomePageUrl)));
-  {$ENDIF}
+  OpenUrl(HomePageUrl);
+end;
+
+
+procedure TfrmFmxMain.mnuCheckUpdatesClick(Sender: TObject);
+begin
+  OpenUrl(WhatsNewUrl);
+end;
+
+
+procedure TfrmFmxMain.mnuAboutClick(Sender: TObject);
+begin
+  OpenUrl(HomePageUrl);
 end;
 
 
