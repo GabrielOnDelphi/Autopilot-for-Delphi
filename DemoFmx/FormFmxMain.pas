@@ -77,7 +77,7 @@ uses
 {$ENDIF}
 {$IFDEF ANDROID}
 uses
-  Androidapi.Helpers, Androidapi.JNI.GraphicsContentViewText;
+  Androidapi.Helpers, Androidapi.JNI.App, Androidapi.JNI.GraphicsContentViewText;
 {$ENDIF}
 
 const
