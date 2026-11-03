@@ -1,21 +1,24 @@
 object frmMain: TfrmMain
   Left = 0
   Top = 0
-  Caption = 'Autopilot for Delphi - Demo'
-  ClientHeight = 672
-  ClientWidth = 420
+  Caption = 'Autopilot for Delphi - VCL demo'
+  ClientHeight = 676
+  ClientWidth = 480
   Color = clBtnFace
   Font.Charset = DEFAULT_CHARSET
   Font.Color = clWindowText
   Font.Height = -12
   Font.Name = 'Segoe UI'
+  Font.Style = []
+  Menu = mnuMain
   Position = poScreenCenter
   TextHeight = 15
   object imgLogo: TImage
-    Left = 16
-    Top = 8
-    Width = 388
-    Height = 218
+    Left = 0
+    Top = 0
+    Width = 480
+    Height = 129
+    Align = alTop
     Center = True
     Picture.Data = {
       0A544A504547496D61676561020100FFD8FFE000104A46494600010101004800
@@ -2091,103 +2094,120 @@ object frmMain: TfrmMain
   end
   object lblHeader: TLabel
     Left = 16
-    Top = 238
-    Width = 388
+    Top = 268
+    Width = 273
     Height = 15
     Caption = 'Autopilot demo - target app for end-to-end testing.'
   end
   object lblCounter: TLabel
-    Left = 264
-    Top = 282
-    Width = 8
+    Left = 232
+    Top = 304
+    Width = 6
     Height = 15
     Caption = '0'
   end
   object lblNameEcho: TLabel
-    Left = 264
-    Top = 346
-    Width = 6
+    Left = 232
+    Top = 344
+    Width = 3
     Height = 15
     Caption = ' '
   end
+  object lblLastKey: TLabel
+    Left = 16
+    Top = 454
+    Width = 5
+    Height = 15
+    Hint = 
+      'Test fixture: edtName.OnKeyDown writes the last key code and Ctr' +
+      'l state here'
+    Caption = '-'
+  end
+  object lblSaveCount: TLabel
+    Left = 232
+    Top = 454
+    Width = 5
+    Height = 15
+    Hint = 
+      'Test fixture: actSave (ShortCut Ctrl+S) writes its run count her' +
+      'e'
+    Caption = '-'
+  end
+  object lblActionResult: TLabel
+    Left = 16
+    Top = 570
+    Width = 5
+    Height = 15
+    Hint = 
+      'Test fixture: actFixture writes its run count and its Sender cla' +
+      'ss here'
+    Caption = '-'
+  end
+  object lblCheckState: TLabel
+    Left = 232
+    Top = 380
+    Width = 5
+    Height = 15
+    Hint = 'Test fixture: chkFixture writes its state here'
+    Caption = '-'
+  end
+  object sbAction: TSpeedButton
+    Left = 232
+    Top = 528
+    Width = 200
+    Height = 32
+    Action = actFixture
+  end
+  object lblDelayed: TLabel
+    Left = 232
+    Top = 604
+    Width = 5
+    Height = 15
+    Hint = 
+      'Test fixture: tmrDelayed writes here one second after btnDelayed' +
+      ' is clicked'
+    Caption = '-'
+  end
   object btnIncrement: TButton
     Left = 16
-    Top = 274
-    Width = 161
-    Height = 33
+    Top = 296
+    Width = 200
+    Height = 32
     Caption = 'Increment'
     TabOrder = 0
     OnClick = btnIncrementClick
   end
   object edtName: TEdit
     Left = 16
-    Top = 342
-    Width = 233
+    Top = 340
+    Width = 200
     Height = 23
     TabOrder = 1
-    Text = ''
     OnChange = edtNameChange
     OnKeyDown = edtNameKeyDown
   end
-  object lblLastKey: TLabel
-    Left = 264
-    Top = 386
-    Width = 4
-    Height = 15
-    Hint = 'Test fixture: edtName.OnKeyDown writes the last key code and Ctrl state here'
-    Caption = '-'
-  end
-  object lblSaveCount: TLabel
-    Left = 264
-    Top = 404
-    Width = 4
-    Height = 15
-    Hint = 'Test fixture: actSave (ShortCut Ctrl+S) writes its run count here'
-    Caption = '-'
-  end
   object btnDialog: TButton
     Left = 16
-    Top = 386
-    Width = 161
-    Height = 33
+    Top = 412
+    Width = 200
+    Height = 32
     Caption = 'Show Native Dialog'
     TabOrder = 2
     OnClick = btnDialogClick
   end
-  object lblActionResult: TLabel
-    Left = 16
-    Top = 522
-    Width = 4
-    Height = 15
-    Hint = 'Test fixture: actFixture writes its run count and its Sender class here'
-    Caption = '-'
-  end
-  object lblCheckState: TLabel
-    Left = 264
-    Top = 564
-    Width = 4
-    Height = 15
-    Hint = 'Test fixture: chkFixture writes its state here'
-    Caption = '-'
-  end
-  object sbAction: TSpeedButton
-    Left = 190
-    Top = 482
-    Width = 161
-    Height = 33
-    Action = actFixture
-  end
   object pnlFixture: TPanel
     Left = 16
-    Top = 430
-    Width = 388
-    Height = 41
-    Hint = 'Test fixture: a panel with a label placed on it, for the path rule'
+    Top = 480
+    Width = 448
+    Height = 40
+    Hint = 
+      'Test fixture: a panel with a label placed on it, for the path ru' +
+      'le'
     TabOrder = 3
     object lblInPanel: TLabel
       Left = 8
       Top = 12
-      Width = 89
+      Width = 83
       Height = 15
       Hint = 'Test fixture: owned by the form, placed on pnlFixture'
       Caption = 'Inside the panel'
@@ -2195,55 +2215,64 @@ object frmMain: TfrmMain
   end
   object btnAction: TButton
     Left = 16
-    Top = 482
-    Width = 161
-    Height = 33
+    Top = 528
+    Width = 200
+    Height = 32
     Action = actFixture
     TabOrder = 4
   end
   object chkFixture: TCheckBox
     Left = 16
-    Top = 562
-    Width = 233
-    Height = 19
+    Top = 376
+    Width = 200
+    Height = 24
     Hint = 'Test fixture: writes checked or unchecked to lblCheckState'
     Caption = 'Fixture check box'
     TabOrder = 5
     OnClick = chkFixtureClick
   end
-  object lblDelayed: TLabel
-    Left = 264
-    Top = 602
-    Width = 4
-    Height = 15
-    Hint = 'Test fixture: tmrDelayed writes here one second after btnDelayed is clicked'
-    Caption = '-'
-  end
   object btnDelayed: TButton
     Left = 16
-    Top = 594
-    Width = 161
-    Height = 33
-    Hint = 'Test fixture: starts tmrDelayed, which changes lblDelayed one second later'
+    Top = 596
+    Width = 200
+    Height = 32
+    Hint = 
+      'Test fixture: starts tmrDelayed, which changes lblDelayed one se' +
+      'cond later'
     Caption = 'Delayed text'
     TabOrder = 6
     OnClick = btnDelayedClick
   end
   object lblWebsite: TLinkLabel
-    Left = 16
-    Top = 640
-    Width = 388
+    Left = 115
+    Top = 644
+    Width = 253
     Height = 19
     Hint = 'Open the Autopilot for Delphi home page in the browser'
-    Alignment = taCenter
-    AutoSize = False
-    Caption =
-      'Autopilot for Delphi - <a href="https://gabrielmoraru.com/my-delp' +
-      'hi-code/autopilot-for-delphi/">www.GabrielMoraru.com</a>'
+    Caption = 
+      'Autopilot for Delphi - <a href="https://gabrielmoraru.com/my-del' +
+      'phi-code/autopilot-for-delphi/">www.GabrielMoraru.com</a>'
     ParentShowHint = False
     ShowHint = True
     TabOrder = 7
     OnLinkClick = lblWebsiteLinkClick
+  end
+  object mnuMain: TMainMenu
+    Left = 328
+    Top = 340
+    object mnuHelp: TMenuItem
+      Caption = '&Help'
+      object mnuCheckUpdates: TMenuItem
+        Caption = 'Check for updates'
+        Hint = 'Open the What'#39's New page of Autopilot for Delphi'
+        OnClick = mnuCheckUpdatesClick
+      end
+      object mnuAbout: TMenuItem
+        Caption = 'About'
+        Hint = 'Open the Autopilot for Delphi home page'
+        OnClick = mnuAboutClick
+      end
+    end
   end
   object tmrDelayed: TTimer
     Enabled = False
