@@ -2,8 +2,8 @@ object frmMain: TfrmMain
   Left = 0
   Top = 0
   Caption = 'Autopilot for Delphi - VCL demo'
-  ClientHeight = 676
-  ClientWidth = 480
+  ClientHeight = 558
+  ClientWidth = 467
   Color = clBtnFace
   Font.Charset = DEFAULT_CHARSET
   Font.Color = clWindowText
@@ -14,9 +14,10 @@ object frmMain: TfrmMain
   Position = poScreenCenter
   TextHeight = 15
   object imgLogo: TImage
-    Left = 0
-    Top = 0
-    Width = 480
+    AlignWithMargins = True
+    Left = 3
+    Top = 3
+    Width = 461
     Height = 129
     Align = alTop
     Center = True
@@ -2093,29 +2094,29 @@ object frmMain: TfrmMain
     Stretch = True
   end
   object lblHeader: TLabel
-    Left = 16
-    Top = 268
+    Left = 8
+    Top = 140
     Width = 273
     Height = 15
     Caption = 'Autopilot demo - target app for end-to-end testing.'
   end
   object lblCounter: TLabel
-    Left = 232
-    Top = 304
+    Left = 224
+    Top = 176
     Width = 6
     Height = 15
     Caption = '0'
   end
   object lblNameEcho: TLabel
-    Left = 232
-    Top = 344
+    Left = 224
+    Top = 216
     Width = 3
     Height = 15
     Caption = ' '
   end
   object lblLastKey: TLabel
-    Left = 16
-    Top = 454
+    Left = 8
+    Top = 326
     Width = 5
     Height = 15
     Hint = 
@@ -2124,8 +2125,8 @@ object frmMain: TfrmMain
     Caption = '-'
   end
   object lblSaveCount: TLabel
-    Left = 232
-    Top = 454
+    Left = 224
+    Top = 326
     Width = 5
     Height = 15
     Hint = 
@@ -2134,8 +2135,8 @@ object frmMain: TfrmMain
     Caption = '-'
   end
   object lblActionResult: TLabel
-    Left = 16
-    Top = 570
+    Left = 8
+    Top = 442
     Width = 5
     Height = 15
     Hint = 
@@ -2144,23 +2145,23 @@ object frmMain: TfrmMain
     Caption = '-'
   end
   object lblCheckState: TLabel
-    Left = 232
-    Top = 380
+    Left = 224
+    Top = 252
     Width = 5
     Height = 15
     Hint = 'Test fixture: chkFixture writes its state here'
     Caption = '-'
   end
   object sbAction: TSpeedButton
-    Left = 232
-    Top = 528
+    Left = 224
+    Top = 400
     Width = 200
     Height = 32
     Action = actFixture
   end
   object lblDelayed: TLabel
-    Left = 232
-    Top = 604
+    Left = 224
+    Top = 476
     Width = 5
     Height = 15
     Hint = 
@@ -2169,8 +2170,8 @@ object frmMain: TfrmMain
     Caption = '-'
   end
   object btnIncrement: TButton
-    Left = 16
-    Top = 296
+    Left = 8
+    Top = 168
     Width = 200
     Height = 32
     Caption = 'Increment'
@@ -2178,8 +2179,8 @@ object frmMain: TfrmMain
     OnClick = btnIncrementClick
   end
   object edtName: TEdit
-    Left = 16
-    Top = 340
+    Left = 8
+    Top = 212
     Width = 200
     Height = 23
     TabOrder = 1
@@ -2187,8 +2188,8 @@ object frmMain: TfrmMain
     OnKeyDown = edtNameKeyDown
   end
   object btnDialog: TButton
-    Left = 16
-    Top = 412
+    Left = 8
+    Top = 284
     Width = 200
     Height = 32
     Caption = 'Show Native Dialog'
@@ -2196,8 +2197,8 @@ object frmMain: TfrmMain
     OnClick = btnDialogClick
   end
   object pnlFixture: TPanel
-    Left = 16
-    Top = 480
+    Left = 8
+    Top = 352
     Width = 448
     Height = 40
     Hint = 
@@ -2214,16 +2215,16 @@ object frmMain: TfrmMain
     end
   end
   object btnAction: TButton
-    Left = 16
-    Top = 528
+    Left = 8
+    Top = 400
     Width = 200
     Height = 32
     Action = actFixture
     TabOrder = 4
   end
   object chkFixture: TCheckBox
-    Left = 16
-    Top = 376
+    Left = 8
+    Top = 248
     Width = 200
     Height = 24
     Hint = 'Test fixture: writes checked or unchecked to lblCheckState'
@@ -2232,8 +2233,8 @@ object frmMain: TfrmMain
     OnClick = chkFixtureClick
   end
   object btnDelayed: TButton
-    Left = 16
-    Top = 596
+    Left = 8
+    Top = 468
     Width = 200
     Height = 32
     Hint = 
@@ -2243,22 +2244,41 @@ object frmMain: TfrmMain
     TabOrder = 6
     OnClick = btnDelayedClick
   end
+  object lblBook: TLinkLabel
+    AlignWithMargins = True
+    Left = 3
+    Top = 536
+    Width = 461
+    Height = 19
+    Hint = 
+      'Open the page of Book 5 "AI-Assisted Development for Delphi" in ' +
+      'the browser'
+    Align = alBottom
+    Caption = 
+      'The book behind Autopilot: <a>AI-Assisted Development for Delphi' +
+      '</a>'
+    ParentShowHint = False
+    ShowHint = True
+    TabOrder = 8
+    OnLinkClick = lblBookLinkClick
+  end
   object lblWebsite: TLinkLabel
-    Left = 115
-    Top = 644
-    Width = 253
+    AlignWithMargins = True
+    Left = 3
+    Top = 511
+    Width = 461
     Height = 19
     Hint = 'Open the Autopilot for Delphi home page in the browser'
-    Caption = 
-      'Autopilot for Delphi - <a>www.GabrielMoraru.com</a>'
+    Align = alBottom
+    Caption = 'Autopilot for Delphi - <a>www.GabrielMoraru.com</a>'
     ParentShowHint = False
     ShowHint = True
     TabOrder = 7
     OnLinkClick = lblWebsiteLinkClick
   end
   object mnuMain: TMainMenu
-    Left = 328
-    Top = 340
+    Left = 416
+    Top = 140
     object mnuHelp: TMenuItem
       Caption = '&Help'
       object mnuCheckUpdates: TMenuItem
@@ -2276,12 +2296,12 @@ object frmMain: TfrmMain
   object tmrDelayed: TTimer
     Enabled = False
     OnTimer = tmrDelayedTimer
-    Left = 392
-    Top = 566
+    Left = 384
+    Top = 438
   end
   object actlFixture: TActionList
-    Left = 360
-    Top = 566
+    Left = 352
+    Top = 438
     object actFixture: TAction
       Caption = 'Run action'
       Hint = 'Test fixture: an action bound to btnAction and sbAction'

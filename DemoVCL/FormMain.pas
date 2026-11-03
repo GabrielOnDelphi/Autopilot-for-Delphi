@@ -8,8 +8,7 @@
    - One form with four controls (btnIncrement, lblCounter, edtName, lblNameEcho) to exercise list_tree, click, and get_text end-to-end.
    - Test fixtures for "Tests\E2E tests\Test-AllTools.ps1": an action bound to a TButton and a TSpeedButton
      (actFixture -> lblActionResult), a check box (chkFixture -> lblCheckState), a label placed on a panel
-     (pnlFixture.lblInPanel) for the path rule, and a button whose label changes one second later (btnDelayed ->
-     tmrDelayed -> lblDelayed) for wait_for.
+     (pnlFixture.lblInPanel) for the path rule, and a button whose label changes one second later (btnDelayed -> tmrDelayed -> lblDelayed) for wait_for.
 =============================================================================================================}
 
 interface
@@ -21,13 +20,13 @@ uses
 
 type
   TfrmMain = class(TForm)
-    imgLogo     : TImage;
-    btnIncrement: TButton;
-    lblCounter  : TLabel;
-    edtName     : TEdit;
-    lblNameEcho : TLabel;
-    lblHeader   : TLabel;
-    btnDialog   : TButton;
+    imgLogo        : TImage;
+    btnIncrement   : TButton;
+    lblCounter     : TLabel;
+    edtName        : TEdit;
+    lblNameEcho    : TLabel;
+    lblHeader      : TLabel;
+    btnDialog      : TButton;
     lblActionResult: TLabel;
     lblCheckState  : TLabel;
     sbAction       : TSpeedButton;
@@ -44,22 +43,24 @@ type
     lblSaveCount   : TLabel;
     actSave        : TAction;
     lblWebsite     : TLinkLabel;
+    lblBook        : TLinkLabel;
     mnuMain        : TMainMenu;
     mnuHelp        : TMenuItem;
     mnuCheckUpdates: TMenuItem;
     mnuAbout       : TMenuItem;
-    procedure btnIncrementClick(Sender: TObject);
-    procedure edtNameKeyDown(Sender: TObject; var Key: Word; Shift: TShiftState);
-    procedure actSaveExecute(Sender: TObject);
-    procedure edtNameChange(Sender: TObject);
-    procedure btnDialogClick(Sender: TObject);
-    procedure actFixtureExecute(Sender: TObject);
-    procedure chkFixtureClick(Sender: TObject);
-    procedure btnDelayedClick(Sender: TObject);
-    procedure tmrDelayedTimer(Sender: TObject);
-    procedure lblWebsiteLinkClick(Sender: TObject; const Link: string; LinkType: TSysLinkType);
-    procedure mnuCheckUpdatesClick(Sender: TObject);
-    procedure mnuAboutClick(Sender: TObject);
+    procedure actFixtureExecute    (Sender: TObject);
+    procedure actSaveExecute       (Sender: TObject);
+    procedure btnDelayedClick      (Sender: TObject);
+    procedure btnDialogClick       (Sender: TObject);
+    procedure btnIncrementClick    (Sender: TObject);
+    procedure chkFixtureClick      (Sender: TObject);
+    procedure edtNameChange        (Sender: TObject);
+    procedure edtNameKeyDown       (Sender: TObject; var Key: Word; Shift: TShiftState);
+    procedure lblBookLinkClick     (Sender: TObject; const Link: string; LinkType: TSysLinkType);
+    procedure lblWebsiteLinkClick  (Sender: TObject; const Link: string; LinkType: TSysLinkType);
+    procedure mnuAboutClick        (Sender: TObject);
+    procedure mnuCheckUpdatesClick (Sender: TObject);
+    procedure tmrDelayedTimer      (Sender: TObject);
   private
     FCounter: Integer;
     FActionRuns: Integer;
@@ -113,8 +114,10 @@ end;
 // see this dialog (it has no TComponent) — dismiss_dialog reaches it through Win32.
 procedure TfrmMain.btnDialogClick(Sender: TObject);
 begin
-  Application.MessageBox('A native modal dialog is up. The main thread is blocked in its modal loop.',
-                        'Native Dialog', MB_YESNOCANCEL or MB_ICONWARNING);
+  Application.MessageBox('This is a native Windows message box (Application.MessageBox).' + sLineBreak + sLineBreak +
+                         'The main thread waits inside this box until you close it. That is how a Windows message box works; Autopilot does not cause it.' + sLineBreak + sLineBreak +
+                         'An AI can close it with the Autopilot tool dismiss_dialog.',
+                         'Native Dialog', MB_YESNOCANCEL or MB_ICONWARNING);
 end;
 
 
@@ -153,6 +156,12 @@ end;
 procedure TfrmMain.lblWebsiteLinkClick(Sender: TObject; const Link: string; LinkType: TSysLinkType);
 begin
   ShellExecute(Handle, 'open', HomePageURL, NIL, NIL, SW_SHOWNORMAL);
+end;
+
+
+procedure TfrmMain.lblBookLinkClick(Sender: TObject; const Link: string; LinkType: TSysLinkType);
+begin
+  ShellExecute(Handle, 'open', BookURL, NIL, NIL, SW_SHOWNORMAL);
 end;
 
 

@@ -46,7 +46,8 @@ type
     lblSaveCount   : TLabel;
     actSave        : TAction;
     lblWebsite     : TLabel;
-    mnuMain        : TMainMenu;
+    lblBook        : TLabel;
+    mnuMain       : TMainMenu;
     mnuHelp        : TMenuItem;
     mnuCheckUpdates: TMenuItem;
     mnuAbout       : TMenuItem;
@@ -60,6 +61,7 @@ type
     procedure btnDelayedClick(Sender: TObject);
     procedure tmrDelayedTimer(Sender: TObject);
     procedure lblWebsiteClick(Sender: TObject);
+    procedure lblBookClick(Sender: TObject);
     procedure mnuCheckUpdatesClick(Sender: TObject);
     procedure mnuAboutClick(Sender: TObject);
   private
@@ -138,9 +140,19 @@ end;
 
 // On Windows this is a native message box (FMX.Dialogs.Win calls MessageBoxIndirect): the main thread waits in
 // its modal loop until the dialog closes. The component tools cannot see it; dismiss_dialog reaches it through Win32.
+// On Android and iOS TDialogService shows the box without waiting (SetPreferredMode in FMX.DialogService.pas).
 procedure TfrmFmxMain.btnDialogClick(Sender: TObject);
+const
+  {$IFDEF MSWINDOWS}
+  DialogText = 'This is a native Windows message box (TDialogService.MessageDialog).' + sLineBreak + sLineBreak +
+               'The main thread waits inside this box until you close it. That is how a Windows message box works; Autopilot does not cause it.' + sLineBreak + sLineBreak +
+               'An AI can close it with the Autopilot tool dismiss_dialog.';
+  {$ELSE}
+  DialogText = 'This message box comes from TDialogService.MessageDialog.' + sLineBreak + sLineBreak +
+               'The Autopilot tool dismiss_dialog works only on Windows, so close this box by hand.';
+  {$ENDIF}
 begin
-  TDialogService.MessageDialog('A native modal dialog is up. The main thread is blocked in its modal loop.',
+  TDialogService.MessageDialog(DialogText,
                                TMsgDlgType.mtWarning, [TMsgDlgBtn.mbYes, TMsgDlgBtn.mbNo, TMsgDlgBtn.mbCancel], TMsgDlgBtn.mbYes, 0,
                                procedure(const AResult: TModalResult)
                                begin
@@ -175,6 +187,12 @@ end;
 procedure TfrmFmxMain.lblWebsiteClick(Sender: TObject);
 begin
   OpenUrl(HomePageUrl);
+end;
+
+
+procedure TfrmFmxMain.lblBookClick(Sender: TObject);
+begin
+  OpenUrl(BookURL);
 end;
 
 
