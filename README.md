@@ -1,3 +1,5 @@
+[![Autopilot for Delphi closes the gap between the AI and your running Delphi app](https://gabrielmoraru.com/wp-content/uploads/2026/10/Logo-Autopilot-Closes-the-Gap-small-robots2-768x429.jpg)](https://gabrielmoraru.com/my-delphi-code/autopilot-for-delphi/)
+
 # Autopilot for Delphi
 
 **There is a big gap between Claude and your Delphi app. Autopilot closes it.**
@@ -9,8 +11,6 @@ Everything past “compile” is on the far side of a chasm. The AI needs you at
 What if magic exists? What if without adding a single line of code to your project you can remove that gap? 
 
 The full description on: **[GabrielMoraru.com/autopilot](https://gabrielmoraru.com/my-delphi-code/autopilot-for-delphi/)**.
-
-![Autopilot for Delphi closes the gap between the AI and your running Delphi app](https://gabrielmoraru.com/wp-content/uploads/2026/10/Logo-Autopilot-Closes-the-Gap-small-robots2-768x429.jpg)
 
 ## How to install it
 
