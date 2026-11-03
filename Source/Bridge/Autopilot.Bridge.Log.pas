@@ -43,6 +43,7 @@ uses
   Winapi.Windows,
   {$ELSE}
   Posix.Unistd,
+  System.Classes,   // TFileStream, fmCreate: used only by the POSIX branch
   {$ENDIF}
   System.IOUtils;
 
