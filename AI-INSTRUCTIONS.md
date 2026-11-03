@@ -281,6 +281,7 @@ A failed screenshot answers one text block with the error envelope.
 - **`width` / `height`** are the size of the image you receive; **`scaled`** is `true` when `maxWidth` shrank it.
 - **A minimized VCL form** is captured at its restored size with all its controls, the labels and speed buttons (controls without a window of their own) included.
   The form stays minimized: the screenshot does not restore or activate it.
+- **A VCL `THotKey`** shows as an empty box: without a VCL style its text does not appear in the image. Read it with `get_text`.
 
 **Use sparingly** (TL;DR rule 6): PNGs cost image tokens in the LLM context, and the encode round-trip is the most expensive single bridge call (~30 ms for a typical form vs sub-ms for everything else).
 Justified for layout bugs, color/theme issues, font rendering glitches, and as a tiebreaker when you cannot tell the form's state otherwise.
