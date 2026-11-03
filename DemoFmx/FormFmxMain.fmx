@@ -1,8 +1,8 @@
 object frmFmxMain: TfrmFmxMain
   Left = 0
   Top = 0
-  Caption = 'Autopilot for Delphi - Demo'
-  ClientHeight = 780
+  Caption = 'Autopilot for Delphi - FMX demo'
+  ClientHeight = 696
   ClientWidth = 480
   FormFactor.Width = 320
   FormFactor.Height = 480
@@ -7666,41 +7666,41 @@ object frmFmxMain: TfrmFmxMain
     Position.X = 16.000000000000000000
     Position.Y = 8.000000000000000000
     Size.Width = 448.000000000000000000
-    Size.Height = 252.000000000000000000
+    Size.Height = 125.000000000000000000
     Size.PlatformDefault = False
   end
   object lblHeader: TLabel
     Position.X = 16.000000000000000000
-    Position.Y = 280.000000000000000000
+    Position.Y = 264.000000000000000000
     Size.Width = 448.000000000000000000
-    Size.Height = 20.000000000000000000
+    Size.Height = 24.000000000000000000
     Size.PlatformDefault = False
     TextSettings.WordWrap = False
     Text = 'Autopilot FMX demo - target app for end-to-end testing.'
     TabOrder = 3
   end
   object lblCounter: TLabel
-    Position.X = 280.000000000000000000
-    Position.Y = 324.000000000000000000
-    Size.Width = 80.000000000000000000
+    Position.X = 232.000000000000000000
+    Position.Y = 300.000000000000000000
+    Size.Width = 232.000000000000000000
     Size.Height = 24.000000000000000000
     Size.PlatformDefault = False
     Text = '0'
     TabOrder = 4
   end
   object lblNameEcho: TLabel
-    Position.X = 280.000000000000000000
-    Position.Y = 388.000000000000000000
-    Size.Width = 180.000000000000000000
+    Position.X = 232.000000000000000000
+    Position.Y = 340.000000000000000000
+    Size.Width = 232.000000000000000000
     Size.Height = 24.000000000000000000
     Size.PlatformDefault = False
     Text = ' '
     TabOrder = 5
   end
   object lblFlag: TLabel
-    Position.X = 280.000000000000000000
-    Position.Y = 452.000000000000000000
-    Size.Width = 80.000000000000000000
+    Position.X = 232.000000000000000000
+    Position.Y = 376.000000000000000000
+    Size.Width = 92.000000000000000000
     Size.Height = 24.000000000000000000
     Size.PlatformDefault = False
     Text = 'off'
@@ -7708,7 +7708,7 @@ object frmFmxMain: TfrmFmxMain
   end
   object btnIncrement: TButton
     Position.X = 16.000000000000000000
-    Position.Y = 316.000000000000000000
+    Position.Y = 296.000000000000000000
     Size.Width = 200.000000000000000000
     Size.Height = 32.000000000000000000
     Size.PlatformDefault = False
@@ -7720,8 +7720,8 @@ object frmFmxMain: TfrmFmxMain
     Touch.InteractiveGestures = [LongTap, DoubleTap]
     TabOrder = 1
     Position.X = 16.000000000000000000
-    Position.Y = 384.000000000000000000
-    Size.Width = 240.000000000000000000
+    Position.Y = 340.000000000000000000
+    Size.Width = 200.000000000000000000
     Size.Height = 24.000000000000000000
     Size.PlatformDefault = False
     OnChangeTracking = edtNameChangeTracking
@@ -7729,25 +7729,25 @@ object frmFmxMain: TfrmFmxMain
   end
   object lblLastKey: TLabel
     Hint = 'Test fixture: edtName.OnKeyDown writes the last key code and Ctrl state here'
-    Position.X = 272.000000000000000000
-    Position.Y = 452.000000000000000000
-    Size.Width = 192.000000000000000000
-    Size.Height = 17.000000000000000000
+    Position.X = 16.000000000000000000
+    Position.Y = 450.000000000000000000
+    Size.Width = 200.000000000000000000
+    Size.Height = 24.000000000000000000
     Size.PlatformDefault = False
     Text = '-'
   end
   object lblSaveCount: TLabel
     Hint = 'Test fixture: actSave (ShortCut Ctrl+S) writes its run count here'
-    Position.X = 272.000000000000000000
-    Position.Y = 470.000000000000000000
-    Size.Width = 192.000000000000000000
-    Size.Height = 17.000000000000000000
+    Position.X = 232.000000000000000000
+    Position.Y = 450.000000000000000000
+    Size.Width = 232.000000000000000000
+    Size.Height = 24.000000000000000000
     Size.PlatformDefault = False
     Text = '-'
   end
   object cbxFlag: TCheckBox
     Position.X = 16.000000000000000000
-    Position.Y = 452.000000000000000000
+    Position.Y = 376.000000000000000000
     Size.Width = 200.000000000000000000
     Size.Height = 24.000000000000000000
     Size.PlatformDefault = False
@@ -7758,7 +7758,7 @@ object frmFmxMain: TfrmFmxMain
   object btnDialog: TButton
     Hint = 'Test fixture: opens a native Windows message box through TDialogService.MessageDialog'
     Position.X = 16.000000000000000000
-    Position.Y = 492.000000000000000000
+    Position.Y = 412.000000000000000000
     Size.Width = 200.000000000000000000
     Size.Height = 32.000000000000000000
     Size.PlatformDefault = False
@@ -7768,7 +7768,7 @@ object frmFmxMain: TfrmFmxMain
   object lblDialogResult: TLabel
     Hint = 'Test fixture: the native dialog writes its result here'
     Position.X = 232.000000000000000000
-    Position.Y = 496.000000000000000000
+    Position.Y = 416.000000000000000000
     Size.Width = 232.000000000000000000
     Size.Height = 24.000000000000000000
     Size.PlatformDefault = False
@@ -7777,7 +7777,7 @@ object frmFmxMain: TfrmFmxMain
   object pnlFixture: TPanel
     Hint = 'Test fixture: a panel with a label placed on it, for the path rule'
     Position.X = 16.000000000000000000
-    Position.Y = 532.000000000000000000
+    Position.Y = 480.000000000000000000
     Size.Width = 448.000000000000000000
     Size.Height = 40.000000000000000000
     Size.PlatformDefault = False
@@ -7794,7 +7794,7 @@ object frmFmxMain: TfrmFmxMain
   object btnAction: TButton
     Action = actFixture
     Position.X = 16.000000000000000000
-    Position.Y = 580.000000000000000000
+    Position.Y = 528.000000000000000000
     Size.Width = 200.000000000000000000
     Size.Height = 32.000000000000000000
     Size.PlatformDefault = False
@@ -7802,7 +7802,7 @@ object frmFmxMain: TfrmFmxMain
   object sbAction: TSpeedButton
     Action = actFixture
     Position.X = 232.000000000000000000
-    Position.Y = 580.000000000000000000
+    Position.Y = 528.000000000000000000
     Size.Width = 200.000000000000000000
     Size.Height = 32.000000000000000000
     Size.PlatformDefault = False
@@ -7810,7 +7810,7 @@ object frmFmxMain: TfrmFmxMain
   object lblActionResult: TLabel
     Hint = 'Test fixture: actFixture writes its run count and its Sender class here'
     Position.X = 16.000000000000000000
-    Position.Y = 620.000000000000000000
+    Position.Y = 566.000000000000000000
     Size.Width = 448.000000000000000000
     Size.Height = 24.000000000000000000
     Size.PlatformDefault = False
@@ -7818,16 +7818,16 @@ object frmFmxMain: TfrmFmxMain
   end
   object rectFixture: TRectangle
     Hint = 'Test fixture: a TAlphaColor property (Fill.Color) for set_property and read_property'
-    Position.X = 16.000000000000000000
-    Position.Y = 652.000000000000000000
-    Size.Width = 200.000000000000000000
-    Size.Height = 32.000000000000000000
+    Position.X = 332.000000000000000000
+    Position.Y = 376.000000000000000000
+    Size.Width = 132.000000000000000000
+    Size.Height = 24.000000000000000000
     Size.PlatformDefault = False
   end
   object btnDelayed: TButton
     Hint = 'Test fixture: starts tmrDelayed, which changes lblDelayed one second later'
     Position.X = 16.000000000000000000
-    Position.Y = 696.000000000000000000
+    Position.Y = 596.000000000000000000
     Size.Width = 200.000000000000000000
     Size.Height = 32.000000000000000000
     Size.PlatformDefault = False
@@ -7837,7 +7837,7 @@ object frmFmxMain: TfrmFmxMain
   object lblDelayed: TLabel
     Hint = 'Test fixture: tmrDelayed writes here one second after btnDelayed is clicked'
     Position.X = 232.000000000000000000
-    Position.Y = 700.000000000000000000
+    Position.Y = 600.000000000000000000
     Size.Width = 232.000000000000000000
     Size.Height = 24.000000000000000000
     Size.PlatformDefault = False
@@ -7849,7 +7849,7 @@ object frmFmxMain: TfrmFmxMain
     Hint = 'Open the Autopilot for Delphi home page in the browser'
     HitTest = True
     Position.X = 16.000000000000000000
-    Position.Y = 744.000000000000000000
+    Position.Y = 644.000000000000000000
     Size.Width = 448.000000000000000000
     Size.Height = 24.000000000000000000
     Size.PlatformDefault = False
@@ -7858,6 +7858,23 @@ object frmFmxMain: TfrmFmxMain
     TextSettings.HorzAlign = Center
     Text = 'Autopilot for Delphi - www.GabrielMoraru.com'
     OnClick = lblWebsiteClick
+  end
+  object mnuMain: TMainMenu
+    Left = 360
+    Top = 652
+    object mnuHelp: TMenuItem
+      Text = '&Help'
+      object mnuCheckUpdates: TMenuItem
+        Hint = 'Open the What'#39's New page of Autopilot for Delphi'
+        Text = 'Check for updates'
+        OnClick = mnuCheckUpdatesClick
+      end
+      object mnuAbout: TMenuItem
+        Hint = 'Open the Autopilot for Delphi home page'
+        Text = 'About'
+        OnClick = mnuAboutClick
+      end
+    end
   end
   object tmrDelayed: TTimer
     Enabled = False
