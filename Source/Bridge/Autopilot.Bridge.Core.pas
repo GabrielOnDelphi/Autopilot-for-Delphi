@@ -31,6 +31,7 @@ const
   { The product pages on the website. }
   HomePageURL = 'https://gabrielmoraru.com/my-delphi-code/autopilot-for-delphi/';
   WhatsNewURL = 'https://gabrielmoraru.com/my-delphi-code/autopilot-for-delphi-whats-new/';
+  BookURL     = 'https://gabrielmoraru.com/the-delphi-in-all-its-glory-book-5-ai-assisted-development-for-delphi/';
 
   { Per-command timeout defaults (ms).
     The MCP server can override them per call with the optional timeoutMs field of the request. }
