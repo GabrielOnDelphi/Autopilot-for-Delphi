@@ -4,39 +4,47 @@
 
 **There is a big gap between Claude and your Delphi app. Autopilot closes it.**
 
-You already work hand in hand with an AI assistant: you give a prompt, Claude writes the code and compiles it. And then it stops dead. It cannot test/debug the program for you. If your program has an OK button, you have to click it. The AI can’t.
+You already work hand in hand with an AI assistant: you give a prompt, the AI writes the code and compiles it. And then it stops dead. It cannot test the program for you. If your program has an OK button, you have to click it. The AI can’t.
 
 Everything past “compile” is on the far side of a chasm. The AI needs you at the keyboard to push the buttons and report back.
 
-What if magic exists? What if without adding a single line of code to your project you can remove that gap? 
+What if magic exists? What if the AI could push the buttons itself, without a single change to your forms or your business code?
 
-The full description on: **[GabrielMoraru.com/autopilot](https://gabrielmoraru.com/my-delphi-code/autopilot-for-delphi/)**.
+Autopilot hands the controls of your running VCL/FMX app to the AI. The AI clicks the buttons, types into the edit boxes, reads the labels, reads and changes any published property, and takes screenshots.
+It all happens in the background: Autopilot never moves your mouse, so you keep working while the AI tests your app.
+
+Full description: **[GabrielMoraru.com/autopilot](https://gabrielmoraru.com/my-delphi-code/autopilot-for-delphi/)**.
+
 
 ## How to install it
 
-Clone this repository to a folder, then ask your AI assistant to install the MCP server from that folder.
-The AI builds it, registers it and tells you when to restart it.
-Step by step, with the exact prompt: **[How to install it](https://gabrielmoraru.com/my-delphi-code/autopilot-for-delphi/)**.
+1. Download this repository to a folder.
+2. Ask your AI to register the MCP server from that folder using [this prompt](https://gabrielmoraru.com/my-delphi-code/autopilot-for-delphi/).
+3. That's it.
 
 
 ## How to use it
 
-**Demo app:** open `DemoVCL\Autopilot.Demo.dproj` and run it.
-Then ask your AI assistant: *"List the controls of Autopilot.Demo app, then click btnIncrement five times and read lblCounter and confirm it shows the correct answer."*
+**Demos:**  
+Ask the AI to run `DemoVCL\Autopilot.Demo.dproj`.
+Then ask it: *"List the controls of the Demo app, then click btnIncrement five times and confirm lblCounter shows the correct answer (5)."*
 
-**Your own app:** ask the AI to wire Autopilot into your project, then talk to it about your app in plain words:
+**Your own app:**   
+Ask the AI to wire Autopilot into your project.
+Then talk to the AI about your app in plain words:
 
-> *"Start my app, type 'Gabriel' in the name field, press Save, and tell me what the status label says."*
+> *"Start my app, type 'Magic' in the name field, press Save, and tell me what the status label says."*
 
-**Repeatable GUI tests, with no AI:** your DUnitX tests start the app, click, type, read the labels and check the result with `Assert`.
-No AI and no tokens, so the tests run on every build.
+**Repeatable GUI tests, with no AI:**   
+Your DUnitX tests start the app, click, type, read the labels and check the result with `Assert`.
+No AI/no tokens required.
+Sample: `DemoVCL\UnitTesting\Autopilot.DemoTests.dproj`.
 See [Automated GUI testing in Delphi](https://gabrielmoraru.com/my-delphi-code/automated-gui-testing-delphi/).
 
-The full description on: **[GabrielMoraru.com/autopilot](https://gabrielmoraru.com/my-delphi-code/autopilot-for-delphi/)**.
 
 ## Supported platforms
 
-- Delphi: Rio, Alexandria, Athens and Florence. Users report that it works on Delphi 10.2 too.
+- Delphi: 10.3 Rio, 11 Alexandria, 12 Athens and 13 Florence. Users report that it works on Delphi 10.2 too.
 - Platforms: Win32, Win64 (VCL and FMX), Android (FMX). Mac to be added soon.
 - An AI assistant that speaks MCP: Claude Code, Kai, Claude Desktop, Cursor, Cline.
 - No third-party dependencies.
@@ -53,6 +61,7 @@ The full description on: **[GabrielMoraru.com/autopilot](https://gabrielmoraru.c
 * [Automated GUI testing in Delphi](https://gabrielmoraru.com/my-delphi-code/automated-gui-testing-delphi/)
 * [What's new](https://gabrielmoraru.com/my-delphi-code/autopilot-for-delphi-whats-new/)
 * [License](LICENSE)
+
 
 ## Your support
 
