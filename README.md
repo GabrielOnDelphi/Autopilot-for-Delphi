@@ -59,4 +59,4 @@ The full description on: **[GabrielMoraru.com/autopilot](https://gabrielmoraru.c
 Did Autopilot change your life? (I know, you are not the first one to say that 😊)   
 Give it a star on GitHub.
 
-![Even the AI knows which button to click: give Autopilot for Delphi a star](DemoVCL/star_bringer.jpg)
+![Even the AI knows which button to click: give Autopilot for Delphi a star](Resources/Star%20bringer.jpg)
