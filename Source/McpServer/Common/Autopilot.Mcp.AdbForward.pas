@@ -186,7 +186,7 @@ begin
           end;
         Result := Acc.ToString;
       finally
-        Acc.Free;
+        FreeAndNil(Acc);
       end;
     finally
       CloseHandle(Pi.hThread);
