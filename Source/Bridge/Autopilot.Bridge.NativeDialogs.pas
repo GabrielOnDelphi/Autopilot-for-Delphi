@@ -238,12 +238,12 @@ begin
           if LooksLikeDialog(W, Buttons.Count)
           then Result.AddElement(BuildDialogNode(W, Buttons, Statics));
         finally
-          Buttons.Free;
-          Statics.Free;
+          FreeAndNil(Buttons);
+          FreeAndNil(Statics);
         end;
       end;
   finally
-    Ctx.List.Free;
+    FreeAndNil(Ctx.List);
   end;
 end;
 
@@ -373,12 +373,12 @@ begin
               Break;
             end;
         finally
-          Buttons.Free;
-          Statics.Free;
+          FreeAndNil(Buttons);
+          FreeAndNil(Statics);
         end;
       end;
   finally
-    Ctx.List.Free;
+    FreeAndNil(Ctx.List);
   end;
 
   if Dlg = 0 then
@@ -443,8 +443,8 @@ begin
     AClickedCaption := MatchCap;
     Result := TRUE;
   finally
-    Buttons.Free;
-    Statics.Free;
+    FreeAndNil(Buttons);
+    FreeAndNil(Statics);
   end;
 end;
 
