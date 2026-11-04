@@ -27,7 +27,7 @@ Full description: **[GabrielMoraru.com/autopilot](https://gabrielmoraru.com/my-d
 
 **Demos:**  
 Ask the AI to run `DemoVCL\Autopilot.Demo.dproj`.
-Then ask it: *"List the controls of the Demo app, then click btnIncrement five times and confirm lblCounter shows the correct answer (5)."*
+Then ask it: *"List the controls of the Demo app, then click btnIncrement five times and confirm lblIncrement shows the correct answer (5)."*
 
 **Your own app:**   
 Ask the AI to wire Autopilot into your project.
