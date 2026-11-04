@@ -408,6 +408,7 @@ begin
       AValue := Prop.GetValue(AComp).AsString;
       Result := TRUE;
     except
+      BridgeLogWarn('bridge', 'TryGetTextProperty: ' + AComp.ClassName + '.' + Prop.Name + ' getter raised ' + ExceptObject.ClassName);
       Result := FALSE;
       AValue := '';
     end;
@@ -439,6 +440,7 @@ begin
       AValue := Prop.GetValue(AComp).AsString;
       Result := AValue <> '';
     except
+      BridgeLogWarn('bridge', 'TryGetHint: ' + AComp.ClassName + '.Hint getter raised ' + ExceptObject.ClassName);
       Result := FALSE;
       AValue := '';
     end;
@@ -450,8 +452,9 @@ end;
 
 { Reads the form's string property AutopilotGuide, the app developer's description of the form, for the guide field of list_tree.
   FALSE when the form has no such property or it is empty.
-  A property of that name that is not a string is not read; it gets one WARN line in the log. }
-function TryGetFormGuide(AForm: TComponent; OUT AGuide: String): Boolean;
+  A property of that name that is not a string is not read; it gets one WARN line in the log.
+  A getter that raises is the app developer's bug: AError gets 'EClass: message' for the guideError field and a WARN line, so only this form node loses its guide, not the whole list_tree. }
+function TryGetFormGuide(AForm: TComponent; OUT AGuide, AError: String): Boolean;
 const
   GuidePropName = 'AutopilotGuide';
 var
@@ -462,6 +465,7 @@ begin
   Assert(GetCurrentThreadId = MainThreadID, 'TryGetFormGuide: VCL touched off the main thread');
   Result := FALSE;
   AGuide := '';
+  AError := '';
   Ctx := TRttiContext.Create;
   try
     RT := Ctx.GetType(AForm.ClassType);
@@ -473,7 +477,17 @@ begin
         BridgeLogWarn('bridge', 'list_tree: ' + AForm.Name + '.' + GuidePropName + ' is not a readable string property, so the form node gets no guide');
         exit;
       end;
-    AGuide := Prop.GetValue(AForm).AsString;
+    try
+      AGuide := Prop.GetValue(AForm).AsString;
+    except
+      on E: Exception do
+        begin
+          AGuide := '';
+          AError := E.ClassName + ': ' + E.Message;
+          BridgeLogWarn('bridge', 'list_tree: ' + AForm.Name + '.' + GuidePropName + ' getter raised ' + AError);
+          exit;
+        end;
+    end;
     Result := AGuide <> '';
   finally
     Ctx.Free;
@@ -502,6 +516,7 @@ begin
       AEnabled := Prop.GetValue(AComp).AsBoolean;
       Result := TRUE;
     except
+      BridgeLogWarn('bridge', 'TryGetEnabled: ' + AComp.ClassName + '.Enabled getter raised ' + ExceptObject.ClassName);
       Result := FALSE;
       AEnabled := TRUE;
     end;
@@ -531,6 +546,7 @@ begin
       AVisible := Prop.GetValue(AComp).AsBoolean;
       Result := TRUE;
     except
+      BridgeLogWarn('bridge', 'TryGetVisible: ' + AComp.ClassName + '.Visible getter raised ' + ExceptObject.ClassName);
       Result := FALSE;
       AVisible := TRUE;
     end;
@@ -846,6 +862,7 @@ begin
   try
     V := AProp.GetValue(AInstance);
   except
+    BridgeLogWarn('bridge', 'TryReadPropertyAsString: ' + AInstance.ClassName + '.' + AProp.Name + ' getter raised ' + ExceptObject.ClassName);
     exit;
   end;
   case AProp.PropertyType.TypeKind of
@@ -1118,13 +1135,15 @@ begin
     try
       Cur := ParentProp.GetValue(AInstance);
     except
+      BridgeLogWarn('bridge', 'TurnOffParentInheritFor: ' + AInstance.ClassName + '.' + ParentName + ' getter raised ' + ExceptObject.ClassName);
       exit;
     end;
     if not Cur.AsBoolean then exit;
     try
       ParentProp.SetValue(AInstance, FALSE);
     except
-      { Defensive: if a custom setter raises, swallow it — the user's actual write may still succeed, and we don't want this opportunistic helper to convert a successful set_property into an error. }
+      { Defensive: if a custom setter raises, log it and go on - the user's actual write may still succeed, and we don't want this opportunistic helper to convert a successful set_property into an error. }
+      BridgeLogWarn('bridge', 'TurnOffParentInheritFor: ' + AInstance.ClassName + '.' + ParentName + ' setter raised ' + ExceptObject.ClassName);
     end;
   finally
     Ctx.Free;
@@ -1288,6 +1307,7 @@ begin
           CurVal := Prop.GetValue(AInstance);
           CanRead := TRUE;
         except
+          BridgeLogWarn('bridge', 'TrySetGenericProperty: ' + AInstance.ClassName + '.' + APropName + ' getter raised ' + ExceptObject.ClassName + ', the write goes through without elision');
           CanRead := FALSE;
         end;
       end;
@@ -1782,7 +1802,7 @@ var
   Visited: TList;
   i: Integer;
   Form: TCustomForm;
-  Guide: String;
+  Guide, GuideError: String;
 begin
   Assert(GetCurrentThreadId = MainThreadID, 'HandleListTree must run on the main thread');
   Result := Default(TBridgeResponse);
@@ -1805,8 +1825,11 @@ begin
           FormNode := BuildComponentNode(Form.Name, Form.Name, Form);
           Items.AddElement(FormNode);
           AddReparentedField(FormNode, Form, NIL);   // a form embedded in another form's panel
-          if TryGetFormGuide(Form, Guide)
-          then FormNode.AddPair('guide', Guide);
+          if TryGetFormGuide(Form, Guide, GuideError)
+          then FormNode.AddPair('guide', Guide)
+          else
+            if GuideError <> ''
+            then FormNode.AddPair('guideError', GuideError);
           WalkComponents(Form.Name, Form.Name, Form, Items, Visited);
         finally
           FreeAndNil(Visited);
