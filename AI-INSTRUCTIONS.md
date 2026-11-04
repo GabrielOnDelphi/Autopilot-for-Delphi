@@ -321,9 +321,9 @@ Lists and dismisses native OS dialogs that the component tools cannot see.
   `button` is a role (`ok`/`cancel`/`yes`/`no`/`retry`/`abort`/`ignore`/`close`/`help`/`tryagain`/`continue`), a button caption (exact then substring, case-insensitive), or a numeric control id.
   `hwnd` targets a specific dialog when several are stacked; omit it for the topmost.
   Response adds `{clicked, clickedId, clickedCaption, dialogHwnd, via, reason?}`.
-  `reason` is `no_dialog`, `button_not_found`, or `send_failed` (button found, but the OS reported the click was not delivered) when `clicked:false`.
-- **Check `via` before you trust `clicked:true`.** `via:'BM_CLICK'` means the button's own window was found and got the click.
-  Documented `BM_CLICK` behavior: a button inside a dialog box may ignore it when that dialog is not the active window, and the bridge never activates the dialog - when the result matters, re-list as below.
+  `reason` is `no_dialog`, `button_not_found`, `button_disabled`, or `send_failed` (button found, but the OS reported the click was not delivered) when `clicked:false`.
+- **Check `via` before you trust `clicked:true`.** `via:'BN_CLICKED'` means the button's own window was found, and the dialog got the same click notification that button sends on a real click.
+  It works also when the dialog is not the active window, and the bridge never activates the dialog.
   `via:'WM_COMMAND'` means the button is not a separate window (a Task Dialog common button, or a role/id that dialog does not actually have), so the command was dispatched **by id, blind**: a dialog with no such command silently ignores it and the send still reports success.
   After a `WM_COMMAND` dismiss, call `dismiss_dialog` again with no `button` - an empty `dialogs` array is the only proof the dialog is gone.
 
