@@ -69,3 +69,5 @@ Did Autopilot change your life? (I know, you are not the first one to say that ð
 Give it a star on GitHub.
 
 ![Even the AI knows which button to click: give Autopilot for Delphi a star](Resources/Star%20bringer.jpg)
+
+!.(Resources/Star bringer - contributions.png)
