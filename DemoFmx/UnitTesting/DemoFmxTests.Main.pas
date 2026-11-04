@@ -6,7 +6,7 @@ unit DemoFmxTests.Main;
 --------------------------------------------------------------------------------------------------------------
    - Repeatable GUI tests of the FMX demo app on Windows (DemoFmx\Autopilot.DemoFmx.exe), with no AI: each test
      drives the running app through TAutopilotApp (Autopilot.Client) and checks what the app shows
-   - The same eight tests as the VCL demo tests (DemoVCL\UnitTesting\), with the FMX names and texts. One test
+   - The same eight tests as the VCL demo tests (DemoVCL\Push buttons\UnitTesting\), with the FMX names and texts. One test
      works differently: the modal dialog (ModalDialogIsDismissed)
    - One app for the whole fixture: [SetupFixture] starts it, [TearDownFixture] closes it
    - Three labels of the demo count up (lblCounter, lblActionResult, lblDelayed). A test reads such a label first
