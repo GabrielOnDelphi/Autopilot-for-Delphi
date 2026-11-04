@@ -258,8 +258,8 @@ begin
     Inner := nil;
     TBridgeWire.WriteFrame(AStream, Ack.ToJSON);
   finally
-    Inner.Free;
-    Ack.Free;
+    FreeAndNil(Inner);
+    FreeAndNil(Ack);
   end;
 end;
 
@@ -301,11 +301,11 @@ begin
       then Result := TJSONObject(Parsed)
       else
         begin
-          Parsed.Free;
+          FreeAndNil(Parsed);
           raise Exception.Create('CallTargetSocket: response is not a JSON object');
         end;
     finally
-      Stream.Free;
+      FreeAndNil(Stream);
     end;
   finally
     closesocket(Sock);
