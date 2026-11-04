@@ -1,0 +1,13 @@
+# Source: AI-INSTRUCTIONS.md (file 1), Autopilot.Client - how to write GUI tests without AI.md (file 2), typed from the documents only
+-32001;not_found;1;397;no component matches path
+-32002;ambiguous_path;1;398;path matched 2+ controls
+-32003;control_disabled;1;399;found but Enabled = False
+-32004;main_thread_blocked;1;400;dispatch timed out
+-32005;unsupported_action;1;401;class does not support the request
+-32006;rtti_property_missing;1;402;property not exposed via RTTI
+-32097;-;2;39;bridge speaks another protocol version
+-32098;target_not_responding;1;403;target stopped answering (MCP side)
+-32099;target_not_running;1;404;no target to connect to (MCP side)
+-32600;invalid_request;1;126;count outside 1..1000 or unknown mode
+-32602;-;1;407;unknown tool name, missing name, or arguments not an object
+-32603;internal_error;1;146;event handler (OnExecute) raised
