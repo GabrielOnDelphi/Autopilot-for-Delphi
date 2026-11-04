@@ -267,6 +267,8 @@ begin
 end;
 
 
+{ A nil AJson gives a fresh T with no check at all, not even of required parameters; a unit test pins this answer.
+  It cannot reach a tool from the wire: the dispatcher (Autopilot.Mcp.JsonRpc.BuildToolCallResult) always hands Execute an object, an empty one when "arguments" is absent or null. }
 class function TMCPSerializer.Deserialize<T>(AJson: TJSONObject): T;
 begin
   Result := T.Create;
@@ -274,7 +276,7 @@ begin
     if AJson <> nil
     then TMCPSerializer.FillObject(Result, AJson);
   except
-    Result.Free;
+    FreeAndNil(Result);
     raise;
   end;
 end;
