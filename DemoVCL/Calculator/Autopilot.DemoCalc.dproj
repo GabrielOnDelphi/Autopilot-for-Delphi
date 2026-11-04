@@ -1,15 +1,15 @@
-<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+﻿<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
     <PropertyGroup>
-        <ProjectGuid>{D157A13D-259B-4096-B1A0-4933C3891AA1}</ProjectGuid>
-        <MainSource>Autopilot.DemoTests.dpr</MainSource>
         <Base>True</Base>
+        <AppType>Application</AppType>
         <Config Condition="'$(Config)'==''">Debug</Config>
-        <ProjectName Condition="'$(ProjectName)'==''">Autopilot.DemoTests</ProjectName>
-        <TargetedPlatforms>1</TargetedPlatforms>
-        <AppType>Console</AppType>
-        <FrameworkType>None</FrameworkType>
-        <ProjectVersion>20.3</ProjectVersion>
+        <FrameworkType>VCL</FrameworkType>
+        <MainSource>Autopilot.DemoCalc.dpr</MainSource>
         <Platform Condition="'$(Platform)'==''">Win32</Platform>
+        <ProjectGuid>{7C1B2E40-9A5D-4F3B-AE21-6C34E5A7B9C2}</ProjectGuid>
+        <ProjectName Condition="'$(ProjectName)'==''">Autopilot.DemoCalc</ProjectName>
+        <ProjectVersion>20.5</ProjectVersion>
+        <TargetedPlatforms>1</TargetedPlatforms>
     </PropertyGroup>
     <PropertyGroup Condition="'$(Config)'=='Base' or '$(Base)'!=''">
         <Base>true</Base>
@@ -31,34 +31,31 @@
         <Base>true</Base>
     </PropertyGroup>
     <PropertyGroup Condition="'$(Base)'!=''">
-        <DCC_E>false</DCC_E>
-        <DCC_F>false</DCC_F>
-        <DCC_K>false</DCC_K>
-        <DCC_N>false</DCC_N>
-        <DCC_S>false</DCC_S>
-        <SanitizedProjectName>Autopilot_DemoTests</SanitizedProjectName>
-        <DCC_Namespace>System;Xml;Data;Datasnap;Web;Soap;$(DCC_Namespace)</DCC_Namespace>
-        <VerInfo_Locale>1033</VerInfo_Locale>
-        <DCC_GenerateStackFrames>true</DCC_GenerateStackFrames>
+        <SanitizedProjectName>Autopilot_DemoCalc</SanitizedProjectName>
         <DCC_DcuOutput>$(Platform)_$(Config)</DCC_DcuOutput>
+        <DCC_Define>AUTOPILOT;$(DCC_Define)</DCC_Define>
+        <DCC_GenerateStackFrames>true</DCC_GenerateStackFrames>
         <DCC_MapFile>3</DCC_MapFile>
+        <DCC_Namespace>Vcl;Vcl.Imaging;Vcl.Touch;Vcl.Samples;Vcl.Shell;System;Xml;Data;Datasnap;Web;Soap;$(DCC_Namespace)</DCC_Namespace>
+        <VerInfo_Locale>1033</VerInfo_Locale>
     </PropertyGroup>
     <PropertyGroup Condition="'$(Base_Win32)'!=''">
-        <DCC_Namespace>Winapi;System.Win;Data.Win;Datasnap.Win;Web.Win;Soap.Win;Xml.Win;Bde;$(DCC_Namespace)</DCC_Namespace>
-        <DCC_UnitSearchPath>..\..\Source\Client;..\..\Source\Bridge;$(BDS)\source\DUnitX;$(DCC_UnitSearchPath)</DCC_UnitSearchPath>
         <BT_BuildType>Debug</BT_BuildType>
+        <DCC_Namespace>Winapi;System.Win;Data.Win;Datasnap.Win;Web.Win;Soap.Win;Xml.Win;Bde;$(DCC_Namespace)</DCC_Namespace>
+        <DCC_UnitSearchPath>..\..\Source\Bridge;$(DCC_UnitSearchPath)</DCC_UnitSearchPath>
+        <Manifest_File>$(BDS)\bin\default_app.manifest</Manifest_File>
         <VerInfo_IncludeVerInfo>true</VerInfo_IncludeVerInfo>
         <VerInfo_Keys>CompanyName=;FileDescription=$(MSBuildProjectName);FileVersion=1.0.0.0;InternalName=;LegalCopyright=;LegalTrademarks=;OriginalFilename=;ProgramID=com.embarcadero.$(MSBuildProjectName);ProductName=$(MSBuildProjectName);ProductVersion=1.0.0.0;Comments=</VerInfo_Keys>
         <VerInfo_Locale>1033</VerInfo_Locale>
-        <Manifest_File>$(BDS)\bin\default_app.manifest</Manifest_File>
     </PropertyGroup>
     <PropertyGroup Condition="'$(Cfg_2)'!=''">
         <DCC_Define>DEBUG;$(DCC_Define)</DCC_Define>
+        <DCC_IntegerOverflowCheck>true</DCC_IntegerOverflowCheck>
         <DCC_Optimize>false</DCC_Optimize>
         <DCC_RangeChecking>true</DCC_RangeChecking>
-        <DCC_IntegerOverflowCheck>true</DCC_IntegerOverflowCheck>
     </PropertyGroup>
     <PropertyGroup Condition="'$(Cfg_2_Win32)'!=''">
+        <AppDPIAwarenessMode>PerMonitorV2</AppDPIAwarenessMode>
         <VerInfo_IncludeVerInfo>true</VerInfo_IncludeVerInfo>
         <VerInfo_Keys>CompanyName=;FileDescription=$(MSBuildProjectName);FileVersion=1.0.0.0;InternalName=;LegalCopyright=;LegalTrademarks=;OriginalFilename=;ProgramID=com.embarcadero.$(MSBuildProjectName);ProductName=$(MSBuildProjectName);ProductVersion=1.0.0.0;Comments=</VerInfo_Keys>
     </PropertyGroup>
@@ -66,12 +63,20 @@
         <DelphiCompile Include="$(MainSource)">
             <MainSource>MainSource</MainSource>
         </DelphiCompile>
+        <DCCReference Include="CalcEngine.pas"/>
+        <DCCReference Include="FormMain.pas">
+            <Form>frmMain</Form>
+        </DCCReference>
         <DCCReference Include="..\..\Source\Bridge\Autopilot.Bridge.Core.pas"/>
-        <DCCReference Include="..\..\Source\Bridge\Autopilot.Bridge.Log.pas"/>
-        <DCCReference Include="..\..\Source\Client\Autopilot.Client.pas"/>
-        <DCCReference Include="DemoTests.Main.pas"/>
-        <BuildConfiguration Include="Base"><Key>Base</Key></BuildConfiguration>
-        <BuildConfiguration Include="Debug"><Key>Cfg_2</Key><CfgParent>Base</CfgParent></BuildConfiguration>
+        <DCCReference Include="..\..\Source\Bridge\Autopilot.Bridge.NamedPipe.pas"/>
+        <DCCReference Include="..\..\Source\Bridge\Autopilot.Bridge.Vcl.pas"/>
+        <BuildConfiguration Include="Base">
+            <Key>Base</Key>
+        </BuildConfiguration>
+        <BuildConfiguration Include="Debug">
+            <Key>Cfg_2</Key>
+            <CfgParent>Base</CfgParent>
+        </BuildConfiguration>
     </ItemGroup>
     <ProjectExtensions>
         <Borland.Personality>Delphi.Personality.12</Borland.Personality>
@@ -79,10 +84,9 @@
         <BorlandProject>
             <Delphi.Personality>
                 <Source>
-                    <Source Name="MainSource">Autopilot.DemoTests.dpr</Source>
+                    <Source Name="MainSource">Autopilot.DemoCalc.dpr</Source>
                 </Source>
-                <Excluded_Packages>
-                </Excluded_Packages>
+                <Excluded_Packages/>
             </Delphi.Personality>
             <Platforms>
                 <Platform value="Win32">True</Platform>
