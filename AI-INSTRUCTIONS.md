@@ -25,12 +25,18 @@
 A LightSaber VCL app built with `AUTOPILOT` comes up visible but unfocused (`TLightForm` gates its startup windows with `WS_EX_NOACTIVATE`), so you can launch and drive it while the user keeps typing elsewhere.
 This does NOT apply to FMX, nor to an app that calls `SetForegroundWindow` / `Application.BringToFront` during startup - including an app with a `TCoolTrayIcon` whose `FocusFormOnShow` is still TRUE (it grabs the foreground on every show of its owner form; set it to FALSE in `FormCreate`, under an AUTOPILOT conditional).
 
-## Never drive the app with mouse or keyboard scripts - add a named action instead
+## Never drive the app with mouse or keyboard scripts
 
-Do a job through the bridge: `execute_action`, `click`, `set_text`, `set_checked`, `set_property`.
+Do a job through the bridge: `execute_action`, `click`, `set_text`, `set_checked`, `set_property`, `send_keys`, `dismiss_dialog`.
 Never move the mouse or send global keys (SendInput, AutoIt, screen-coordinate scripts) to do a job; such tools are only for testing the real Windows input pipeline (section "What this bridge deliberately does NOT do").
 The bridge lives only in a build that defines `AUTOPILOT`, normally Debug: never drive a build without the bridge.
-When a job still cannot be done with the tools - it opens a modal dialog or a Windows file/folder picker, or it takes many steps that sessions repeat - add a named action to the app.
+A modal dialog is no reason to change the app: `click(path, mode='message')` opens it without blocking, then the tools work on it, and `dismiss_dialog` closes a native one (section `dismiss_dialog`).
+Add a named action (a small debug-only command component, described below) to the app only when both are true:
+- the tools cannot do the job: a Windows file or folder picker (`dismiss_dialog` clicks its buttons but cannot type a file name), or a dialog where the recipe above failed;
+- the job will be repeated, by a regression check or by later sessions on the same app.
+
+For a one-time job, add no code to the app: tell the user in one line which action is missing.
+
 A named action is a small `TComponent` owned by the main form, created under `{$IFDEF AUTOPILOT}` only, with two published string properties: writing `Command` (an action name, a space, a parameter) runs the action, and `Answer` holds the result text.
 Each action calls the same routine the GUI calls after its dialog closes, never a copy of it, with `TAppDataCore.Unattended` (LightSaber) or the app's own switch set so no message box blocks the call.
 The getter of `Command` returns `''`, so a repeated command is never skipped by write-side elision (TL;DR rule 7).
@@ -77,6 +83,10 @@ Each node carries:
 - `class` - Delphi class name.
 - Optional `text` - `Caption`/`Text`/`Lines.Text` where readable.
   Missing on classes that have no text property, where `Text`/`Caption` is not a string (some third-party components), OR where the getter raised.
+- Optional `hint` - the tooltip text the programmer wrote for the control, menu item or action: often the only description of what a control does, so read it before guessing from the name.
+  Only when it is not empty and differs from `text`.
+  Raw value: a VCL hint may hold `short|long`.
+  A control bound to an action carries the action's hint.
 - Optional `enabled`, `visible` - boolean state where readable.
   Missing where the property is not a Boolean (for example an enumeration `Visible` on some third-party components).
 - Optional `parent` - only on a re-parented control or embedded form: one that is shown inside a container outside the owner tree it is listed under.
