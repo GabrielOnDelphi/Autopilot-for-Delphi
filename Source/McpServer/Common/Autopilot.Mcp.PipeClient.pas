@@ -90,11 +90,7 @@ begin
   Acc := TList<TTargetEntry>.Create;
   try
     Folder := DiscoveryFolderPath;
-    if not TDirectory.Exists(Folder) then
-      begin
-        Result := nil;
-        Exit;
-      end;
+    if not TDirectory.Exists(Folder) then Exit(nil);
     Files := TDirectory.GetFiles(Folder, '*.pipe');
     for i := 0 to High(Files) do
       begin
@@ -131,7 +127,7 @@ begin
       end;
     Result := Acc.ToArray;
   finally
-    Acc.Free;
+    FreeAndNil(Acc);
   end;
 end;
 
@@ -149,8 +145,8 @@ begin
     Inner := nil;
     TBridgeWire.WriteFrame(AStream, Ack.ToJSON);
   finally
-    Inner.Free;
-    Ack.Free;
+    FreeAndNil(Inner);
+    FreeAndNil(Ack);
   end;
 end;
 
@@ -324,11 +320,11 @@ begin
       then Result := TJSONObject(Parsed)
       else
         begin
-          Parsed.Free;
+          FreeAndNil(Parsed);
           raise Exception.Create('CallTarget: response is not a JSON object');
         end;
     finally
-      Stream.Free;
+      FreeAndNil(Stream);
     end;
   finally
     CloseHandle(Pipe);
