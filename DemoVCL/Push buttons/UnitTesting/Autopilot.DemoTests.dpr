@@ -9,7 +9,7 @@ program Autopilot.DemoTests;
      server can run it as a step
    - --xmlfile:<path> names the NUnit XML result file (DUnitX creates a missing folder); without it DUnitX writes
      dunitx-results.xml beside this EXE
-   - Build the demo app (..\Autopilot.Demo.dproj) first: the tests start it (where they look: DemoExePath in
+   - Build the demo app (..\Autopilot.PushBtnsDemo.dproj) first: the tests start it (where they look: DemoExePath in
      DemoTests.Main.pas)
 =============================================================================================================}
 
