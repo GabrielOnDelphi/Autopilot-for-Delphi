@@ -108,6 +108,8 @@ ToDo.md
 descript.ion
 DemoVCL/Autopilot.Demo.res
 dunitx-results.xml
+*_MemoryManager_EventLog.txt
+Test runs.log
 
 # Android deploy output written into the FMX demo folder by every Android build
 /DemoFmx/CompiledResources/
