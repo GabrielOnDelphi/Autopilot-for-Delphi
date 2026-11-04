@@ -150,7 +150,7 @@ type
     { Clicks a button of a native dialog (MessageBox, ShowMessage, MessageDlg, a file dialog): Button is a role ('ok', 'cancel', 'yes', 'no', 'retry', 'abort', 'ignore', 'close'), a button caption or a control id.
       Waits for the dialog: while the bridge answers that no dialog is open (reason 'no_dialog'), it asks again every 50 ms until TimeoutMs has passed.
       Needed after ClickAsync, which returns before the click runs, so the dialog the click opens may not exist yet (measured: 1 ms after ClickAsync it did not).
-      TRUE only when the dialog is gone: the bridge clicked the button's own window (BM_CLICK), or, after a blind WM_COMMAND, the dialog left the list within 1000 ms.
+      TRUE only when the dialog is gone: the bridge found the button's own window and sent its click (BN_CLICKED), or, after a blind WM_COMMAND, the dialog left the list within 1000 ms.
       FALSE when no dialog appeared within TimeoutMs, at once when the open dialog has no such button or the click was not delivered, and when the dialog stayed. }
     function  DismissDialog(const Button: String; TimeoutMs: Cardinal = ClientDialogTimeoutMs): Boolean;
     { Saves a PNG of a form ('frmMain') or of one control ('frmMain.pnlTop'). Path '' = the main form. }
@@ -1398,7 +1398,7 @@ begin
     try
       Clicked := JsonBool(R, 'clicked');
       Via     := JsonStr(R, 'via');
-      Reason  := JsonStr(R, 'reason');   // when not clicked: 'no_dialog', 'button_not_found' or 'send_failed'
+      Reason  := JsonStr(R, 'reason');   // when not clicked: 'no_dialog', 'button_not_found', 'button_disabled' or 'send_failed'
       TryJsonInt64(R.GetValue('dialogHwnd'), DialogHwnd);   // 0 when absent
     finally
       FreeAndNil(R);
@@ -1408,7 +1408,7 @@ begin
     if GetTickCount64 >= Deadline then EXIT(FALSE);
     Sleep(DialogPollMs);
   until FALSE;
-  if not SameText(Via, 'WM_COMMAND') then EXIT(TRUE);   // BM_CLICK: the button's own window took the click
+  if not SameText(Via, 'WM_COMMAND') then EXIT(TRUE);   // BN_CLICKED (or BM_CLICK from an older bridge): sent for the button's own window
 
   { A blind WM_COMMAND by id answers "clicked" even on a dialog that has no such command.
     The dialog leaves the list only once it really closed: watch the list. }

@@ -45,7 +45,7 @@ constructor TListTreeTool.Create;
 begin
   inherited;
   FName := 'list_tree';
-  FDescription := 'List every form and component in the target app, as a flat array at result.components ' + '(form, name, path, class; optional text, enabled, visible, synthetic). ' + 'Path forms for the other tools: "Form" (the form), "Form.Leaf" (breadth-first search of ' + 'what Form owns, shallowest match wins), "Form.A.B.C" (each segment owned by the previous). ' + 'A path the owner tree cannot resolve is tried again through the visual parents. ' + 'Unnamed components appear as "@TButton#N" (N = current index in the owner; it shifts when ' + 'an earlier sibling is freed); use anchored paths for them.';
+  FDescription := 'List every form and component in the target app, as a flat array at result.components ' + '(form, name, path, class; optional text, hint, enabled, visible, synthetic). ' + 'Path forms for the other tools: "Form" (the form), "Form.Leaf" (breadth-first search of ' + 'what Form owns, shallowest match wins), "Form.A.B.C" (each segment owned by the previous). ' + 'A path the owner tree cannot resolve is tried again through the visual parents. ' + 'Unnamed components appear as "@TButton#N" (N = current index in the owner; it shifts when ' + 'an earlier sibling is freed); use anchored paths for them.';
 end;
 
 

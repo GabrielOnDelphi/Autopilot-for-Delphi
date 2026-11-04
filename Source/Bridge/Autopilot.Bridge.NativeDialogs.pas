@@ -27,8 +27,8 @@ function EnumerateNativeDialogs(const AExclude: array of NativeUInt): TJSONArray
 { Find a native dialog (ATargetDlg=0 -> the topmost one) and click the button picked by ASelector.
   ASelector accepts a role keyword ('ok'/'cancel'/'yes'/'no'/'retry'/'abort'/'ignore'/'close'/'tryagain'/'continue'/'help'), a caption (exact then substring, case-insensitive, '&' accelerator stripped), or a numeric control id.
   Returns TRUE and sets AClickedId / AClickedCaption / AResolvedDlg on a dispatched click.
-  On FALSE, AReason is 'no_dialog' (nothing matched), 'button_not_found', or 'send_failed' (the button was found but SendMessageTimeout did not complete).
-  AVia names the dispatch path actually used: 'BM_CLICK' (we hold the button's own HWND — the button provably exists) or 'WM_COMMAND' (dispatched by control id to a dialog whose button is not enumerable as a child window, e.g. a Task Dialog).
+  On FALSE, AReason is 'no_dialog' (nothing matched), 'button_not_found', 'button_disabled', or 'send_failed' (the button was found but SendMessageTimeout did not complete).
+  AVia names the dispatch path actually used: 'BN_CLICKED' (we hold the button's own HWND - the button provably exists - and send the dialog the notification that button sends on a click) or 'WM_COMMAND' (dispatched by control id to a dialog whose button is not enumerable as a child window, e.g. a Task Dialog).
   The WM_COMMAND path is UNVERIFIABLE: a dialog that has no such command silently ignores the message and the send still completes, so TRUE there means "sent", not "landed" — re-list the dialogs to confirm. }
 function ClickNativeDialogButton(const AExclude: array of NativeUInt; ATargetDlg: NativeUInt;
   const ASelector: String; OUT AClickedId: Integer; OUT AClickedCaption: String;
@@ -399,15 +399,26 @@ begin
         exit;
       end;
 
-    { Same-thread send (the dialog lives on the main thread, where this runs), so the window proc is invoked synchronously: the button's WM_COMMAND reaches the dialog, which calls EndDialog and unwinds its modal loop.
+    { Same-thread send (the dialog lives on the main thread, where this runs), so the window proc is invoked synchronously: the WM_COMMAND reaches the dialog, which calls EndDialog and unwinds its modal loop.
       SMTO_ABORTIFHUNG guards the rare cross-thread dialog.
-      BM_CLICK when we have the button HWND; WM_COMMAND-by-id when we only resolved a standard id (Task Dialog common button with no enumerable child). }
+      BN_CLICKED when we have the button HWND; WM_COMMAND-by-id when we only resolved a standard id (Task Dialog common button with no enumerable child). }
     Res := 0;
     if MatchBtn <> 0
     then
       begin
-        AVia := 'BM_CLICK';
-        Sent := SendMessageTimeout(MatchBtn, BM_CLICK, 0, 0, SMTO_ABORTIFHUNG, 4000, @Res);
+        { A real mouse click does nothing on a disabled button, so neither do we. }
+        if not IsWindowEnabled(MatchBtn) then
+          begin
+            AReason := 'button_disabled';
+            exit;
+          end;
+
+        { Not BM_CLICK: "If the button is in a dialog box and the dialog box is not active, the BM_CLICK message might fail" (https://learn.microsoft.com/en-us/windows/win32/controls/bm-click).
+          Activating the dialog would steal the focus, so we send the dialog the BN_CLICKED notification the button itself sends its parent on a click, with the button's HWND in lParam.
+          Seen failing: a MessageBox shown during start-up of a LightSaber app (DnaBaser5, Win64) ignored BM_CLICK; WM_COMMAND with its id closed it. }
+        AVia := 'BN_CLICKED';
+        WParam := Winapi.Windows.WPARAM((MatchId and $FFFF) or (BN_CLICKED shl 16));
+        Sent := SendMessageTimeout(Dlg, WM_COMMAND, WParam, LPARAM(MatchBtn), SMTO_ABORTIFHUNG, 4000, @Res);
       end
     else
       begin
@@ -421,7 +432,7 @@ begin
 
     { A zero return means the send never completed: the window died between our enumeration and the send, or a dialog owned by a non-main thread was hung and SMTO_ABORTIFHUNG bailed out.
       Only the cross-thread case can actually trip it (for a same-thread window the proc is called directly and the timeout is ignored), but answering clicked:true for a click the OS says never landed would send the driver on to its next step against a dialog that is still up.
-      Res itself is NOT a success signal - BM_CLICK returns zero. }
+      Res itself is NOT a success signal. }
     if Sent = 0 then
       begin
         AReason := 'send_failed';

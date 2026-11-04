@@ -23,7 +23,7 @@ uses
 
 const
   DefaultPollIntervalMs = 100;
-  DefaultWaitTimeoutMs  = 10_000;
+  DefaultWaitTimeoutMs  = 10000;
 
 type
   TWaitForParams = class
