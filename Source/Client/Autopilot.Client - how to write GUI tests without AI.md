@@ -70,8 +70,8 @@ procedure TDemoTests.IncrementCountsUp;
 var
   Before: Integer;
 begin
-  Before := StrToInt(App.GetText('frmMain.lblCounter'));
+  Before := StrToInt(App.GetText('frmMain.lblIncrement'));
   App.Click('frmMain.btnIncrement');
-  Assert.AreEqual(IntToStr(Before + 1), App.GetText('frmMain.lblCounter'));
+  Assert.AreEqual(IntToStr(Before + 1), App.GetText('frmMain.lblIncrement'));
 end;
 ```
