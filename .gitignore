@@ -4,6 +4,8 @@
 !/.gitattributes
 !/README.md
 !/AI-INSTRUCTIONS.md
+!/AI-INSTRUCTIONS - tool reference.md
+!/AI-INSTRUCTIONS - troubleshooting.md
 !/LICENSE
 !/Home page.url
 !/Delphi, in all its glory.url
@@ -12,6 +14,7 @@
 !/DemoFmx/
 !/Resources/
 !/.claude/
+!/Tests/
 
 # Uncomment these types if you want even more clean repository. But be careful.
 # It can make harm to an existing project source. Read explanations below.
@@ -101,6 +104,10 @@ modules/
 /_Release Package
 /DemoVCL-Video
 /Tests/Wire test
+# Run outputs of Tests/E2E tests/Test-AllTools.ps1 ("<OutPrefix><Framework> exchange.txt", "... results.txt", "... screenshot*.png")
+/Tests/E2E tests/* exchange.txt
+/Tests/E2E tests/* results.txt
+/Tests/E2E tests/* screenshot*.png
 /Autopilot.groupproj
 CLAUDE.md
 HandOver.md
