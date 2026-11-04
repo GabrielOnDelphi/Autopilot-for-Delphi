@@ -187,6 +187,8 @@ begin
     except
       { Don't propagate - called from WakeAndStop/destructor paths that must not raise.
         The MCP server will treat the stale file as a dead target on its next connect attempt. }
+      on E: Exception do
+        BridgeLogWarn('bridge', 'DeleteDiscoveryFile failed: ' + E.ClassName + ': ' + E.Message);
     end;
   FDiscoveryPath := '';
 end;
