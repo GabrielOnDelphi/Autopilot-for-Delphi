@@ -20,7 +20,7 @@ uses
 
 const
   ProtocolVersion = 1;
-  BridgeVersion   = '3.5.0';
+  BridgeVersion   = '3.7.0';
 
   { Licence terms: the LICENSE file at LicenseURL.
     The texts only link to it and never say what it allows, so the licence can change without a change here.
