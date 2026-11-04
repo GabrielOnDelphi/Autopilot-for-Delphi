@@ -2790,7 +2790,7 @@ begin
   Cls := AControl.ClassType;
   while Cls <> NIL do
     begin
-      if Cls.ClassNameIs('TCustomComboBoxEx_REDPROOF') then EXIT(TRUE);
+      if Cls.ClassNameIs('TCustomComboBoxEx') then EXIT(TRUE);
       Cls := Cls.ClassParent;
     end;
   Result := FALSE;
