@@ -4,7 +4,7 @@ When the user wants GUI tests that run again and again with no AI (a regression 
 Its methods send the same bridge commands as the MCP tools over the named pipe and turn an error answer into an exception, so a test checks the app with plain `Assert` calls.
 No AI, no MCP server, about 0.8 ms per command.
 Windows targets only (no Android).
-The tool contracts, paths and error codes are in `AI-INSTRUCTIONS.md` at the root of this repository.
+The tool contracts and paths are in `AI-INSTRUCTIONS - tool reference.md`, the error codes in `AI-INSTRUCTIONS.md`, both at the root of this repository.
 
 **Set up the project by copying a demo test project, never from scratch:** `DemoVCL\Push buttons\UnitTesting\Autopilot.DemoTests.dproj` or `DemoFmx\UnitTesting\Autopilot.DemoFmxTests.dproj` - a console DUnitX runner (`.dpr`) plus one test unit.
 In the copy: a new `ProjectGuid` in the `.dproj`; correct relative paths to `Source\Client` and `Source\Bridge` (the `.dpr` uses `Autopilot.Bridge.Core`, `Autopilot.Bridge.Log` and `Autopilot.Client`; the `.dproj` search path also holds `$(BDS)\source\DUnitX`); your own test unit.
