@@ -66,6 +66,7 @@ type
     FDescription : String;
     function BuildSchema: TJSONObject; virtual; abstract;
   public
+    { IMCPTool }
     function GetName: String;
     function GetTitle: String;
     function GetDescription: String;
@@ -86,6 +87,7 @@ type
   public
     constructor Create; virtual;
 
+    { IMCPTool }
     function GetName: String;
     function GetTitle: String;
     function GetDescription: String;
@@ -175,7 +177,7 @@ begin
   try
     Result := ExecuteWithParams(Params);
   finally
-    Params.Free;
+    FreeAndNil(Params);
   end;
 end;
 
