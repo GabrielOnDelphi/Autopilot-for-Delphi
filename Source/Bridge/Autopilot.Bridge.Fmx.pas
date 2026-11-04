@@ -365,11 +365,12 @@ begin
     then Prop := RT.GetProperty('Caption');
     if not IsReadableStringProp(Prop) then exit;
     { Same guard as the VCL bridge: some FMX property getters raise on partially-initialized forms or controls.
-      The exception is swallowed and reported as "no text". }
+      The exception is logged and reported as "no text". }
     try
       AValue := Prop.GetValue(AComp).AsString;
       Result := TRUE;
     except
+      BridgeLogWarn('bridge', 'TryGetTextProperty: ' + AComp.ClassName + '.' + Prop.Name + ' getter raised ' + ExceptObject.ClassName);
       Result := FALSE;
       AValue := '';
     end;
@@ -399,6 +400,7 @@ begin
       AValue := Prop.GetValue(AComp).AsString;
       Result := AValue <> '';
     except
+      BridgeLogWarn('bridge', 'TryGetHint: ' + AComp.ClassName + '.Hint getter raised ' + ExceptObject.ClassName);
       Result := FALSE;
       AValue := '';
     end;
@@ -408,8 +410,8 @@ begin
 end;
 
 
-// Mirror of the VCL twin's TryGetFormGuide: the form's string property AutopilotGuide, for the guide field of list_tree; a non-string one gets a WARN log line.
-function TryGetFormGuide(AForm: TComponent; OUT AGuide: String): Boolean;
+// Mirror of the VCL twin's TryGetFormGuide: the form's string property AutopilotGuide, for the guide field of list_tree; a non-string one gets a WARN log line; a raising getter fills AError for the guideError field.
+function TryGetFormGuide(AForm: TComponent; OUT AGuide, AError: String): Boolean;
 const
   GuidePropName = 'AutopilotGuide';
 var
@@ -420,6 +422,7 @@ begin
   Assert(TThread.CurrentThread.ThreadID = MainThreadID, 'TryGetFormGuide: FMX touched off the main thread');
   Result := FALSE;
   AGuide := '';
+  AError := '';
   Ctx := TRttiContext.Create;
   try
     RT := Ctx.GetType(AForm.ClassType);
@@ -431,7 +434,17 @@ begin
         BridgeLogWarn('bridge', 'list_tree: ' + AForm.Name + '.' + GuidePropName + ' is not a readable string property, so the form node gets no guide');
         exit;
       end;
-    AGuide := Prop.GetValue(AForm).AsString;
+    try
+      AGuide := Prop.GetValue(AForm).AsString;
+    except
+      on E: Exception do
+        begin
+          AGuide := '';
+          AError := E.ClassName + ': ' + E.Message;
+          BridgeLogWarn('bridge', 'list_tree: ' + AForm.Name + '.' + GuidePropName + ' getter raised ' + AError);
+          exit;
+        end;
+    end;
     Result := AGuide <> '';
   finally
     Ctx.Free;
@@ -459,6 +472,7 @@ begin
       AEnabled := Prop.GetValue(AComp).AsBoolean;
       Result := TRUE;
     except
+      BridgeLogWarn('bridge', 'TryGetEnabled: ' + AComp.ClassName + '.Enabled getter raised ' + ExceptObject.ClassName);
       Result := FALSE;
       AEnabled := TRUE;
     end;
@@ -487,6 +501,7 @@ begin
       AVisible := Prop.GetValue(AComp).AsBoolean;
       Result := TRUE;
     except
+      BridgeLogWarn('bridge', 'TryGetVisible: ' + AComp.ClassName + '.Visible getter raised ' + ExceptObject.ClassName);
       Result := FALSE;
       AVisible := TRUE;
     end;
@@ -533,10 +548,10 @@ end;
 
 { Mirror of the VCL twin's IsBoolFamilyType.
   TRUE for the ByteBool / WordBool / LongBool family, INCLUDING a strong alias (`type TFlag = type WordBool`): an alias gets its own typeinfo, so a plain handle comparison misses it and the property stays unwritable.
-  BaseType resolves the alias, and it is a plain record field reached through GetTypeData (TTypeData.BaseType in System.TypInfo.pas) — present in every Delphi version, not a version-gated RTL routine of the ColorToStringExt kind.
+  BaseType resolves the alias, and it is a plain record field reached through GetTypeData (TTypeData.BaseType in System.TypInfo.pas) - present in every Delphi version, not a version-gated RTL routine of the ColorToStringExt kind.
   The RTL discriminates Boolean exactly this way in GetPropValue (System.TypInfo.pas).
   A root enumeration's BaseType points at itself, so plain WordBool matches here too (verified by Test_SetProperty_WordBoolWritesAllBitsSet, which would fail if it did not), and Boolean answers FALSE (it keeps its own branch).
-  Deliberately NOT the RTL's `MinValue < 0` shortcut (GetEnumName in System.TypInfo.pas): a normal enumeration may legally carry a negative ordinal — the RTL declares such types itself (UCollationResult in System.Internal.ICU.pas) — and that test would misread them as booleans.
+  Deliberately NOT the RTL's `MinValue < 0` shortcut (GetEnumName in System.TypInfo.pas): a normal enumeration may legally carry a negative ordinal - the RTL declares such types itself (UCollationResult in System.Internal.ICU.pas) - and that test would misread them as booleans.
   Resolves ONE alias level, same as the RTL's own tests; an alias of an alias is not covered. }
 function IsBoolFamilyType(ATypeInfo: PTypeInfo): Boolean;
 var
@@ -578,6 +593,7 @@ begin
   try
     V := AProp.GetValue(AInstance);
   except
+    BridgeLogWarn('bridge', 'TryReadPropertyAsString: ' + AInstance.ClassName + '.' + AProp.Name + ' getter raised ' + ExceptObject.ClassName);
     exit;
   end;
   case AProp.PropertyType.TypeKind of
@@ -597,6 +613,7 @@ begin
             Result := TRUE;
           except
             // Fall back to raw decimal on any UIConsts failure: a readback must never fail the whole availableProperties response.
+            BridgeLogWarn('bridge', 'TryReadPropertyAsString: ' + AInstance.ClassName + '.' + AProp.Name + ' TAlphaColor formatting raised ' + ExceptObject.ClassName + ', sent as a decimal');
             AValue := IntToStr(V.AsOrdinal);
             Result := TRUE;
           end;
@@ -732,7 +749,8 @@ begin
     Result := TRUE;
   except
     { StrToInt64 inside StringToAlphaColor raises EConvertError on garbage.
-      Swallowed: the caller maps FALSE to a structured unsupported_action error. }
+      Logged; the caller maps FALSE to a structured unsupported_action error. }
+    BridgeLogWarn('bridge', 'TryParseAlphaColor: "' + AStrValue + '" is not a color, StringToAlphaColor raised ' + ExceptObject.ClassName);
     Result := FALSE;
   end;
 end;
@@ -870,6 +888,7 @@ begin
           CurVal := Prop.GetValue(AInstance);
           CanRead := TRUE;
         except
+          BridgeLogWarn('bridge', 'TrySetGenericProperty: ' + AInstance.ClassName + '.' + APropName + ' getter raised ' + ExceptObject.ClassName + ', the write goes through without elision');
           CanRead := FALSE;
         end;
       end;
@@ -1302,7 +1321,7 @@ var
   Visited: TList;
   i: Integer;
   Form: TCommonCustomForm;
-  Guide: String;
+  Guide, GuideError: String;
 begin
   Assert(TThread.CurrentThread.ThreadID = MainThreadID, 'HandleListTree must run on the main thread');
   Result := Default(TBridgeResponse);
@@ -1317,13 +1336,16 @@ begin
         Visited := TList.Create;
         try
           { Emit the form as its own node first, then recurse owned components (including frames).
-            Its Caption read may raise on an unrealized form; TryGetTextProperty swallows that and the node simply lacks a `text` field. }
+            Its Caption read may raise on an unrealized form; TryGetTextProperty logs that and the node simply lacks a `text` field. }
           Visited.Add(Form);
           FormNode := BuildComponentNode(Form.Name, Form.Name, Form);
           Items.AddElement(FormNode);
           AddReparentedField(FormNode, Form, NIL);
-          if TryGetFormGuide(Form, Guide)
-          then FormNode.AddPair('guide', Guide);
+          if TryGetFormGuide(Form, Guide, GuideError)
+          then FormNode.AddPair('guide', Guide)
+          else
+            if GuideError <> ''
+            then FormNode.AddPair('guideError', GuideError);
           WalkComponents(Form.Name, Form.Name, Form, Items, Visited);
         finally
           FreeAndNil(Visited);
@@ -1779,7 +1801,7 @@ begin
   Comp := ResolvePathOrFail(Path, Result);
   if Comp = NIL then exit;
   { A disabled control refuses every property (-32003) except 'Enabled' itself (exact name, any case, no dotted path; TRUE and FALSE).
-    Without that exception a control disabled through set_property could never be enabled again by any tool (Gabriel, 2026-10-07).
+    Without that exception a control disabled through set_property could never be enabled again by any tool.
     click, set_text and set_checked keep their own disabled check. }
   if TryGetEnabled(Comp, Enabled) and not Enabled and not SameText(PropName, 'Enabled') then
     begin
@@ -2270,7 +2292,7 @@ begin
         else AKind := 'integer';
       tkInt64:                                    AKind := 'int64';
       tkEnumeration:
-        // Same bool-family rule as ListReadableProperties above — the two must agree, or the AI sees 'boolean' in availableProperties and 'enum' on the read.
+        // Same bool-family rule as ListReadableProperties above - the two must agree, or the AI sees 'boolean' in availableProperties and 'enum' on the read.
         if (Prop.PropertyType.Handle = TypeInfo(Boolean)) or IsBoolFamilyType(Prop.PropertyType.Handle)
         then AKind := 'boolean'
         else AKind := 'enum';
@@ -2333,7 +2355,7 @@ begin
 
   Comp := ResolvePathOrFail(Path, Result);
   if Comp = NIL then exit;
-  // No Enabled check — reading a disabled control is exactly what a debug session needs.
+  // No Enabled check - reading a disabled control is exactly what a debug session needs.
 
   if not TryReadGenericProperty(Comp, PropName, Value, Kind, ErrCode, ErrMsg, FailedInstance) then
     begin
