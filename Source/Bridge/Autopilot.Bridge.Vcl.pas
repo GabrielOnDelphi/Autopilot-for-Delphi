@@ -453,7 +453,10 @@ end;
 { Reads the form's string property AutopilotGuide, the app developer's description of the form, for the guide field of list_tree.
   FALSE when the form has no such property or it is empty.
   A property of that name that is not a string is not read; it gets one WARN line in the log.
-  A getter that raises is the app developer's bug: AError gets 'EClass: message' for the guideError field and a WARN line, so only this form node loses its guide, not the whole list_tree. }
+  A getter that raises is the app developer's bug: AError gets 'EClass: message' for the guideError field and a WARN line, so only this form node loses its guide, not the whole list_tree.
+  Measured, do not repeat: for a fact about ONE control the guide gives no gain (7 AI runs, all right with or without it), because that control's Hint already reaches list_tree.
+  The guide exists for facts about the WHOLE form: the form's own Hint cannot carry them, the end user sees it as a tooltip.
+  AI agents ignore requests written in a guide and report them to the user (measured 4 of 4). }
 function TryGetFormGuide(AForm: TComponent; OUT AGuide, AError: String): Boolean;
 const
   GuidePropName = 'AutopilotGuide';
@@ -2787,7 +2790,7 @@ begin
   Cls := AControl.ClassType;
   while Cls <> NIL do
     begin
-      if Cls.ClassNameIs('TCustomComboBoxEx') then EXIT(TRUE);
+      if Cls.ClassNameIs('TCustomComboBoxEx_REDPROOF') then EXIT(TRUE);
       Cls := Cls.ClassParent;
     end;
   Result := FALSE;
