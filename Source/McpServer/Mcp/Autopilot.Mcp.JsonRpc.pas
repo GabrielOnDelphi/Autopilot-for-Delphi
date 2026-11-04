@@ -181,7 +181,7 @@ begin
     Resp.AddPair('result', AInner);
     Result := Resp.ToJSON;
   finally
-    Resp.Free;
+    FreeAndNil(Resp);
   end;
 end;
 
@@ -192,18 +192,17 @@ function BuildErrorEnvelope(ACloneOfId: TJSONValue; ACode: Integer; const AMsg: 
 var
   Resp, Err: TJSONObject;
 begin
-  Err := TJSONObject.Create;
-  Err.AddPair('code', TJSONNumber.Create(ACode));
-  Err.AddPair('message', AMsg);
-
   Resp := TJSONObject.Create;
   try
     Resp.AddPair('jsonrpc', '2.0');
     Resp.AddPair('id', ACloneOfId);
-    Resp.AddPair('error', Err);
+    Err := TJSONObject.Create;
+    Resp.AddPair('error', Err);   // attach before filling so Resp owns it from here on
+    Err.AddPair('code', TJSONNumber.Create(ACode));
+    Err.AddPair('message', AMsg);
     Result := Resp.ToJSON;
   finally
-    Resp.Free;
+    FreeAndNil(Resp);
   end;
 end;
 
@@ -292,7 +291,7 @@ begin
         Exit(false);
       end;
   finally
-    Parsed.Free;
+    FreeAndNil(Parsed);
   end;
 
   // Not parseable JSON — fall back to the prefix heuristic.
@@ -411,7 +410,10 @@ begin
       { A tool execution error, an argument the params class refuses included (TMCPSerializer raises EArgumentException for it): a result with isError: true, never a JSON-RPC error.
         https://modelcontextprotocol.io/specification/2025-11-25/server/tools section "Error Handling". }
       on E: Exception do
-        Exit(WrapToolCallContent('Error executing tool: ' + E.Message, true));
+        begin
+          BridgeLogWarn('mcp', 'tools/call ' + ToolName + ': ' + E.ClassName + ': ' + E.Message);
+          Exit(WrapToolCallContent('Error executing tool: ' + E.Message, true));
+        end;
     end;
     if HasImage
     then Result := WrapToolCallImage(ImageData, MimeType, Text)
@@ -490,7 +492,7 @@ begin
         end;
     end;
   finally
-    Parsed.Free;
+    FreeAndNil(Parsed);
   end;
 end;
 
