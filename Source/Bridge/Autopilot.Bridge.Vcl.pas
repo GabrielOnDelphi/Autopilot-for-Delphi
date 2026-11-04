@@ -1,7 +1,7 @@
 ﻿unit Autopilot.Bridge.Vcl;
 
 {=============================================================================================================
-   2026.10.13
+   2026.11.04
    www.GabrielMoraru.com
 --------------------------------------------------------------------------------------------------------------
    Public bridge interface for VCL target projects (Windows only)
@@ -10,6 +10,7 @@
    - StartBridge / StopBridge / IsBridgeRunning; real bodies only when AUTOPILOT is defined
    - Full VCL dispatcher, 12 bridge commands: list_tree, click, get_text, set_text, set_checked, set_property, read_property, screenshot, execute_action, set_keep_awake, dismiss_dialog, send_keys.
      The MCP server's 14 tools are these 12 plus attach and wait_for, which the MCP server handles itself
+   - list_tree: a form with a published string property AutopilotGuide gets its text as the field guide of the form's node
    - screenshot: a whole form, or one control cropped out of it (path), optionally scaled down (maxWidth); a minimized form keeps its labels and other controls without a window
    - TColor and TAlphaColor coercion, one-level dotted propName, parent-inheritance auto-flip (VCL-only), opt-in click mode='message' (click queued to run after the answer, button-class controls)
    - How Autopilot works and how to use it with an AI: the book "Delphi in All Its Glory" Part 5, "AI-Assisted Development for Delphi", chapter "We Need a Hero - Enter Autopilot for Delphi".
@@ -410,6 +411,70 @@ begin
       Result := FALSE;
       AValue := '';
     end;
+  finally
+    Ctx.Free;
+  end;
+end;
+
+
+{ Read the Hint the programmer wrote for AComp (TControl, TMenuItem, TAction, ...).
+  FALSE when AComp has no string Hint or the Hint is empty. }
+function TryGetHint(AComp: TComponent; OUT AValue: String): Boolean;
+var
+  Ctx: TRttiContext;
+  RT: TRttiType;
+  Prop: TRttiProperty;
+begin
+  Assert(GetCurrentThreadId = MainThreadID, 'TryGetHint: VCL touched off the main thread');
+  Result := FALSE;
+  AValue := '';
+  Ctx := TRttiContext.Create;
+  try
+    RT := Ctx.GetType(AComp.ClassType);
+    if RT = NIL then exit;
+    Prop := RT.GetProperty('Hint');
+    if not IsReadableStringProp(Prop) then exit;
+    // Same guard as TryGetEnabled. Prevents leaks in HandleListTree.
+    try
+      AValue := Prop.GetValue(AComp).AsString;
+      Result := AValue <> '';
+    except
+      Result := FALSE;
+      AValue := '';
+    end;
+  finally
+    Ctx.Free;
+  end;
+end;
+
+
+{ Reads the form's string property AutopilotGuide, the app developer's description of the form, for the guide field of list_tree.
+  FALSE when the form has no such property or it is empty.
+  A property of that name that is not a string is not read; it gets one WARN line in the log. }
+function TryGetFormGuide(AForm: TComponent; OUT AGuide: String): Boolean;
+const
+  GuidePropName = 'AutopilotGuide';
+var
+  Ctx: TRttiContext;
+  RT: TRttiType;
+  Prop: TRttiProperty;
+begin
+  Assert(GetCurrentThreadId = MainThreadID, 'TryGetFormGuide: VCL touched off the main thread');
+  Result := FALSE;
+  AGuide := '';
+  Ctx := TRttiContext.Create;
+  try
+    RT := Ctx.GetType(AForm.ClassType);
+    if RT = NIL then exit;
+    Prop := RT.GetProperty(GuidePropName);
+    if Prop = NIL then exit;
+    if not IsReadableStringProp(Prop) then
+      begin
+        BridgeLogWarn('bridge', 'list_tree: ' + AForm.Name + '.' + GuidePropName + ' is not a readable string property, so the form node gets no guide');
+        exit;
+      end;
+    AGuide := Prop.GetValue(AForm).AsString;
+    Result := AGuide <> '';
   finally
     Ctx.Free;
   end;
@@ -1652,7 +1717,7 @@ end;
   'path' is the full dotted path the AI can paste back into click/get_text/set_text args. }
 function BuildComponentNode(const AFormName, ANodePath: String; AComp: TComponent): TJSONObject;
 var
-  S: String;
+  S, HintText: String;
   B: Boolean;
   NodeName: String;
   IsSynthetic: Boolean;
@@ -1667,8 +1732,12 @@ begin
   Result.AddPair('class', AComp.ClassName);
   if IsSynthetic
   then Result.AddPair('synthetic', TJSONBool.Create(TRUE));
-  if TryGetTextProperty(AComp, S)
-  then Result.AddPair('text', S);
+  if not TryGetTextProperty(AComp, S)
+  then S := ''
+  else Result.AddPair('text', S);
+  // 'hint' only when it says something 'text' does not: every extra field costs the AI tokens on every list_tree call.
+  if TryGetHint(AComp, HintText) and (HintText <> S)
+  then Result.AddPair('hint', HintText);
   if TryGetEnabled(AComp, B)
   then Result.AddPair('enabled', TJSONBool.Create(B));
   if TryGetVisible(AComp, B)
@@ -1713,6 +1782,7 @@ var
   Visited: TList;
   i: Integer;
   Form: TCustomForm;
+  Guide: String;
 begin
   Assert(GetCurrentThreadId = MainThreadID, 'HandleListTree must run on the main thread');
   Result := Default(TBridgeResponse);
@@ -1735,6 +1805,8 @@ begin
           FormNode := BuildComponentNode(Form.Name, Form.Name, Form);
           Items.AddElement(FormNode);
           AddReparentedField(FormNode, Form, NIL);   // a form embedded in another form's panel
+          if TryGetFormGuide(Form, Guide)
+          then FormNode.AddPair('guide', Guide);
           WalkComponents(Form.Name, Form.Name, Form, Items, Visited);
         finally
           FreeAndNil(Visited);
