@@ -111,6 +111,13 @@ type
     [Test] procedure Test_SetProperty_ElisionColorEqualReturnsElided;
     [Test] procedure Test_SetProperty_ElisionDottedFontSizeEqualReturnsElided;
     [Test] procedure Test_SetProperty_SuccessResponseAlwaysCarriesElidedField;
+    // A wrong enumeration value or set element answers with the allowed names.
+    [Test] procedure Test_SetProperty_InvalidEnumIdentifierListsAllowedNames;
+    [Test] procedure Test_SetProperty_InvalidSetElementListsElementNames;
+    [Test] procedure Test_SetProperty_EnumOrdinalOutOfRangeIsRejected;
+    [Test] procedure Test_SetProperty_ValidEnumIdentifierAndOrdinalAnswerAsBefore;
+    [Test] procedure Test_AllowedNamesText_CapsALongEnumeration;
+    [Test] procedure Test_AllowedNamesText_NoNamesForSetOfByteOrWordBool;
   end;
 
 
@@ -133,6 +140,15 @@ type
   TFixtureColor = (fcRed, fcGreen, fcBlue, fcYellow);
   TFixtureColors = set of TFixtureColor;
 
+  // 60 names, more than AllowedNamesCap (50), for the cap test of AllowedNamesText.
+  TFixtureBig = (fb01, fb02, fb03, fb04, fb05, fb06, fb07, fb08, fb09, fb10,
+                 fb11, fb12, fb13, fb14, fb15, fb16, fb17, fb18, fb19, fb20,
+                 fb21, fb22, fb23, fb24, fb25, fb26, fb27, fb28, fb29, fb30,
+                 fb31, fb32, fb33, fb34, fb35, fb36, fb37, fb38, fb39, fb40,
+                 fb41, fb42, fb43, fb44, fb45, fb46, fb47, fb48, fb49, fb50,
+                 fb51, fb52, fb53, fb54, fb55, fb56, fb57, fb58, fb59, fb60);
+  TFixtureBytes = set of Byte;
+
   // Strong alias of WordBool for the bool-family set_property/read_property tests.
   // `type WordBool` (not a plain `= WordBool`) so the compiler emits SEPARATE type info:
   // that is exactly the case a `Handle = TypeInfo(WordBool)` comparison misses, which is
@@ -148,7 +164,8 @@ type
     // Float / Set / TStrings.
     FFloatProp: Single;
     FMySetProp: TFixtureColors;
-    FMyLines  : TStrings;            // TStringList behind a TStrings published surface.
+    FMyEnumProp: TFixtureColor;
+    FMyLines  : TStrings;           // TStringList behind a TStrings published surface.
     FMyAlpha  : TAlphaColor;
     FMyColor  : TColor;
     FMyWordBool : WordBool;
@@ -157,6 +174,7 @@ type
   published
     property FloatProp:  Single         read FFloatProp write FFloatProp;
     property MySetProp:  TFixtureColors read FMySetProp write FMySetProp;
+    property MyEnumProp: TFixtureColor  read FMyEnumProp write FMyEnumProp;
     // For dotted-propName tests (MyLines.Text via set_property). TStrings is a
     // tkClass property — same RTTI shape as TMemo.Lines, but backed by a plain
     // TStringList so it works without a window handle.
@@ -534,6 +552,7 @@ begin
   GFixtureForm.CbxDisabled.Checked := False;
   GFixtureForm.FloatProp         := 0.0;
   GFixtureForm.MySetProp         := [];
+  GFixtureForm.MyEnumProp        := fcRed;
   GFixtureForm.Tag               := 0;
   GFixtureForm.Btn.Tag           := 0;   // Btn.Tag (not just the form's Tag) — Test_SetProperty_WritesInteger sets it to 42; without this reset that 42 leaks into later tests on the shared fixture form
   GFixtureForm.MyLines.Text      := 'initial line';
@@ -3799,6 +3818,152 @@ begin
     end, 5000);
   Assert.IsTrue(Ok, 'set_property should return ok');
   Assert.IsTrue(Present, 'every success response must carry elided field');
+end;
+
+
+{ Allowed names in the set_property error ------------------------------------ }
+
+const
+  // The names of TFixtureColor, as declared at the top of this unit.
+  FixtureColorNames = '; allowed: fcRed, fcGreen, fcBlue, fcYellow';
+
+
+// One set_property call on FixtureForm. AOk is TRUE for a success answer; otherwise ACode and AMsg hold error.code and error.message.
+procedure SetFixtureProp(const APipeName, APropName, AValue: String; OUT AOk: Boolean; OUT ACode: Integer; OUT AMsg: String);
+var
+  Ok: Boolean;
+  Code: Integer;
+  Msg: String;
+begin
+  Ok   := FALSE;
+  Code := 0;
+  Msg  := '';
+  RunOnWorkerAndPump(
+    procedure
+    var
+      Client: TBridgeTestClient;
+      Args, Resp: TJSONObject;
+      ErrV, MsgV: TJSONValue;
+    begin
+      Client := TBridgeTestClient.Create;
+      try
+        Assert.IsTrue(Client.ConnectAndHandshake(APipeName, 2000), 'connect');
+        Args := TJSONObject.Create;
+        Args.AddPair('path', 'FixtureForm');
+        Args.AddPair('propName', APropName);
+        Args.AddPair('value', AValue);
+        Resp := Client.Call(300, 'set_property', Args);
+        try
+          Ok   := GetOkResult(Resp) <> NIL;
+          Code := GetErrorCode(Resp);
+          ErrV := Resp.GetValue('error');
+          if ErrV is TJSONObject then
+            begin
+              MsgV := TJSONObject(ErrV).GetValue('message');
+              if MsgV is TJSONString then Msg := TJSONString(MsgV).Value;
+            end;
+        finally
+          FreeAndNil(Resp);
+        end;
+      finally
+        FreeAndNil(Client);
+      end;
+    end, 5000);
+  AOk   := Ok;
+  ACode := Code;
+  AMsg  := Msg;
+end;
+
+
+procedure TBridgeTests.Test_SetProperty_InvalidEnumIdentifierListsAllowedNames;
+var
+  Ok: Boolean;
+  Code: Integer;
+  Msg: String;
+begin
+  GFixtureForm.MyEnumProp := fcGreen;
+  SetFixtureProp(FPipeName, 'MyEnumProp', 'fcPuce', Ok, Code, Msg);
+  Assert.IsFalse(Ok, 'a wrong enumeration identifier must fail');
+  Assert.AreEqual(ErrUnsupportedAction, Code, 'a wrong enumeration identifier must answer unsupported_action: ' + Msg);
+  Assert.AreEqual('MyEnumProp expects an enum identifier or ordinal; got "fcPuce"' + FixtureColorNames, Msg, 'the error must name every identifier of TFixtureColor');
+  Assert.AreEqual(Ord(fcGreen), Ord(GFixtureForm.MyEnumProp), 'the property must stay unchanged');
+end;
+
+
+procedure TBridgeTests.Test_SetProperty_InvalidSetElementListsElementNames;
+var
+  Ok: Boolean;
+  Code: Integer;
+  Msg: String;
+begin
+  GFixtureForm.MySetProp := [fcBlue];
+  SetFixtureProp(FPipeName, 'MySetProp', '[fcRed,fcPuce]', Ok, Code, Msg);
+  Assert.IsFalse(Ok, 'a wrong set element must fail');
+  Assert.AreEqual(ErrUnsupportedAction, Code, 'a wrong set element must answer unsupported_action: ' + Msg);
+  Assert.AreEqual('MySetProp expects a set literal like "[biSystemMenu,biMinimize]"; got "[fcRed,fcPuce]"' + FixtureColorNames, Msg, 'the error must name every element of the set''s element type');
+  Assert.IsTrue(GFixtureForm.MySetProp = [fcBlue], 'the property must stay unchanged');
+end;
+
+
+// An ordinal outside 0..3 was written as is before (TValue.FromOrdinal does not check the range), leaving an invalid TFixtureColor in the field.
+procedure TBridgeTests.Test_SetProperty_EnumOrdinalOutOfRangeIsRejected;
+var
+  Ok: Boolean;
+  Code: Integer;
+  Msg: String;
+begin
+  GFixtureForm.MyEnumProp := fcGreen;
+  SetFixtureProp(FPipeName, 'MyEnumProp', '99', Ok, Code, Msg);
+  Assert.IsFalse(Ok, 'ordinal 99 must fail');
+  Assert.AreEqual(ErrUnsupportedAction, Code, 'ordinal 99 must answer unsupported_action: ' + Msg);
+  Assert.AreEqual('MyEnumProp expects an ordinal in 0..3; got "99"' + FixtureColorNames, Msg, 'the error must give the range and the names');
+  Assert.AreEqual(Ord(fcGreen), Ord(GFixtureForm.MyEnumProp), 'ordinal 99 must not be written');
+
+  SetFixtureProp(FPipeName, 'MyEnumProp', '-1', Ok, Code, Msg);
+  Assert.IsFalse(Ok, 'ordinal -1 must fail');
+  Assert.AreEqual(ErrUnsupportedAction, Code, 'ordinal -1 must answer unsupported_action: ' + Msg);
+  Assert.AreEqual(Ord(fcGreen), Ord(GFixtureForm.MyEnumProp), 'ordinal -1 must not be written');
+end;
+
+
+procedure TBridgeTests.Test_SetProperty_ValidEnumIdentifierAndOrdinalAnswerAsBefore;
+var
+  Ok: Boolean;
+  Code: Integer;
+  Msg: String;
+begin
+  GFixtureForm.MyEnumProp := fcRed;
+  SetFixtureProp(FPipeName, 'MyEnumProp', 'fcYellow', Ok, Code, Msg);
+  Assert.IsTrue(Ok, 'a valid identifier must succeed: ' + Msg);
+  Assert.AreEqual(Ord(fcYellow), Ord(GFixtureForm.MyEnumProp), 'the identifier must be written');
+
+  SetFixtureProp(FPipeName, 'MyEnumProp', '3', Ok, Code, Msg);   // the highest ordinal, the edge of the range check
+  Assert.IsTrue(Ok, 'ordinal 3 must succeed: ' + Msg);
+  Assert.AreEqual(Ord(fcYellow), Ord(GFixtureForm.MyEnumProp), 'ordinal 3 is fcYellow');
+
+  SetFixtureProp(FPipeName, 'MyEnumProp', '0', Ok, Code, Msg);   // the lowest ordinal
+  Assert.IsTrue(Ok, 'ordinal 0 must succeed: ' + Msg);
+  Assert.AreEqual(Ord(fcRed), Ord(GFixtureForm.MyEnumProp), 'ordinal 0 is fcRed');
+end;
+
+
+procedure TBridgeTests.Test_AllowedNamesText_CapsALongEnumeration;
+var
+  S: String;
+begin
+  S := AllowedNamesText(TypeInfo(TFixtureBig));
+  Assert.IsTrue(S.StartsWith('; allowed: fb01, fb02, fb03,'), 'the list must start with the first names: ' + S);
+  Assert.IsTrue(S.EndsWith(', fb49, fb50, ... (60 in all)'), 'the list must stop after 50 names and give the total: ' + S);
+  Assert.AreEqual(0, Pos('fb51', S), 'name 51 must not be listed: ' + S);
+  Assert.AreEqual(FixtureColorNames, AllowedNamesText(TypeInfo(TFixtureColors)), 'a set must list the names of its element type');
+end;
+
+
+procedure TBridgeTests.Test_AllowedNamesText_NoNamesForSetOfByteOrWordBool;
+begin
+  Assert.AreEqual('', AllowedNamesText(TypeInfo(TFixtureBytes)), 'a set of Byte has no names to list');
+  Assert.AreEqual('', AllowedNamesText(TypeInfo(WordBool)), 'WordBool (MinValue < 0) must list nothing: GetEnumName answers True/False there');
+  Assert.AreEqual('', AllowedNamesText(TypeInfo(Integer)), 'an Integer has no names to list');
 end;
 
 

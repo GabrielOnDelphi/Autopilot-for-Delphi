@@ -1,6 +1,9 @@
 ﻿PROGRAM Autopilot.DemoFmx;
 
 (*=====================================================
+   2026.11.04
+   www.GabrielMoraru.com
+-------------------------------------------------------- 
    2026.06.10 — Android64 target added (Phase B). Same source, same StartBridge
                 call: on Android the bridge listens on an AF_UNIX abstract socket.
    2026.05.14

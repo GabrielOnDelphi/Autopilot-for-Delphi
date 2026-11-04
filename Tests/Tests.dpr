@@ -48,7 +48,8 @@ USES
   Tests.LeakSuppressor        in 'Tests.LeakSuppressor.pas',
   Tests.ErrorCodes            in 'Tests.ErrorCodes.pas',
   Tests.Bridge.KeyNames       in 'Tests.Bridge.KeyNames.pas',
-  Tests.Bridge.Guide          in 'Tests.Bridge.Guide.pas';
+  Tests.Bridge.Guide          in 'Tests.Bridge.Guide.pas',
+  Tests.Bridge.EventHandlers  in 'Tests.Bridge.EventHandlers.pas';
 
 VAR
   Runner       : ITestRunner;

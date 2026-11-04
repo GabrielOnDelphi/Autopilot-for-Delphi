@@ -197,6 +197,11 @@ Examples:
 
 **Supported property kinds:** string (and its L/W/U variants), integer, int64, boolean, other enumerations (by identifier `'poDesigned'` or ordinal `'1'`), set of enumeration, float (Single / Double / TDateTime), TAlphaColor (FMX), TColor (VCL).
 
+**A wrong enumeration value or set element lists the allowed identifiers** in the `-32005` message (at most 50, then `... (<N> in all)`), so the next call can use one of them.
+An ordinal outside the enumeration's range is rejected the same way; it is never written.
+Example: `set_property(path='frmMain.pnlA', propName='Align', value='Fast')` answers `-32005` with `Align expects an enum identifier or ordinal; got "Fast"; allowed: alNone, alTop, alBottom, alLeft, alRight, alClient, alCustom`.
+A correct value answers as before, and `availableProperties` (the `-32006` list) does not carry these names.
+
 **Disabled controls:** on a disabled control `set_property` answers `-32003 control_disabled`, with one exception: the property `Enabled` itself (that exact name in any letter case, no dotted path) may be set to `true` or `false`, so a control you disabled with `set_property` can be enabled again.
 `false` on a control that is already disabled answers `elided: true`.
 
@@ -212,7 +217,7 @@ To restore inheritance, write `ParentFont:=true` (or the matching `Parent<X>`) a
 
 `read_property(path, propName, pid?)`
 
-Returns any readable published property via RTTI; the `value` string is exactly what `set_property` accepts back.
+Returns any readable published property via RTTI; the `value` string is exactly what `set_property` accepts back (except for an event, see "Events" below).
 Examples:
 
 - `read_property(path='frmMain.btnSave', propName='Tag')` → `{value: '42', kind: 'integer'}`
@@ -220,10 +225,21 @@ Examples:
 - `read_property(path='frmMain.rectBox', propName='Fill.Color')` → `{value: 'claRed', kind: 'alphacolor'}` (a named `TAlphaColor`, VCL and FMX); a color with no name reads as `'#AARRGGBB'`, e.g. `{value: '#FFFF8000', kind: 'alphacolor'}`
 - `read_property(path='frmMain.btnSave', propName='Font.Size')` → `{value: '14', kind: 'integer'}` (one level deep)
 - `read_property(path='frmMain.pnlToolbar', propName='BevelEdges')` → `{value: '[beLeft,beTop]', kind: 'set'}`
+- `read_property(path='frmMain.btnSave', propName='OnClick')` → `{value: 'TfrmMain.btnSaveClick', kind: 'event', unit: 'MainForm'}` (an event: the routine that runs; grep the unit for it)
+
+**Events (kind `event`):** reading an event property (`OnClick`, `OnChange`, an action's `OnExecute`, also dotted: `Action.OnExecute`) names the handler routine, so you can go from a control on screen to its source code.
+The `value` is never something `set_property` accepts: `set_property` on an event answers `-32005 unsupported_action` and never assigns a handler.
+
+- A published method: `value` = `<ClassName>.<MethodName>`, `unit` = the unit of the class that declares it. For a handler declared in a base form class, that is the base class and its unit, not the class of the running form.
+- No handler: `value: ''`, no `unit` field.
+- A method that is not published (assigned in code to a private method), whose name RTTI does not hold: `value: '(unpublished method of TfrmMain)'`, `unit` = the unit of that class. The parentheses mark it: it is not a routine name.
+- A handler with no instance (a plain routine put into a method pointer): `value: '(routine without an instance)'`, no `unit` field.
+- A class-method handler (a `class procedure` assigned to an event) is not supported.
 
 **It works on a disabled control:** reading one is a normal debug case ("why is btnSave greyed out? what is its Tag? its Action.Enabled?").
 
-**Unknown `propName`:** the `-32006 rtti_property_missing` error carries `error.data.availableProperties` (`{name, kind, currentValue?}` entries, the same list `set_property` answers), with the read-only properties listed too.
+**Unknown `propName`:** the `-32006 rtti_property_missing` error carries `error.data.availableProperties` (`{name, kind, currentValue?}` entries, the same list `set_property` answers), with the read-only properties and the events (kind `event`) listed too.
+An event carries `currentValue` (its handler text) only when a handler is assigned.
 
 **Class-typed leaves** (`Font`, `Brush`, `Lines`, `Fill`) cannot be read directly: the answer is `unsupported_action`, with a hint to use a dotted `propName` (`Font.Size`, `Lines.Text`, `Fill.Color`).
 

@@ -1,7 +1,9 @@
 ﻿PROGRAM Autopilot.PushBtnsDemo;
 
 (*=====================================================
-   2026.05.12
+   2026.11.04
+   www.GabrielMoraru.com
+-------------------------------------------------------- 
    Autopilot demo target — VCL.
 
    Drops two lines into a regular VCL project:
@@ -11,9 +13,10 @@
    AUTOPILOT must be in the project's conditional defines — otherwise StartBridge
    is a no-op and the bridge units only contribute their (always-compiling) INTERFACE.
 
-   Step by step, with an AI driving this demo: the book "Delphi in All Its Glory" Part 5,
-   "AI-Assisted Development for Delphi", chapter "We Need a Hero - Enter Autopilot for Delphi".
-   https://gabrielmoraru.com/the-delphi-in-all-its-glory-book-5-ai-assisted-development-for-delphi/
+   For details about driving this demo with the AI 
+   see "AI-Assisted Development for Delphi" book, 
+   chapter "We Need a Hero - Enter Autopilot for Delphi".
+   www.gabrielmoraru.com/publications-citations/
 =====================================================*)
 
 USES

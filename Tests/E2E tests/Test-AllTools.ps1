@@ -102,8 +102,8 @@ $M = $Maps[$Framework]
 # Expectations that differ by framework, all from the contract ("AI-INSTRUCTIONS - tool reference.md", section click: "Other controls fall back to OnClick(Self):
 # ... every FMX control without an action"; CLAUDE.md "TColor coercion is VCL-only", "Parent-inheritance auto-flip (VCL only)").
 $Fw = @{
-  VCL = @{ DefaultVia = 'click';   CheckedProp = 'Checked';   CheckOn = 'checked'; CheckOff = 'unchecked'; DialogCaption = 'Native Dialog' }
-  FMX = @{ DefaultVia = 'onclick'; CheckedProp = 'IsChecked'; CheckOn = 'on';      CheckOff = 'off';       DialogCaption = 'Warning' }
+  VCL = @{ DefaultVia = 'click';   CheckedProp = 'Checked';   CheckOn = 'checked'; CheckOff = 'unchecked'; DialogCaption = 'Native Dialog'; FormClass = 'TfrmMain';    FormUnit = 'FormMain' }
+  FMX = @{ DefaultVia = 'onclick'; CheckedProp = 'IsChecked'; CheckOn = 'on';      CheckOff = 'off';       DialogCaption = 'Warning';       FormClass = 'TfrmFmxMain'; FormUnit = 'FormFmxMain' }
 }
 $F = $Fw[$Framework]
 
@@ -721,6 +721,26 @@ try {
     Case 'set_property: a property that does not exist' ($r.IsError -and ($r.Code -eq -32006) -and ($avail -gt 0)) 'isError=true, error.code -32006, error.data.availableProperties not empty' "code $($r.Code), $avail availableProperties: $(Short $r.Msg 150)"
     $r = ReadProp $M.Panel 'NoSuchProp'
     ExpectCode 'read_property: a property that does not exist' $r -32006
+
+    # A wrong enumeration value or set element names the allowed identifiers ("AI-INSTRUCTIONS - tool reference.md", section set_property).
+    # TAnchorKind (System.UITypes) is the same on both frameworks; Align is TAlign (alClient) on VCL and TAlignLayout (Client) on FMX.
+    $r = SetProp $M.Panel 'Anchors' '[akLeft,akNowhere]'
+    Case 'set_property: a wrong set element lists the element names' ($r.IsError -and ($r.Code -eq -32005) -and ([string]$r.Msg).Contains('; allowed: akLeft, akTop, akRight, akBottom')) "error.code -32005, message has '; allowed: akLeft, akTop, akRight, akBottom'" (Describe $r)
+    if ($IsVcl) { $alignName = 'alClient' } else { $alignName = 'Client' }
+    $r = SetProp $M.Panel 'Align' 'Nowhere'
+    Case 'set_property: a wrong enumeration identifier lists the allowed names' ($r.IsError -and ($r.Code -eq -32005) -and ([string]$r.Msg).Contains('; allowed: ') -and ([string]$r.Msg).Contains($alignName)) "error.code -32005, message has '; allowed: ' and '$alignName'" (Describe $r)
+    $r = SetProp $M.Panel 'Align' '99'
+    Case 'set_property: an enumeration ordinal out of range is rejected' ($r.IsError -and ($r.Code -eq -32005) -and ([string]$r.Msg).Contains('expects an ordinal in 0..') -and ([string]$r.Msg).Contains($alignName)) "error.code -32005, message has 'expects an ordinal in 0..' and '$alignName'" (Describe $r)
+
+    # Events, kind 'event': the handler routine and its unit ("AI-INSTRUCTIONS - tool reference.md", section read_property). Both demos name their handlers the same way.
+    $r = ReadProp $M.Button 'OnClick'
+    Case 'read_property: event OnClick names its handler' ((IsOk $r) -and ([string]$r.J.result.value -ceq "$($F.FormClass).btnIncrementClick") -and ($r.J.result.kind -eq 'event') -and ([string]$r.J.result.unit -ceq $F.FormUnit)) "value '$($F.FormClass).btnIncrementClick', kind event, unit '$($F.FormUnit)'" (Describe $r)
+    $r = ReadProp $M.Label 'OnClick'
+    Case 'read_property: event with no handler' ((IsOk $r) -and ([string]$r.J.result.value -ceq '') -and ($r.J.result.kind -eq 'event')) "value '', kind event" (Describe $r)
+    $r = ReadProp $M.Action 'OnExecute'
+    Case 'read_property: action OnExecute names its handler' ((IsOk $r) -and ([string]$r.J.result.value -ceq "$($F.FormClass).actFixtureExecute") -and ($r.J.result.kind -eq 'event')) "value '$($F.FormClass).actFixtureExecute', kind event" (Describe $r)
+    $r = SetProp $M.Button 'OnClick' "$($F.FormClass).btnIncrementClick"
+    ExpectCode 'set_property: an event cannot be assigned' $r -32005
   }
 
   Section 'execute_action' {

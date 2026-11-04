@@ -1,7 +1,9 @@
 PROGRAM Autopilot.DemoCalc;
 
 (*=====================================================
-   2026.06.22
+   2026.11.04
+   www.GabrielMoraru.com
+-------------------------------------------------------- 
    Autopilot video-demo target -- VCL.
 
    Same two-line bridge integration as DemoVCL:
