@@ -39,11 +39,11 @@
 {$R *.res}   // Version resource (SciVance Tech., from the VerInfo keys of the .dproj). A build creates the .res from the .dproj when it is missing.
 
 USES
-  madListHardware,
-  madListProcesses,
   {$IFDEF madshi}
   madExcept,                     // Must stay first: its initialization installs the unhandled-exception hook.
   madLinkDisAsm,                 // Disassembles the faulting frames into the report.
+  madListHardware,
+  madListProcesses,
   madListModules,                // Lists loaded modules in the report.
   {$ENDIF}
   System.SysUtils,
@@ -62,7 +62,6 @@ USES
   Autopilot.Mcp.AdbForward     in 'Common\Autopilot.Mcp.AdbForward.pas',
   Autopilot.Mcp.TargetMode     in 'Autopilot.Mcp.TargetMode.pas',
   Autopilot.Mcp.CrashReport    in 'Autopilot.Mcp.CrashReport.pas',
-  Autopilot.Mcp.UsageCounter   in 'Autopilot.Mcp.UsageCounter.pas',
   Autopilot.Mcp.ToolBase       in 'Autopilot.Mcp.ToolBase.pas',
   Autopilot.Mcp.Tool.Attach      in 'Autopilot.Mcp.Tool.Attach.pas',
   Autopilot.Mcp.Tool.ListTree    in 'Autopilot.Mcp.Tool.ListTree.pas',
@@ -124,7 +123,6 @@ begin
   {$ENDIF}
 
   BridgeLogInfo('license', LicenseHint);
-  TrackUsage;
 
   // Transport selection. No flag: the Windows named-pipe path. The `--target adb:<hostPort>` flag routes
   // every command over a loopback socket that `adb forward` has tunnelled to an Android target's bridge,
