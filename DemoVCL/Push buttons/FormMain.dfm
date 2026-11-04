@@ -2100,11 +2100,12 @@ object frmMain: TfrmMain
     Height = 15
     Caption = 'Autopilot demo - target app for end-to-end testing.'
   end
-  object lblCounter: TLabel
+  object lblIncrement: TLabel
     Left = 224
     Top = 176
-    Width = 6
+    Width = 113
     Height = 15
+    Hint = 'lblIncrement'
     Caption = '0'
   end
   object lblNameEcho: TLabel
@@ -2147,10 +2148,10 @@ object frmMain: TfrmMain
   object lblCheckState: TLabel
     Left = 224
     Top = 252
-    Width = 5
+    Width = 66
     Height = 15
     Hint = 'Test fixture: chkFixture writes its state here'
-    Caption = '-'
+    Caption = 'Checkbox is:'
   end
   object sbAction: TSpeedButton
     Left = 224
@@ -2174,6 +2175,7 @@ object frmMain: TfrmMain
     Top = 168
     Width = 200
     Height = 32
+    Hint = 'btnIncrement'
     Caption = 'Increment'
     TabOrder = 0
     OnClick = btnIncrementClick
@@ -2183,7 +2185,9 @@ object frmMain: TfrmMain
     Top = 212
     Width = 200
     Height = 23
+    Hint = 'edtName'
     TabOrder = 1
+    Text = 'Autopilot is not cool'
     OnChange = edtNameChange
     OnKeyDown = edtNameKeyDown
   end

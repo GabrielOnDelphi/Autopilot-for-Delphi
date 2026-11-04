@@ -21,9 +21,9 @@ uses
   DUnitX.Loggers.Console,
   DUnitX.Loggers.Xml.NUnit,
   DUnitX.TestFramework,
-  Autopilot.Bridge.Core in '..\..\Source\Bridge\Autopilot.Bridge.Core.pas',
-  Autopilot.Bridge.Log  in '..\..\Source\Bridge\Autopilot.Bridge.Log.pas',
-  Autopilot.Client      in '..\..\Source\Client\Autopilot.Client.pas',
+  Autopilot.Bridge.Core in '..\..\..\Source\Bridge\Autopilot.Bridge.Core.pas',
+  Autopilot.Bridge.Log  in '..\..\..\Source\Bridge\Autopilot.Bridge.Log.pas',
+  Autopilot.Client      in '..\..\..\Source\Client\Autopilot.Client.pas',
   DemoTests.Main        in 'DemoTests.Main.pas';
 
 var

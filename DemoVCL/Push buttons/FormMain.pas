@@ -1,14 +1,15 @@
 ﻿unit FormMain;
 
 {=============================================================================================================
-   2026.10.06
+   2026.11.04
    www.GabrielMoraru.com
 --------------------------------------------------------------------------------------------------------------
    - VCL demo form for the Autopilot bridge.
-   - One form with four controls (btnIncrement, lblCounter, edtName, lblNameEcho) to exercise list_tree, click, and get_text end-to-end.
+   - One form with four controls (btnIncrement, lblIncrement, edtName, lblNameEcho) to exercise list_tree, click, and get_text end-to-end.
    - Test fixtures for "Tests\E2E tests\Test-AllTools.ps1": an action bound to a TButton and a TSpeedButton
      (actFixture -> lblActionResult), a check box (chkFixture -> lblCheckState), a label placed on a panel
      (pnlFixture.lblInPanel) for the path rule, and a button whose label changes one second later (btnDelayed -> tmrDelayed -> lblDelayed) for wait_for.
+   - AutopilotGuide (AUTOPILOT builds only): the guide text that list_tree shows on the frmMain node.
 =============================================================================================================}
 
 interface
@@ -22,7 +23,7 @@ type
   TfrmMain = class(TForm)
     imgLogo        : TImage;
     btnIncrement   : TButton;
-    lblCounter     : TLabel;
+    lblIncrement: TLabel;
     edtName        : TEdit;
     lblNameEcho    : TLabel;
     lblHeader      : TLabel;
@@ -66,6 +67,13 @@ type
     FActionRuns: Integer;
     FDelayedRuns: Integer;
     FSaveRuns: Integer;
+  {$IFDEF AUTOPILOT}
+  private
+    function GetAutopilotGuide: string;
+  published
+    // The bridge's list_tree sends this text as the field guide of the frmMain node
+    property AutopilotGuide: string read GetAutopilotGuide;
+  {$ENDIF}
   end;
 
 var
@@ -83,7 +91,7 @@ uses
 procedure TfrmMain.btnIncrementClick(Sender: TObject);
 begin
   Inc(FCounter);
-  lblCounter.Caption := IntToStr(FCounter);
+  lblIncrement.Caption := IntToStr(FCounter);
 end;
 
 
@@ -175,6 +183,21 @@ procedure TfrmMain.mnuAboutClick(Sender: TObject);
 begin
   ShellExecute(Handle, 'open', HomePageUrl, NIL, NIL, SW_SHOWNORMAL);
 end;
+
+
+{$IFDEF AUTOPILOT}
+// Facts about this form, never orders: list_tree shows them on the frmMain node.
+function TfrmMain.GetAutopilotGuide: string;
+const
+  Guide = 'frmMain is a test fixture. ' +
+          'btnDelayed: its result arrives 1 second after the click. ' +
+          'lblDelayed first reads waiting, then Delayed done <N>, where N counts the runs since start. ' +
+          'chkFixture: its OnClick writes checked or unchecked into lblCheckState. ' +
+          'btnIncrement adds 1 to the number in lblIncrement.';
+begin
+  Result := Guide;
+end;
+{$ENDIF}
 
 
 end.

@@ -4,10 +4,10 @@ unit DemoTests.Main;
    2026.10.13
    www.GabrielMoraru.com
 --------------------------------------------------------------------------------------------------------------
-   - Repeatable GUI tests of the VCL demo app (DemoVCL\Autopilot.Demo.exe), with no AI: each test drives the
+   - Repeatable GUI tests of the VCL demo app (DemoVCL\Push buttons\Autopilot.PushBtnsDemo.exe), with no AI: each test drives the
      running app through TAutopilotApp (Autopilot.Client) and checks what the app shows
    - One app for the whole fixture: [SetupFixture] starts it, [TearDownFixture] closes it
-   - Three labels of the demo count up (lblCounter, lblActionResult, lblDelayed). A test reads such a label first
+   - Three labels of the demo count up (lblIncrement, lblActionResult, lblDelayed). A test reads such a label first
      and expects the next value, so the tests pass in any order, and also one at a time (--run)
    - Where the tests look for the app: DemoExePath
 =============================================================================================================}
@@ -47,14 +47,14 @@ uses
   Autopilot.Bridge.Core;   // the error codes: ErrNotFound
 
 
-{ The demo app: the EXE that the environment variable AUTOPILOT_DEMO_EXE names, or else Autopilot.Demo.exe in the
-  folder above this test EXE (DemoVCL\, where Autopilot.Demo.dproj writes it).
+{ The demo app: the EXE that the environment variable AUTOPILOT_DEMO_EXE names, or else Autopilot.PushBtnsDemo.exe in the
+  folder above this test EXE (DemoVCL\Push buttons\, where Autopilot.PushBtnsDemo.dproj writes it).
   An environment variable, not a command-line switch: DUnitX stops with an error at a switch it does not know. }
 function DemoExePath: String;
 begin
   Result := GetEnvironmentVariable('AUTOPILOT_DEMO_EXE');
   if Result = '' then
-    Result := ExpandFileName(ExtractFilePath(ParamStr(0)) + '..\Autopilot.Demo.exe');
+    Result := ExpandFileName(ExtractFilePath(ParamStr(0)) + '..\Autopilot.PushBtnsDemo.exe');
 end;
 
 
@@ -120,9 +120,9 @@ procedure TDemoTests.IncrementCountsUp;
 var
   Before: Integer;
 begin
-  Before := StrToInt(App.GetText('frmMain.lblCounter'));
+  Before := StrToInt(App.GetText('frmMain.lblIncrement'));
   App.Click('frmMain.btnIncrement');
-  Assert.AreEqual(IntToStr(Before + 1), App.GetText('frmMain.lblCounter'));
+  Assert.AreEqual(IntToStr(Before + 1), App.GetText('frmMain.lblIncrement'));
 end;
 
 
