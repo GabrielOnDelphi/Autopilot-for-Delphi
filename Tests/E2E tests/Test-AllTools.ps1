@@ -667,6 +667,7 @@ try {
     Case 'read_property: integer Tag' ((IsOk $r) -and ([string]$r.J.result.value -eq '42') -and ($r.J.result.kind -eq 'integer')) "value '42', kind integer" (Describe $r)
     $r = SetProp $M.Panel 'Tag' '42'
     Case 'set_property: same value again is elided' ((IsOk $r) -and ($r.J.result.elided -eq $true)) 'ok, elided=true' (Describe $r)
+    Case 'set_property: oldValue is the value before the write' ((IsOk $r) -and ([string]$r.J.result.oldValue -eq '42')) "oldValue '42'" (Describe $r)
 
     if ($IsVcl) {
       $r = ReadProp $M.InPanel 'ParentFont'
