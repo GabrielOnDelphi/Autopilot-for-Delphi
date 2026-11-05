@@ -576,6 +576,20 @@ begin
 end;
 
 
+{ Mirror of the VCL twin's TryDescribeEventValue: the handler text of an event property already read into AValueRead.
+  FALSE when AValueRead does not hold a method pointer (type checked before the raw read, never caught). }
+function TryDescribeEventValue(const AValueRead: TValue; OUT AValue, AUnit: String): Boolean;
+begin
+  Assert(TThread.CurrentThread.ThreadID = MainThreadID, 'TryDescribeEventValue: FMX touched off the main thread');
+  AValue := '';
+  AUnit  := '';
+  if AValueRead.Kind <> tkMethod then exit(FALSE);
+  if not AValueRead.IsEmpty   // IsEmpty is TRUE for a method pointer whose Code is NIL: no handler
+  then AValue := DescribeEventHandler(PMethod(AValueRead.GetReferenceToRawData)^, AUnit);   // TValue.AsType<TNotifyEvent> fails on Delphi 13 (Footguns.md)
+  Result := TRUE;
+end;
+
+
 { Mirror of the VCL twin's TryReadPropertyAsString: ListWritableProperties uses it to fill the optional 'currentValue' field of each writable property entry.
   AInstance is TObject (not TComponent), so the helper also works on nested TPersistent classes reached via a dotted propName.
   TAlphaColor is a `type Cardinal` (tkInteger), but its value is formatted as '#AARRGGBB' or 'claName', so the AI can feed it back to set_property unchanged. }
@@ -585,6 +599,7 @@ var
   EnumName: String;
   SetStr: String;
   AlphaStr: String;
+  EventUnit: String;
 begin
   Assert(TThread.CurrentThread.ThreadID = MainThreadID, 'TryReadPropertyAsString: FMX touched off the main thread');
   Result := FALSE;
@@ -656,6 +671,9 @@ begin
       AValue := SetStr;
       Result := TRUE;
     end;
+    tkMethod:
+      // An event: the handler text (events are read-only for the bridge). Only ListReadableProperties reaches this branch: ListWritableProperties skips tkMethod.
+      Result := TryDescribeEventValue(V, AValue, EventUnit);
   end;
 end;
 
@@ -1030,7 +1048,14 @@ begin
                   if Code <> 0 then
                     begin
                       AErrCode := ErrUnsupportedAction;
-                      AErrMsg := APropName + ' expects an enum identifier or ordinal; got "' + AStrValue + '"';
+                      AErrMsg := APropName + ' expects an enum identifier or ordinal; got "' + AStrValue + '"' + AllowedNamesText(Prop.PropertyType.Handle);
+                      exit;
+                    end;
+                  { TValue.FromOrdinal does not check the range (System.Rtti.pas), so an ordinal outside the enumeration would be written as is. }
+                  if (IntVal < TRttiOrdinalType(Prop.PropertyType).MinValue) or (IntVal > TRttiOrdinalType(Prop.PropertyType).MaxValue) then
+                    begin
+                      AErrCode := ErrUnsupportedAction;
+                      AErrMsg := APropName + ' expects an ordinal in ' + IntToStr(TRttiOrdinalType(Prop.PropertyType).MinValue) + '..' + IntToStr(TRttiOrdinalType(Prop.PropertyType).MaxValue) + '; got "' + AStrValue + '"' + AllowedNamesText(Prop.PropertyType.Handle);
                       exit;
                     end;
                   EnumOrd := IntVal;
@@ -1071,7 +1096,7 @@ begin
           on E: Exception do
             begin
               AErrCode := ErrUnsupportedAction;
-              AErrMsg := APropName + ' expects a set literal like "[biSystemMenu,biMinimize]"; got "' + AStrValue + '"';
+              AErrMsg := APropName + ' expects a set literal like "[biSystemMenu,biMinimize]"; got "' + AStrValue + '"' + AllowedNamesText(Prop.PropertyType.Handle);
               exit;
             end;
         end;
@@ -1763,6 +1788,8 @@ begin
 end;
 
 
+function TryReadGenericProperty(AInstance: TObject; const APropName: String; OUT AValue, AKind, AUnit: String; OUT AErrCode: Integer; OUT AErrMsg: String; OUT AFailedInstance: TObject): Boolean; forward;
+
 function HandleSetProperty(const AReq: TBridgeRequest): TBridgeResponse;
 var
   PathVal, NameVal, ValueVal: TJSONValue;
@@ -1774,6 +1801,8 @@ var
   Wrap: TJSONObject;
   FailedInstance: TObject;
   Elided: Boolean;
+  HasOld: Boolean;
+  OldValue, OldKind, OldUnit: String;
 begin
   Assert(TThread.CurrentThread.ThreadID = MainThreadID, 'HandleSetProperty must run on the main thread');
   Result := Default(TBridgeResponse);
@@ -1810,6 +1839,10 @@ begin
       exit;
     end;
 
+  { The value before the write, for the answer's 'oldValue'. A failed read (write-only property) only leaves the field out.
+    TrySetGenericProperty resets ErrCode, ErrMsg and FailedInstance first, so the read may use them. }
+  HasOld := TryReadGenericProperty(Comp, PropName, OldValue, OldKind, OldUnit, ErrCode, ErrMsg, FailedInstance);
+
   if not TrySetGenericProperty(Comp, PropName, StrValue, ErrCode, ErrMsg, FailedInstance, Elided) then
     begin
       Result.Ok := FALSE;
@@ -1837,6 +1870,8 @@ begin
   Wrap.AddPair('value', StrValue);
   // Write-side elision: TRUE when the live value already equalled the coerced new value and the bridge skipped Prop.SetValue (so OnChange did not fire).
   Wrap.AddPair('elided', TJSONBool.Create(Elided));
+  if HasOld
+  then Wrap.AddPair('oldValue', OldValue);
   Result.Ok := TRUE;
   Result.ResultJson := Wrap;
 end;
@@ -2151,6 +2186,7 @@ begin
             tkSet:                                      KindName := 'set';
             tkFloat:                                    KindName := 'float';
             tkClass:                                    KindName := 'class';
+            tkMethod:                                   KindName := 'event';   // read_property reads events
           else
             Continue;
           end;
@@ -2160,6 +2196,7 @@ begin
             Node.AddPair('kind', KindName);
             if Prop.PropertyType.TypeKind <> tkClass then
               if TryReadPropertyAsString(AInstance, Prop, CurStr)
+              and ((CurStr <> '') or (Prop.PropertyType.TypeKind <> tkMethod))   // an event with no handler gets no currentValue: a control has many events, most unassigned
               then Node.AddPair('currentValue', CurStr);
             Result.AddElement(Node);   // ownership moves to Result
           except
@@ -2178,9 +2215,10 @@ end;
 
 
 { Resolves a (possibly one-level dotted) propName on AInstance and reads it; FMX twin of the VCL TryReadGenericProperty.
-  No TColor branch: FMX uses TAlphaColor exclusively. }
+  No TColor branch: FMX uses TAlphaColor exclusively.
+  AUnit is set only for an event (kind 'event'): the unit of the handler's class, '' when unknown. }
 function TryReadGenericProperty(AInstance: TObject; const APropName: String;
-                                OUT AValue, AKind: String;
+                                OUT AValue, AKind, AUnit: String;
                                 OUT AErrCode: Integer; OUT AErrMsg: String;
                                 OUT AFailedInstance: TObject): Boolean;
 var
@@ -2190,11 +2228,13 @@ var
   Inner: TObject;
   DotPos: Integer;
   OuterName, InnerName: String;
+  EventValue: TValue;
 begin
   Assert(TThread.CurrentThread.ThreadID = MainThreadID, 'TryReadGenericProperty: FMX touched off the main thread');
   Result := FALSE;
   AValue := '';
   AKind := '';
+  AUnit := '';
   AErrCode := ErrRttiPropertyMissing;
   AErrMsg := '';
   AFailedInstance := AInstance;
@@ -2261,7 +2301,7 @@ begin
       finally
         Ctx.Free;
       end;
-      exit(TryReadGenericProperty(Inner, InnerName, AValue, AKind, AErrCode, AErrMsg, AFailedInstance));
+      exit(TryReadGenericProperty(Inner, InnerName, AValue, AKind, AUnit, AErrCode, AErrMsg, AFailedInstance));
     end;
 
   Ctx := TRttiContext.Create;
@@ -2304,6 +2344,29 @@ begin
         AErrMsg := AInstance.ClassName + '.' + APropName + ' is a class-typed property — use dotted propName (e.g. "' + APropName + '.Inner") to read a leaf';
         exit;
       end;
+      tkMethod:
+      begin
+        // An event: the value names the handler routine, AUnit its unit.
+        AKind := 'event';
+        try
+          EventValue := Prop.GetValue(AInstance);
+        except
+          on E: Exception do
+            begin
+              AErrCode := ErrUnsupportedAction;
+              AErrMsg := AInstance.ClassName + '.' + APropName + ' getter raised ' + E.ClassName;
+              BridgeLogWarn('bridge', 'TryReadGenericProperty: ' + AErrMsg);
+              exit;
+            end;
+        end;
+        if not TryDescribeEventValue(EventValue, AValue, AUnit) then
+          begin
+            AErrCode := ErrUnsupportedAction;
+            AErrMsg := AInstance.ClassName + '.' + APropName + ' returned no method pointer';
+            exit;
+          end;
+        exit(TRUE);
+      end;
     else
       AErrCode := ErrUnsupportedAction;
       AErrMsg := AInstance.ClassName + '.' + APropName + ' has unsupported type kind';
@@ -2328,7 +2391,7 @@ var
   Path, PropName: String;
   Comp: TComponent;
   ErrCode: Integer;
-  ErrMsg, Value, Kind: String;
+  ErrMsg, Value, Kind, HandlerUnit: String;
   Wrap: TJSONObject;
   FailedInstance: TObject;
 begin
@@ -2357,7 +2420,7 @@ begin
   if Comp = NIL then exit;
   // No Enabled check - reading a disabled control is exactly what a debug session needs.
 
-  if not TryReadGenericProperty(Comp, PropName, Value, Kind, ErrCode, ErrMsg, FailedInstance) then
+  if not TryReadGenericProperty(Comp, PropName, Value, Kind, HandlerUnit, ErrCode, ErrMsg, FailedInstance) then
     begin
       Result.Ok := FALSE;
       Result.ErrorCode := ErrCode;
@@ -2381,6 +2444,8 @@ begin
   Wrap.AddPair('propName', PropName);
   Wrap.AddPair('value', Value);
   Wrap.AddPair('kind', Kind);
+  if HandlerUnit <> ''
+  then Wrap.AddPair('unit', HandlerUnit);   // events only: the unit of the handler's class
   Result.Ok := TRUE;
   Result.ResultJson := Wrap;
 end;
