@@ -110,6 +110,9 @@ type
     [Test] procedure Test_SetProperty_ElisionAlphaColorEqualReturnsElided;
     [Test] procedure Test_SetProperty_ElisionColorEqualReturnsElided;
     [Test] procedure Test_SetProperty_ElisionDottedFontSizeEqualReturnsElided;
+    // 'oldValue': the value before the write, in the format set_property accepts.
+    [Test] procedure Test_SetProperty_ReportsOldValueBeforeTheWrite;
+    [Test] procedure Test_SetProperty_ElidedWriteReportsOldValueToo;
     [Test] procedure Test_SetProperty_SuccessResponseAlwaysCarriesElidedField;
     // A wrong enumeration value or set element answers with the allowed names.
     [Test] procedure Test_SetProperty_InvalidEnumIdentifierListsAllowedNames;
@@ -3430,6 +3433,65 @@ begin
   Assert.IsFalse(Elided, 'string-different write must NOT be elided');
   Assert.AreEqual('NewValue', GFixtureForm.Edt.Text, 'live Text should reflect the write');
   Assert.AreEqual(1, ChangesAfter, 'OnChange should fire exactly once on a real write');
+end;
+
+
+// set_property FixtureForm.edtName.<APropName> := AValue. Returns the answer's 'oldValue' ('<missing>' when absent).
+function SetPropertyOldValue(const APipeName, APropName, AValue: String): String;
+var
+  OldValue: String;
+begin
+  OldValue := '<no answer>';
+  RunOnWorkerAndPump(
+    procedure
+    var
+      Client: TBridgeTestClient;
+      Args, Resp, OkRes: TJSONObject;
+      V: TJSONValue;
+    begin
+      Client := TBridgeTestClient.Create;
+      try
+        Assert.IsTrue(Client.ConnectAndHandshake(APipeName, 2000), 'connect');
+        Args := TJSONObject.Create;
+        Args.AddPair('path', 'FixtureForm.edtName');
+        Args.AddPair('propName', APropName);
+        Args.AddPair('value', AValue);
+        Resp := Client.Call(202, 'set_property', Args);
+        try
+          OkRes := GetOkResult(Resp);
+          if OkRes <> nil then
+            begin
+              V := OkRes.GetValue('oldValue');
+              if V is TJSONString
+              then OldValue := TJSONString(V).Value
+              else OldValue := '<missing>';
+            end;
+        finally
+          Resp.Free;
+        end;
+      finally
+        Client.Free;
+      end;
+    end, 5000);
+  Result := OldValue;
+end;
+
+
+procedure TBridgeTests.Test_SetProperty_ReportsOldValueBeforeTheWrite;
+begin
+  Assert.AreEqual('HelloWorld', GFixtureForm.Edt.Text, 'fixture precondition');
+  Assert.AreEqual('HelloWorld', SetPropertyOldValue(FPipeName, 'Text', 'NewValue'), 'oldValue must be the Text before the write');
+  Assert.AreEqual('NewValue', GFixtureForm.Edt.Text, 'the write itself must still happen');
+  // An enumeration: the old value comes back as its identifier, the form set_property accepts.
+  GFixtureForm.Edt.Align := alNone;
+  Assert.AreEqual('alNone', SetPropertyOldValue(FPipeName, 'Align', 'alTop'), 'oldValue of an enumeration must be its identifier');
+end;
+
+
+procedure TBridgeTests.Test_SetProperty_ElidedWriteReportsOldValueToo;
+begin
+  Assert.AreEqual('HelloWorld', GFixtureForm.Edt.Text, 'fixture precondition');
+  Assert.AreEqual('HelloWorld', SetPropertyOldValue(FPipeName, 'Text', 'HelloWorld'), 'an elided write must report oldValue too');
 end;
 
 
