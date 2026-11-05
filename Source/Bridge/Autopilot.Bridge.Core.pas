@@ -16,7 +16,7 @@
 interface
 
 uses
-  System.SysUtils, System.Classes, System.JSON;
+  System.SysUtils, System.Classes, System.JSON, System.TypInfo;
 
 const
   ProtocolVersion = 1;
@@ -139,6 +139,23 @@ type
   { Maps a key name of the send_keys argument keys (case-insensitive) to its virtual-key code. 0 = unknown name.
     The one copy, shared by the VCL and FMX bridges. }
   function KeyNameToVk(const AName: String): Word;
+
+  { The text read_property gives for an event property (kind 'event'), shared by the VCL and FMX bridges.
+    AMethod.Code = NIL (no handler): '' and AUnit ''.
+    A published method: '<ClassName>.<MethodName>', AUnit = the unit of the class that DECLARES it, so for an inherited form the AI opens the base form's .pas.
+    A method that is not published (assigned in code to a private method): '(unpublished method of <ClassName of Data>)', AUnit = that class's unit.
+    AMethod.Data = NIL (a plain routine put into a TMethod): '(routine without an instance)', AUnit ''.
+    AMethod.Data must be an object; a class-method handler (Data = a class reference) is not supported. }
+  function DescribeEventHandler(const AMethod: TMethod; OUT AUnit: String): String;
+
+  { The tail set_property adds to a wrong enumeration value or set element, shared by the VCL and FMX bridges: '; allowed: a, b, c'.
+    ATypeInfo: an enumeration, or a set (then its element type is listed).
+    At most AllowedNamesCap names, then ', ... (<N> in all)'.
+    '' when there are no names to list: a set of Byte or Char, an enumeration whose base type has a negative MinValue (GetEnumName answers 'True'/'False' there). }
+  function AllowedNamesText(ATypeInfo: PTypeInfo): String;
+
+const
+  AllowedNamesCap = 50;
 
 
 implementation
@@ -342,6 +359,63 @@ begin
   if N = 'LEFT'      then exit(vkLeft);
   if N = 'RIGHT'     then exit(vkRight);
   Result := 0;
+end;
+
+
+function DescribeEventHandler(const AMethod: TMethod; OUT AUnit: String): String;
+var
+  Cls: TClass;
+  MethName: String;
+begin
+  AUnit := '';
+  if AMethod.Code = NIL then exit('');
+  if AMethod.Data = NIL then exit('(routine without an instance)');
+
+  Cls := TObject(AMethod.Data).ClassType;
+  MethName := Cls.MethodName(AMethod.Code);   // '' when the method is not in the published method table
+  if MethName = '' then
+    begin
+      AUnit := Cls.UnitName;
+      exit('(unpublished method of ' + Cls.ClassName + ')');
+    end;
+
+  { Walk up to the class that declares the method: a parent whose MethodAddress(MethName) is the same code also has it.
+    A descendant that redeclares the name has a different address, so the walk stops there. }
+  while (Cls.ClassParent <> NIL) and (Cls.ClassParent.MethodAddress(MethName) = AMethod.Code) do
+    Cls := Cls.ClassParent;
+  AUnit := Cls.UnitName;
+  Result := Cls.ClassName + '.' + MethName;
+end;
+
+
+function AllowedNamesText(ATypeInfo: PTypeInfo): String;
+var
+  Data: PTypeData;
+  I: Integer;
+begin
+  Result := '';
+  if ATypeInfo = NIL then exit;
+  if ATypeInfo^.Kind = tkSet then
+    begin
+      Data := GetTypeData(ATypeInfo);
+      if Data^.CompType = NIL then exit;
+      ATypeInfo := Data^.CompType^;
+    end;
+  if ATypeInfo^.Kind <> tkEnumeration then exit;
+  Data := GetTypeData(ATypeInfo);
+  if GetTypeData(Data^.BaseType^)^.MinValue < 0 then exit;   // the same test GetEnumName makes before it answers 'True'/'False'
+
+  for I := Data^.MinValue to Data^.MaxValue do
+    begin
+      if I - Data^.MinValue = AllowedNamesCap then
+        begin
+          Result := Result + ', ... (' + IntToStr(Data^.MaxValue - Data^.MinValue + 1) + ' in all)';
+          break;
+        end;
+      if Result <> '' then Result := Result + ', ';
+      Result := Result + GetEnumName(ATypeInfo, I);
+    end;
+  Result := '; allowed: ' + Result;
 end;
 
 
