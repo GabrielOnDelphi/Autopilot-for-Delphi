@@ -209,6 +209,10 @@ A correct value answers as before, and `availableProperties` (the `-32006` list)
 `elided: false` means a real write happened, and `OnChange` fired (if the control has one).
 The comparison is type-aware: string identity, integer/int64 equality (TAlphaColor/TColor as 32-bit), boolean equality, enumeration/set ordinal equality (so `[fcRed,fcBlue]` elides against `[fcBlue,fcRed]`), float exact bits (no epsilon).
 
+**`oldValue`:** a successful answer (an elided one included) carries the value the property had before the write, in the same form `read_property` gives and `set_property` accepts.
+To undo a change, write `oldValue` back.
+The field is missing only when the property cannot be read (a write-only property).
+
 **Parent-inheritance auto-flip (VCL only):** when a write to `Font.*`, `Color`, `BiDiMode`, `ShowHint`, `DoubleBuffered`, `CustomHint` or `Ctl3D` SUCCEEDS (an elided resend included), the bridge silently (no answer field) sets the matching `Parent<X>:=FALSE`.
 A REJECTED value (bad conversion, read-only inner property) leaves `Parent<X>` untouched.
 To restore inheritance, write `ParentFont:=true` (or the matching `Parent<X>`) afterwards.
