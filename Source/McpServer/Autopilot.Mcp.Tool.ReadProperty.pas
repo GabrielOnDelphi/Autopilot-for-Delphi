@@ -55,7 +55,7 @@ constructor TReadPropertyTool.Create;
 begin
   inherited;
   FName := 'read_property';
-  FDescription := 'Read a published property of a control via RTTI. The returned "value" is in the ' + 'format set_property accepts (TColor "clName"/"#RRGGBB", TAlphaColor ' + '"claName"/"#AARRGGBB", enum identifier, set "[a,b]", bool "true"/"false"). ' + 'Works on disabled controls. Use it to read live values instead of adding ' + 'debug output to the target.';
+  FDescription := 'Read a published property of a control via RTTI. The returned "value" is in the ' + 'format set_property accepts (TColor "clName"/"#RRGGBB", TAlphaColor ' + '"claName"/"#AARRGGBB", enum identifier, set "[a,b]", bool "true"/"false"). ' + 'Works on disabled controls. Use it to read live values instead of adding ' + 'debug output to the target. An event ("OnClick", "OnExecute") gives kind ' + '"event", value "TClass.Method" and "unit": the handler in the source.';
 end;
 
 
