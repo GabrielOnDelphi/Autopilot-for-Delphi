@@ -13,7 +13,7 @@ interface
 
 uses
   Winapi.Windows,
-  System.SysUtils, System.Classes,
+  System.SysUtils, System.Classes, System.SyncObjs,
   Autopilot.Bridge.Transport;
 
 type
@@ -27,7 +27,7 @@ type
     FPipeHandle     : THandle;       // current pipe instance; INVALID_HANDLE_VALUE between client sessions
     FDiscoveryPath  : String;        // %TEMP%\Autopilot\active\<PID>.pipe — empty when not written
     FDiscoveryTried : Boolean;       // the discovery write is attempted ONCE
-    FStopping       : Boolean;       // set by WakeAndStop; AcceptConnection swallows the wake phantom off it
+    FStopping       : Integer;       // 0 = running, 1 = stop requested. Written by WakeAndStop (owner thread), read by the worker thread - hence the interlocked access.
 
     procedure WriteDiscoveryFile;
     procedure DeleteDiscoveryFile;
@@ -256,6 +256,10 @@ end;
 
 procedure TPipeTransport.StartListening;
 begin
+  { The stop request landed while the worker was between two instances: do not arm the listener again, and do not
+    (re)write the discovery file - the owner deletes it in WakeAndStop, and a file written after that would linger. }
+  if FStopping <> 0 then exit;
+
   { Discovery file is best-effort, attempted ONCE (written even if pipe creation later fails).
     If TFile.WriteAllText raises (disk full, permission denied, virus scanner locking the dir), the bridge can still serve clients that already know the pipe name via attach(pid). }
   if not FDiscoveryTried then
@@ -279,6 +283,19 @@ function TPipeTransport.AcceptConnection: Boolean;
 var
   Connected: BOOL;
 begin
+  { The stop request may have landed between StartListening and this call: nobody will ever connect to the instance
+    we just created, and blocking in ConnectNamedPipe here would leave the owner thread waiting for a worker that
+    never comes back. Close the instance and report "no connection". }
+  if FStopping <> 0 then
+    begin
+      if FPipeHandle <> INVALID_HANDLE_VALUE then
+        begin
+          CloseHandle(FPipeHandle);
+          FPipeHandle := INVALID_HANDLE_VALUE;
+        end;
+      exit(FALSE);
+    end;
+
   Connected := ConnectNamedPipe(FPipeHandle, NIL);
   { ConnectNamedPipe returns FALSE with ERROR_PIPE_CONNECTED if a client connected between CreateNamedPipe and ConnectNamedPipe.
     That's actually success.
@@ -292,7 +309,7 @@ begin
 
   { WakeAndStop self-connects via CreateFileW to unblock us - that produces a successful "connection" that must not be handshaken with: serving it on this thread while the main thread concurrently frees handles races the RTL's exception machinery (an access violation in @HandleAnyException).
     Swallow it. }
-  if FStopping then
+  if FStopping <> 0 then
     begin
       DisconnectNamedPipe(FPipeHandle);
       CloseHandle(FPipeHandle);
@@ -327,34 +344,54 @@ var
   WakeClient: THandle;
   Attempts: Integer;
   Err: DWORD;
+  WorkerGone: Boolean;
 begin
   { Order matters: FStopping FIRST, so the self-connect below is recognized as a phantom inside AcceptConnection regardless of which wake mechanism lands. }
-  FStopping := TRUE;
+  TInterlocked.Exchange(FStopping, 1);
 
-  { Wake the worker.
-    Two cooperating mechanisms cover the small race window where the worker is between CreatePipeInstance and ConnectNamedPipe (CSI is a no-op there) and the larger window where it's blocked inside ConnectNamedPipe:
-      (1) CSI cancels in-flight sync I/O.
-      (2) Self-connect via CreateFileW satisfies ConnectNamedPipe. }
-  if (AWorkerThread <> NIL) and (AWorkerThread.Handle <> 0)
-  then CancelSynchronousIo(AWorkerThread.Handle);
+  { Wake the worker, and keep waking until it has left its blocking point.
+    Three windows have to be covered:
+      (a) the worker is blocked inside ConnectNamedPipe, waiting for a client;
+      (b) the worker is blocked reading a frame from a client that connected and then went silent;
+      (c) the worker is between two instances: it has not created the next pipe instance yet, so nothing can connect to it for a moment.
+    (a) and (b): CancelIoEx cancels the I/O pending on the pipe handle - a pending connect or a pending read - whoever issued it.
+    (a) and (c): the phantom self-connect satisfies a pending ConnectNamedPipe, and finds the instance as soon as the worker creates it.
 
-  { Retry briefly.
-    The pipe is in one of three states:
-      (a) Worker already exited via CSI - pipe gone (ERROR_FILE_NOT_FOUND), no wake needed.
-      (b) Worker is past CreatePipeInstance but not yet inside ConnectNamedPipe - pipe exists but transiently busy (ERROR_PIPE_BUSY).
-      (c) Worker is between iterations and CreatePipeInstance hasn't run yet for this loop - pipe gone briefly (ERROR_FILE_NOT_FOUND), comes back within tens of ms.
-    We can't distinguish (a) from (c) without coordination, so retry briefly on FILE_NOT_FOUND too.
-    If the worker is genuinely gone, the owner's WaitFor returns immediately anyway. }
-  for Attempts := 1 to 20 do
+    CancelSynchronousIo is deliberately NOT used here. It blocks the caller until the cancelled I/O actually completes,
+    and for a pipe that wait can last forever: measured on this suite, StopBridge hung inside it with the worker still
+    alive, and the whole test run wedged. CancelIoEx cancels the same I/O and returns without waiting for it - the
+    worker itself completes the cancellation and then exits on the stop flag.
+
+    The loop is bounded (about a second) so a worker that ignores every wake cannot hang the owner thread here;
+    the owner's join afterwards still waits for the worker, as it must. }
+  for Attempts := 1 to 200 do
   begin
+    { Nothing to wake once the worker is gone. }
+    WorkerGone := True;
+    if (AWorkerThread <> NIL) and (AWorkerThread.Handle <> 0) then
+      WorkerGone := WaitForSingleObject(AWorkerThread.Handle, 0) = WAIT_OBJECT_0;
+    if WorkerGone then Break;
+
+    { (a) and (b): cancel the pending I/O on the current instance. }
+    if FPipeHandle <> INVALID_HANDLE_VALUE then
+      CancelIoEx(FPipeHandle, NIL);
+
+    { (a) and (c): the phantom connection.
+      The pipe is in one of three states:
+        - the worker already exited: the pipe is gone (ERROR_FILE_NOT_FOUND) - nothing to wake;
+        - the worker is past CreatePipeInstance but not yet inside ConnectNamedPipe: the pipe exists but is transiently busy (ERROR_PIPE_BUSY);
+        - the worker is between iterations and CreatePipeInstance has not run yet: the pipe is gone briefly and comes back within tens of ms.
+      We cannot tell the first from the third without coordination, so retry briefly on FILE_NOT_FOUND too. }
     WakeClient := CreateFileW(PWideChar(FPipeName), GENERIC_READ or GENERIC_WRITE, 0, NIL, OPEN_EXISTING, 0, 0);
     if WakeClient <> INVALID_HANDLE_VALUE then
       begin
         CloseHandle(WakeClient);
-        Break;
+      end
+    else
+      begin
+        Err := GetLastError;
+        if (Err <> ERROR_PIPE_BUSY) and (Err <> ERROR_ACCESS_DENIED) and (Err <> ERROR_FILE_NOT_FOUND) then Break;
       end;
-    Err := GetLastError;
-    if (Err <> ERROR_PIPE_BUSY) and (Err <> ERROR_ACCESS_DENIED) and (Err <> ERROR_FILE_NOT_FOUND) then Break;
     Sleep(5);
   end;
 

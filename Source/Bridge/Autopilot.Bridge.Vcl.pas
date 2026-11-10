@@ -3904,16 +3904,25 @@ end;
 
 
 procedure StopBridge;
+var
+  Worker: TBridgeWorker;
 begin
   if GLock = NIL then exit;   // never started
   GLock.Enter;
   try
     if GWorker = NIL then exit;
     BridgeLogInfo('bridge', 'StopBridge');
-    GWorker.Terminate;
+    Worker := GWorker;
+    { Clear the global BEFORE the destructor runs.
+      The destructor's join (TThread.WaitFor from the main thread) pumps the message queue, so a request the worker
+      queued a moment ago can still fire its dispatcher while we tear the bridge down - and Dispatch refuses to
+      touch the VCL once GWorker is nil. That guard only works if the global is cleared first, which FreeAndNil
+      does NOT do: it frees the object and nils the variable afterwards. }
+    GWorker := nil;
+    Worker.Terminate;
     { The worker is blocked in the transport's AcceptConnection; its destructor calls the transport's WakeAndStop to unblock it.
       Free triggers the destructor. }
-    FreeAndNil(GWorker);
+    FreeAndNil(Worker);
   finally
     GLock.Leave;
   end;

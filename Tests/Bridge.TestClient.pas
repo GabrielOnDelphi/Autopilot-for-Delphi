@@ -65,9 +65,14 @@ begin
     FPipe := CreateFileW(PWideChar(APipeName), GENERIC_READ or GENERIC_WRITE,
                          0, nil, OPEN_EXISTING, 0, 0);
     if FPipe <> INVALID_HANDLE_VALUE then Break;
-    // ERROR_PIPE_BUSY: a connect made right after the previous client disconnected can arrive before the bridge listens again.
+    // The open can lose a race with the bridge and still be worth retrying:
+    //   ERROR_FILE_NOT_FOUND:      the bridge has not created the instance yet, or it is between two instances.
+    //   ERROR_PIPE_BUSY:           the instance serves another client, or the bridge is between two connections.
+    //   ERROR_PIPE_NOT_CONNECTED:  the bridge closed the instance while we were opening it; it creates the next one right away.
+    // Anything else (ERROR_ACCESS_DENIED: another Windows user) is permanent - give up.
     OpenError := GetLastError;
-    if (OpenError <> ERROR_FILE_NOT_FOUND) and (OpenError <> ERROR_PIPE_BUSY) then Break;
+    if (OpenError <> ERROR_FILE_NOT_FOUND) and (OpenError <> ERROR_PIPE_BUSY) and
+       (OpenError <> ERROR_PIPE_NOT_CONNECTED) then Break;
     Sleep(25);
   end;
   if FPipe = INVALID_HANDLE_VALUE then Exit;
