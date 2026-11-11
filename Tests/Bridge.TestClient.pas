@@ -30,6 +30,9 @@ type
     function  Call(AId: Int64; const ACmd: String; AArgs: TJSONObject;
                    ATimeoutMs: Cardinal = 0): TJSONObject;
 
+    /// Closes the connection. Safe to call twice; Destroy calls it too.
+    procedure Disconnect;
+
     destructor Destroy; override;
   end;
 
@@ -133,11 +136,18 @@ begin
 end;
 
 
-destructor TBridgeTestClient.Destroy;
+procedure TBridgeTestClient.Disconnect;
 begin
   FreeAndNil(FStream);
-  if FPipe <> INVALID_HANDLE_VALUE then
+  if (FPipe <> 0) and (FPipe <> INVALID_HANDLE_VALUE) then
     CloseHandle(FPipe);
+  FPipe := INVALID_HANDLE_VALUE;
+end;
+
+
+destructor TBridgeTestClient.Destroy;
+begin
+  Disconnect;
   inherited;
 end;
 

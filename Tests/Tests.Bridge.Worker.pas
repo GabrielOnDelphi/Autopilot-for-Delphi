@@ -1,12 +1,13 @@
 ﻿unit Tests.Bridge.Worker;
 
 {=============================================================================================================
-   2026.10.07
+   2026.11.10
    www.GabrielMoraru.com
 --------------------------------------------------------------------------------------------------------------
    - DUnitX tests for TBridgeWorker driven through a TFakeTransport (in-memory IBridgeTransport implementation — no pipe, no socket).
    - Pins the transport contract: hello/helloAck handshake, request dispatch, and clean WakeAndStop from a blocked AcceptConnection.
    - Pins that a client which left before its answer is recycled without any EWriteError raise (TRaiseCounter, Win32 only).
+   - Pins the shutdown of the real named-pipe transport (TPipeTransport): a stop that lands between two pipe instances, and a stop while a connected client is silent.
 =============================================================================================================}
 
 interface
@@ -21,14 +22,19 @@ type
     [Test] procedure Test_WorkerServesHandshakeAndRequestThroughFakeTransport;
     [Test] procedure Test_WorkerShutsDownCleanlyFromBlockedAccept;
     [Test] procedure Test_WorkerRecyclesWithoutRaiseWhenClientLeftBeforeAnswer;
+    { The real named-pipe transport (TPipeTransport) at shutdown }
+    [Test] procedure Test_PipeTransport_StopBeforeTheNextInstance_WorkerDoesNotWait;
+    [Test] procedure Test_PipeWorker_StopWhileAClientIsSilent_EndsTheWorker;
   end;
 
 
 implementation
 
 uses
+  Winapi.Windows,
   System.SysUtils, System.Classes, System.SyncObjs, System.JSON,
-  Autopilot.Bridge.Core, Autopilot.Bridge.Transport, Autopilot.Bridge.Worker,
+  Autopilot.Bridge.Core, Autopilot.Bridge.Transport, Autopilot.Bridge.Worker, Autopilot.Bridge.NamedPipe,
+  Bridge.TestClient,
   Tests.RaiseCounter;
 
 
@@ -505,6 +511,113 @@ begin
   finally
     Transport := nil;
   end;
+end;
+
+
+{ The stop request lands while the worker is between two client sessions: it has closed one pipe instance and not yet
+  created the next, so nothing can connect to it. The worker thread is late (here: 1 s, on a loaded PC any delay)
+  and creates the next instance only after WakeAndStop began. It must not then wait in ConnectNamedPipe for a client
+  that never comes: the owner's join would wait for it forever (the StopBridge hang of GitHub pull request 4). }
+procedure TBridgeWorkerTests.Test_PipeTransport_StopBeforeTheNextInstance_WorkerDoesNotWait;
+var
+  PipeName : String;
+  Transport: IBridgeTransport;
+  Late     : TThread;
+  Accepted : Boolean;
+  Finished : Boolean;
+  Release  : THandle;
+begin
+  PipeName  := '\\.\pipe\AutopilotTestWake.' + IntToStr(GetCurrentProcessId) + '.late';
+  Transport := TPipeTransport.Create(PipeName);
+  Accepted  := TRUE;
+  Late := TThread.CreateAnonymousThread(
+    procedure
+    begin
+      TThread.Sleep(1000);                      // the worker thread, delayed between two client sessions
+      Transport.StartListening;
+      Accepted := Transport.AcceptConnection;   // FALSE = woken for shutdown
+    end);
+  Late.FreeOnTerminate := FALSE;
+  Late.Start;
+  try
+    Transport.WakeAndStop(Late);
+    Finished := WaitForSingleObject(Late.Handle, 3000) = WAIT_OBJECT_0;
+    if not Finished then
+      begin
+        { The thread waits in ConnectNamedPipe: connect once, so it comes back and the run can go on. }
+        Release := CreateFileW(PWideChar(PipeName), GENERIC_READ or GENERIC_WRITE, 0, NIL, OPEN_EXISTING, 0, 0);
+        if Release <> INVALID_HANDLE_VALUE
+        then CloseHandle(Release);
+      end;
+    Late.WaitFor;
+  finally
+    FreeAndNil(Late);
+  end;
+  Transport := NIL;
+
+  Assert.IsTrue(Finished, 'after WakeAndStop the worker must not wait for a client');
+  Assert.IsFalse(Accepted, 'a worker woken for shutdown must report no connection');
+end;
+
+
+{ The worker waits for the next request of a client that connected and then went silent.
+  StopBridge must cancel that read, or the owner's join waits until the client leaves. }
+procedure TBridgeWorkerTests.Test_PipeWorker_StopWhileAClientIsSilent_EndsTheWorker;
+var
+  PipeName   : String;
+  Worker     : TBridgeWorker;
+  Client     : TBridgeTestClient;
+  Guard      : TThread;
+  GuardStop  : TEvent;
+  GuardClosed: Boolean;
+  Connected  : Boolean;
+  T0, Elapsed: UInt64;
+begin
+  PipeName := '\\.\pipe\AutopilotTestWake.' + IntToStr(GetCurrentProcessId) + '.silent';
+  Worker := TBridgeWorker.Create(TPipeTransport.Create(PipeName), 'Tests.exe',
+    function(const Req: TBridgeRequest): TBridgeResponse
+    begin
+      Result := Default(TBridgeResponse);
+      Result.Id := Req.Id;
+      Result.ErrorMessage := 'the silent client sends no request';
+    end);
+  Client := TBridgeTestClient.Create;
+  GuardStop := TEvent.Create(NIL, TRUE, FALSE, '');
+  try
+    Connected := Client.ConnectAndHandshake(PipeName, 3000);
+    TThread.Sleep(200);   // the worker now waits for the next request frame
+
+    { If the read is not cancelled, the guard disconnects the client after 5 s: the worker ends and the run goes on. }
+    GuardClosed := FALSE;
+    Guard := TThread.CreateAnonymousThread(
+      procedure
+      begin
+        if GuardStop.WaitFor(5000) <> wrSignaled then
+          begin
+            Client.Disconnect;
+            GuardClosed := TRUE;
+          end;
+      end);
+    Guard.FreeOnTerminate := FALSE;
+    Guard.Start;
+    try
+      T0 := TThread.GetTickCount64;
+      FreeAndNil(Worker);
+      Elapsed := TThread.GetTickCount64 - T0;
+      GuardStop.SetEvent;
+      Guard.WaitFor;   // after this, only this thread touches Client
+    finally
+      FreeAndNil(Guard);
+    end;
+  finally
+    FreeAndNil(Worker);
+    FreeAndNil(Client);
+    FreeAndNil(GuardStop);
+  end;
+
+  Assert.IsTrue(Connected, 'the test client must reach the bridge');
+  Assert.IsFalse(GuardClosed, 'the bridge did not cancel the read: the guard had to disconnect the client');
+  Assert.IsTrue(Elapsed < 3000, 'StopBridge took ' + UIntToStr(Elapsed) + ' ms with a silent client');
 end;
 
 
