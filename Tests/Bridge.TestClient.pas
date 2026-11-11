@@ -68,9 +68,15 @@ begin
     FPipe := CreateFileW(PWideChar(APipeName), GENERIC_READ or GENERIC_WRITE,
                          0, nil, OPEN_EXISTING, 0, 0);
     if FPipe <> INVALID_HANDLE_VALUE then Break;
-    // ERROR_PIPE_BUSY: a connect made right after the previous client disconnected can arrive before the bridge listens again.
+    { Retried until the deadline:
+        ERROR_FILE_NOT_FOUND:     the bridge has not created the instance yet, or it is between two instances.
+        ERROR_PIPE_BUSY:          a connect made right after the previous client disconnected can arrive before the bridge listens again.
+        ERROR_PIPE_NOT_CONNECTED: reported in GitHub pull request 4 as a lost race with the bridge closing the instance.
+                                  Not seen here: a probe of about 3 million opens against an instance recycled in a tight loop got only 0, 2 and 231.
+      Anything else (ERROR_ACCESS_DENIED: another Windows user) is permanent. }
     OpenError := GetLastError;
-    if (OpenError <> ERROR_FILE_NOT_FOUND) and (OpenError <> ERROR_PIPE_BUSY) then Break;
+    if (OpenError <> ERROR_FILE_NOT_FOUND) and (OpenError <> ERROR_PIPE_BUSY) and
+       (OpenError <> ERROR_PIPE_NOT_CONNECTED) then Break;
     Sleep(25);
   end;
   if FPipe = INVALID_HANDLE_VALUE then Exit;
