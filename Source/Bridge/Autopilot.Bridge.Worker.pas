@@ -89,7 +89,7 @@ destructor TBridgeWorker.Destroy;
 begin
   Terminate;
 
-  { Wake the worker out of a blocked AcceptConnection. The transport owns the mechanism (pipe: CancelSynchronousIo on the worker thread + self-connect; socket: one byte to the self-pipe) and marks itself stopping so a phantom wake-connection is swallowed inside AcceptConnection, never served. }
+  { Wake the worker out of a blocked AcceptConnection. The transport owns the mechanism (pipe: CancelIoEx on the pipe instance + self-connect, repeated until this thread has ended; socket: one byte to the self-pipe) and marks itself stopping so a phantom wake-connection is swallowed inside AcceptConnection, never served. }
   if FTransport <> NIL
   then FTransport.WakeAndStop(Self);
 

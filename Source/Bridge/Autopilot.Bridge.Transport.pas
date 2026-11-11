@@ -45,7 +45,7 @@ type
     procedure RecycleConnection;
 
     { Unblock a thread parked in AcceptConnection and mark the transport stopping.
-      AWorkerThread is the worker TThread — the pipe transport needs its Handle for CancelSynchronousIo; the socket transport ignores it (self-pipe byte).
+      AWorkerThread is the worker TThread — the pipe transport waits on its Handle and keeps waking the worker until that thread has ended; the socket transport ignores it (self-pipe byte).
       Must be idempotent and callable from the owner thread while the worker is anywhere in its loop.
       Does not close the listener fds/handles — that happens in the transport's destructor, which runs after the worker has been joined (avoids close-vs-accept races). }
     procedure WakeAndStop(AWorkerThread: TThread);

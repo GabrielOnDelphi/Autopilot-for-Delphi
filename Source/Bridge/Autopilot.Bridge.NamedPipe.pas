@@ -1,19 +1,19 @@
 ﻿unit Autopilot.Bridge.NamedPipe;
 
 {=============================================================================================================
-   2026.09
+   2026.11.10
    www.GabrielMoraru.com
 --------------------------------------------------------------------------------------------------------------
    - Windows-only IBridgeTransport implementation using Win32 named pipes with owner-only ACL
    - Manages the discovery file at %TEMP%\Autopilot\active\<PID>.pipe
-   - Shutdown wake via CancelSynchronousIo + self-connect; absorbs all three named-pipe quirks
+   - Shutdown wake via CancelIoEx + self-connect, repeated until the worker thread has ended; absorbs all three named-pipe quirks
 =============================================================================================================}
 
 interface
 
 uses
   Winapi.Windows,
-  System.SysUtils, System.Classes,
+  System.SysUtils, System.Classes, System.SyncObjs,
   Autopilot.Bridge.Transport;
 
 type
@@ -27,11 +27,14 @@ type
     FPipeHandle     : THandle;       // current pipe instance; INVALID_HANDLE_VALUE between client sessions
     FDiscoveryPath  : String;        // %TEMP%\Autopilot\active\<PID>.pipe — empty when not written
     FDiscoveryTried : Boolean;       // the discovery write is attempted ONCE
-    FStopping       : Boolean;       // set by WakeAndStop; AcceptConnection swallows the wake phantom off it
+    FStopping       : Integer;       // 0 = running, 1 = WakeAndStop began. Written by the owner thread, read by the worker thread: TInterlocked
+    FHandleLock     : TCriticalSection;  // FPipeHandle changes (worker) vs. CancelIoEx on it (owner): a closed handle value can be reused by another open in this process
 
     procedure WriteDiscoveryFile;
     procedure DeleteDiscoveryFile;
     function  CreatePipeInstance: THandle;
+    function  Stopping: Boolean;
+    procedure ClosePipeInstance(ADisconnect: Boolean);
   public
     // APipeName: full `\\.\pipe\...` form.
     constructor Create(const APipeName: String);
@@ -135,6 +138,7 @@ begin
   inherited Create;
   FPipeName   := APipeName;
   FPipeHandle := INVALID_HANDLE_VALUE;
+  FHandleLock := TCriticalSection.Create;
 end;
 
 
@@ -143,14 +147,35 @@ begin
   { Backstop only: the worker's exit paths close the handle themselves (via AcceptConnection's failure branch or RecycleConnection).
     This fires when the worker died from an unhandled exception that bypassed its own close path.
     The worker releases the transport AFTER `inherited` (WaitFor) in its own destructor, so this cannot race the worker thread. }
-  if FPipeHandle <> INVALID_HANDLE_VALUE then
-    begin
-      DisconnectNamedPipe(FPipeHandle);
-      CloseHandle(FPipeHandle);
-      FPipeHandle := INVALID_HANDLE_VALUE;
-    end;
+  ClosePipeInstance(TRUE);
   DeleteDiscoveryFile;
+  FreeAndNil(FHandleLock);
   inherited;
+end;
+
+
+function TPipeTransport.Stopping: Boolean;
+begin
+  Result := TInterlocked.CompareExchange(FStopping, 0, 0) <> 0;
+end;
+
+
+{ Closes the current pipe instance.
+  Under FHandleLock, so WakeAndStop never cancels I/O on a handle value that was closed and reused meanwhile. }
+procedure TPipeTransport.ClosePipeInstance(ADisconnect: Boolean);
+begin
+  FHandleLock.Enter;
+  try
+    if FPipeHandle <> INVALID_HANDLE_VALUE then
+      begin
+        if ADisconnect
+        then DisconnectNamedPipe(FPipeHandle);
+        CloseHandle(FPipeHandle);
+        FPipeHandle := INVALID_HANDLE_VALUE;
+      end;
+  finally
+    FHandleLock.Leave;
+  end;
 end;
 
 
@@ -255,7 +280,13 @@ end;
 
 
 procedure TPipeTransport.StartListening;
+var
+  NewHandle: THandle;
 begin
+  { The stop landed while the worker was between two pipe instances: create no new one, and write no discovery file that WakeAndStop has already deleted.
+    AcceptConnection then reports "no connection". }
+  if Stopping then exit;
+
   { Discovery file is best-effort, attempted ONCE (written even if pipe creation later fails).
     If TFile.WriteAllText raises (disk full, permission denied, virus scanner locking the dir), the bridge can still serve clients that already know the pipe name via attach(pid). }
   if not FDiscoveryTried then
@@ -271,7 +302,13 @@ begin
 
   { (Re-)create a pipe instance for each client session.
     FILE_FLAG_FIRST_PIPE_INSTANCE on the first call rejects an existing same-named pipe, which is what we want - if another instance of this exe is up, we want to know. }
-  FPipeHandle := CreatePipeInstance;
+  NewHandle := CreatePipeInstance;
+  FHandleLock.Enter;
+  try
+    FPipeHandle := NewHandle;
+  finally
+    FHandleLock.Leave;
+  end;
 end;
 
 
@@ -279,24 +316,28 @@ function TPipeTransport.AcceptConnection: Boolean;
 var
   Connected: BOOL;
 begin
+  { The stop landed before this call: no client will ever come for this instance. }
+  if Stopping or (FPipeHandle = INVALID_HANDLE_VALUE) then
+    begin
+      ClosePipeInstance(FALSE);
+      exit(FALSE);
+    end;
+
   Connected := ConnectNamedPipe(FPipeHandle, NIL);
   { ConnectNamedPipe returns FALSE with ERROR_PIPE_CONNECTED if a client connected between CreateNamedPipe and ConnectNamedPipe.
     That's actually success.
-    Returns FALSE with ERROR_OPERATION_ABORTED if WakeAndStop called CancelSynchronousIo. }
+    Returns FALSE with ERROR_OPERATION_ABORTED if WakeAndStop cancelled it with CancelIoEx. }
   if (not Connected) and (GetLastError <> ERROR_PIPE_CONNECTED) then
     begin
-      CloseHandle(FPipeHandle);
-      FPipeHandle := INVALID_HANDLE_VALUE;
+      ClosePipeInstance(FALSE);
       exit(FALSE);
     end;
 
   { WakeAndStop self-connects via CreateFileW to unblock us - that produces a successful "connection" that must not be handshaken with: serving it on this thread while the main thread concurrently frees handles races the RTL's exception machinery (an access violation in @HandleAnyException).
     Swallow it. }
-  if FStopping then
+  if Stopping then
     begin
-      DisconnectNamedPipe(FPipeHandle);
-      CloseHandle(FPipeHandle);
-      FPipeHandle := INVALID_HANDLE_VALUE;
+      ClosePipeInstance(TRUE);
       exit(FALSE);
     end;
 
@@ -313,51 +354,81 @@ end;
 
 procedure TPipeTransport.RecycleConnection;
 begin
-  if FPipeHandle <> INVALID_HANDLE_VALUE then
-    begin
-      DisconnectNamedPipe(FPipeHandle);
-      CloseHandle(FPipeHandle);
-      FPipeHandle := INVALID_HANDLE_VALUE;
-    end;
+  ClosePipeInstance(TRUE);
 end;
 
 
 procedure TPipeTransport.WakeAndStop(AWorkerThread: TThread);
+const
+  WakeIntervalMs = 10;
+  WarnAfterMs    = 10000;
 var
-  WakeClient: THandle;
-  Attempts: Integer;
-  Err: DWORD;
+  WorkerHandle, WakeClient: THandle;
+  OnMainThread, Warned: Boolean;
+  StartTick: UInt64;
+  WaitResult: DWORD;
+  Msg: TMsg;
 begin
-  { Order matters: FStopping FIRST, so the self-connect below is recognized as a phantom inside AcceptConnection regardless of which wake mechanism lands. }
-  FStopping := TRUE;
+  { The stop flag goes FIRST: from here on StartListening creates no new pipe instance, and AcceptConnection treats every connection as the wake phantom. }
+  TInterlocked.Exchange(FStopping, 1);
 
-  { Wake the worker.
-    Two cooperating mechanisms cover the small race window where the worker is between CreatePipeInstance and ConnectNamedPipe (CSI is a no-op there) and the larger window where it's blocked inside ConnectNamedPipe:
-      (1) CSI cancels in-flight sync I/O.
-      (2) Self-connect via CreateFileW satisfies ConnectNamedPipe. }
-  if (AWorkerThread <> NIL) and (AWorkerThread.Handle <> 0)
-  then CancelSynchronousIo(AWorkerThread.Handle);
+  if AWorkerThread = NIL
+  then WorkerHandle := 0
+  else WorkerHandle := AWorkerThread.Handle;
 
-  { Retry briefly.
-    The pipe is in one of three states:
-      (a) Worker already exited via CSI - pipe gone (ERROR_FILE_NOT_FOUND), no wake needed.
-      (b) Worker is past CreatePipeInstance but not yet inside ConnectNamedPipe - pipe exists but transiently busy (ERROR_PIPE_BUSY).
-      (c) Worker is between iterations and CreatePipeInstance hasn't run yet for this loop - pipe gone briefly (ERROR_FILE_NOT_FOUND), comes back within tens of ms.
-    We can't distinguish (a) from (c) without coordination, so retry briefly on FILE_NOT_FOUND too.
-    If the worker is genuinely gone, the owner's WaitFor returns immediately anyway. }
-  for Attempts := 1 to 20 do
-  begin
+  { Wake the worker again and again, until its thread has ended.
+    One wake is not enough: the worker can be between two steps, where the wake finds no I/O to cancel and no pipe instance to connect to, and start a blocking call right after it.
+    Each pass does two things:
+      (1) CancelIoEx on the current pipe instance cancels the ConnectNamedPipe, ReadFile or WriteFile the worker is blocked in (pinned by Test_PipeWorker_StopWhileAClientIsSilent_EndsTheWorker).
+          CancelIoEx takes the handle, not the thread, and does not wait for the cancelled call to end.
+      (2) A self-connect via CreateFileW satisfies a ConnectNamedPipe. AcceptConnection swallows that phantom connection. }
+  OnMainThread := GetCurrentThreadId = MainThreadID;
+  Warned       := FALSE;
+  StartTick    := GetTickCount64;
+  repeat
+    FHandleLock.Enter;
+    try
+      if FPipeHandle <> INVALID_HANDLE_VALUE
+      then CancelIoEx(FPipeHandle, NIL);
+    finally
+      FHandleLock.Leave;
+    end;
+
     WakeClient := CreateFileW(PWideChar(FPipeName), GENERIC_READ or GENERIC_WRITE, 0, NIL, OPEN_EXISTING, 0, 0);
-    if WakeClient <> INVALID_HANDLE_VALUE then
+    if WakeClient <> INVALID_HANDLE_VALUE
+    then CloseHandle(WakeClient);
+
+    if WorkerHandle = 0 then Break;
+
+    { On the main thread, wait the way TThread.WaitFor does: let a SendMessage from the worker through, and run what the worker queued while it still runs.
+      Without this a dispatch the worker waits for would run only after its timeout. }
+    if OnMainThread
+    then
       begin
-        CloseHandle(WakeClient);
+        WaitResult := MsgWaitForMultipleObjects(1, WorkerHandle, FALSE, WakeIntervalMs, QS_SENDMESSAGE);
+        if WaitResult = WAIT_OBJECT_0 + 1
+        then PeekMessage(Msg, 0, 0, 0, PM_NOREMOVE);
+        if (WaitResult <> WAIT_OBJECT_0) and (WaitResult <> WAIT_FAILED)
+        then CheckSynchronize;
+      end
+    else
+      WaitResult := WaitForSingleObject(WorkerHandle, WakeIntervalMs);
+
+    { The join that follows (TThread.WaitFor) raises for a handle it cannot wait on. }
+    if WaitResult = WAIT_FAILED then
+      begin
+        BridgeLogWarn('bridge', 'WakeAndStop cannot wait on the worker thread (' + IntToStr(GetLastError) + ')');
         Break;
       end;
-    Err := GetLastError;
-    if (Err <> ERROR_PIPE_BUSY) and (Err <> ERROR_ACCESS_DENIED) and (Err <> ERROR_FILE_NOT_FOUND) then Break;
-    Sleep(5);
-  end;
 
+    if (not Warned) and (GetTickCount64 - StartTick > WarnAfterMs) then
+      begin
+        Warned := TRUE;
+        BridgeLogWarn('bridge', 'worker thread has not ended ' + IntToStr(WarnAfterMs div 1000) + ' s after the stop; still waking it');
+      end;
+  until WaitResult = WAIT_OBJECT_0;
+
+  { After the worker has ended: it writes the discovery file in StartListening, so deleting it earlier could race that write. }
   DeleteDiscoveryFile;
 end;
 

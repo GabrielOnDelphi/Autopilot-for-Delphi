@@ -271,7 +271,7 @@ procedure TSocketTransport.WakeAndStop(AWorkerThread: TThread);
 var
   WakeByte: Byte;
 begin
-  { AWorkerThread is unused here - it exists for the pipe transport's CancelSynchronousIo.
+  { AWorkerThread is unused here - it exists for the pipe transport, which waits on it.
     The self-pipe needs no thread targeting. }
   FStopping := TRUE;   // FIRST, so the woken AcceptConnection sees it
   WakeByte := 0;
