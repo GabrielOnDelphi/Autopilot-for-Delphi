@@ -40,6 +40,7 @@ USES
   Tests.Bridge.NativeDialogs  in 'Tests.Bridge.NativeDialogs.pas',
   Tests.Bridge.PathsAndActions in 'Tests.Bridge.PathsAndActions.pas',
   Tests.Bridge.PropertyTypes  in 'Tests.Bridge.PropertyTypes.pas',
+  Tests.Bridge.DBGrid         in 'Tests.Bridge.DBGrid.pas',
   Tests.Bridge.Screenshot     in 'Tests.Bridge.Screenshot.pas',
   Tests.Bridge.ScreenshotNative in 'Tests.Bridge.ScreenshotNative.pas',
   Tests.Bridge.SendKeys       in 'Tests.Bridge.SendKeys.pas',

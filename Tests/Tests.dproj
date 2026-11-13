@@ -84,6 +84,7 @@
         <DCCReference Include="Tests.Bridge.NativeDialogs.pas"/>
         <DCCReference Include="Tests.Bridge.PathsAndActions.pas"/>
         <DCCReference Include="Tests.Bridge.PropertyTypes.pas"/>
+        <DCCReference Include="Tests.Bridge.DBGrid.pas"/>
         <DCCReference Include="Tests.Bridge.Screenshot.pas"/>
         <DCCReference Include="Tests.Bridge.ScreenshotNative.pas"/>
         <DCCReference Include="Tests.Bridge.SendKeys.pas"/>

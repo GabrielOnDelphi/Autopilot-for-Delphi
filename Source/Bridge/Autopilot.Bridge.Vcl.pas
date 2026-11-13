@@ -1794,6 +1794,173 @@ begin
 end;
 
 
+{ DB grids (TDBGrid and its descendants) have no Text/Caption, so get_text reads what the grid shows: the column titles and the records in the grid's buffer.
+  Resolved purely via RTTI, like the data-aware helpers above, so the bridge stays free of Data.DB and Vcl.DBGrids.
+  The records are read the way TCustomDBGrid.DrawCell reads them: DataLink.ActiveRecord is pointed at each buffered record in turn and restored afterwards.
+  That moves no cursor, fetches nothing and fires no dataset event.
+  There is no public route to the link (TCustomDBGrid.DataLink and TDataSource.DataLinks are protected), so it is taken from the private field TCustomDBGrid.FDataLink (the same in Delphi 11, 12 and 13).
+  Only get_text calls this (and wait_for, which polls get_text): list_tree must not carry the content of every grid. }
+
+// AClass or its nearest ancestor named AName, NIL when there is none; matched by class name, so the bridge does not link the unit that declares it.
+function FindClassByName(AClass: TClass; const AName: String): TClass;
+begin
+  Result := AClass;
+  while (Result <> NIL) and not Result.ClassNameIs(AName) do
+    Result := Result.ClassParent;
+end;
+
+
+{ The TDataLink of a DB grid, read from the field FDataLink that TCustomDBGrid itself declares.
+  The field is looked up on the RTTI type of TCustomDBGrid, not of the instance: a descendant grid may declare an FDataLink of its own, and TRttiType.GetField returns the first match from the instance's class upward.
+  NIL, with one warning in the log, when the field is missing or does not hold a TDataLink. }
+function GetDBGridDataLink(AGrid: TComponent; AGridClass: TClass; const ACtx: TRttiContext): TObject;
+var
+  RT: TRttiType;
+  F, LinkField: TRttiField;
+  V: TValue;
+begin
+  Result := NIL;
+  LinkField := NIL;
+  RT := ACtx.GetType(AGridClass);
+  if RT <> NIL then
+    for F in RT.GetDeclaredFields do
+      if SameText(F.Name, 'FDataLink') then
+        begin
+          LinkField := F;
+          Break;
+        end;
+  if (LinkField <> NIL) and (LinkField.FieldType <> NIL) and (LinkField.FieldType.TypeKind = tkClass) then
+    begin
+      V := LinkField.GetValue(AGrid);
+      if V.Kind = tkClass
+      then Result := V.AsObject;
+    end;
+  if (Result <> NIL) and (FindClassByName(Result.ClassType, 'TDataLink') = NIL)
+  then Result := NIL;
+  if Result = NIL
+  then BridgeLogWarn('bridge', 'get_text: ' + AGrid.ClassName + ' has no TDataLink in TCustomDBGrid.FDataLink, so the grid cannot be read');
+end;
+
+
+{ AText: one line per row, cells separated by Tab, lines by #10; the first line holds the column titles.
+  A Tab or a line break inside a cell is replaced with a space.
+  Hidden columns are left out. A cell reads as Field.DisplayText, so OnGetText handlers run as they do when the grid paints.
+  ARowCount is the number of records in the grid's buffer (the rows it can show without scrolling), 0 for a closed dataset.
+  ACurrentRow is the 0-based index of the current record among them, -1 when there is none.
+  FALSE when AComp is not a DB grid, has no readable Columns collection, or its data link cannot be reached.
+  Every value is tested for its type before it is read, so a class with unexpected property types raises nothing (GitHub issue 2). }
+function TryGetDBGridText(AComp: TComponent; OUT AText: String; OUT ARowCount, ACurrentRow: Integer): Boolean;
+
+  function Cell(const S: String): String;
+  begin
+    Result := S.Replace(#13#10, ' ').Replace(#9, ' ').Replace(#13, ' ').Replace(#10, ' ');
+  end;
+
+  function IsObj(const V: TValue): Boolean;
+  begin
+    Result := (V.Kind = tkClass) and (V.AsObject <> NIL);
+  end;
+
+var
+  Ctx: TRttiContext;
+  GridClass: TClass;
+  RT: TRttiType;
+  ActiveRecProp, Prop: TRttiProperty;
+  V: TValue;
+  Columns: TCollection;
+  Col, Link: TObject;
+  Fields: TArray<TObject>;            // the TField of each visible column; NIL for a column without a field
+  TextProps: TArray<TRttiProperty>;   // DisplayText of that field; NIL where it is not a readable string
+  Line: String;
+  SavedRecord, ColCount, i, j: Integer;
+begin
+  Assert(GetCurrentThreadId = MainThreadID, 'TryGetDBGridText: VCL touched off the main thread');
+  Result := FALSE;
+  AText := '';
+  ARowCount := 0;
+  ACurrentRow := -1;
+  GridClass := FindClassByName(AComp.ClassType, 'TCustomDBGrid');
+  if GridClass = NIL then exit;
+  if not TryReadProp(AComp, 'Columns', V) or not IsObj(V) or not (V.AsObject is TCollection) then exit;
+  Columns := TCollection(V.AsObject);
+
+  Ctx := TRttiContext.Create;
+  try
+    Link := GetDBGridDataLink(AComp, GridClass, Ctx);
+    if Link = NIL then exit;
+    RT := Ctx.GetType(Link.ClassType);
+    if RT = NIL then exit;
+    ActiveRecProp := RT.GetProperty('ActiveRecord');
+    if (ActiveRecProp = NIL) or not ActiveRecProp.IsReadable or not ActiveRecProp.IsWritable
+    or (ActiveRecProp.PropertyType = NIL) or (ActiveRecProp.PropertyType.TypeKind <> tkInteger) then
+      begin
+        BridgeLogWarn('bridge', 'get_text: ' + Link.ClassName + ' has no Integer ActiveRecord property, so the grid cannot be read');
+        exit;
+      end;
+
+    Line := '';
+    ColCount := 0;
+    SetLength(Fields, Columns.Count);
+    SetLength(TextProps, Columns.Count);
+    for i := 0 to Columns.Count - 1 do
+      begin
+        Col := Columns.Items[i];
+        if TryReadProp(Col, 'Visible', V) and IsBoolType(V.TypeInfo) and not V.AsBoolean then Continue;
+        if ColCount > 0
+        then Line := Line + #9;
+        if TryReadProp(Col, 'Title', V) and IsObj(V) and TryReadProp(V.AsObject, 'Caption', V) and (V.Kind = tkUString)
+        then Line := Line + Cell(V.AsString);
+        Fields[ColCount] := NIL;
+        TextProps[ColCount] := NIL;
+        if TryReadProp(Col, 'Field', V) and IsObj(V) then
+          begin
+            Prop := Ctx.GetType(V.AsObject.ClassType).GetProperty('DisplayText');
+            if IsReadableStringProp(Prop) then
+              begin
+                Fields[ColCount] := V.AsObject;
+                TextProps[ColCount] := Prop;
+              end;
+          end;
+        Inc(ColCount);
+      end;
+    AText := Line;
+    Result := TRUE;
+
+    // Active first: the ActiveRecord of a link without an open dataset says nothing.
+    if not TryReadProp(Link, 'Active', V) or not IsBoolType(V.TypeInfo) or not V.AsBoolean then exit;
+    if not TryReadProp(Link, 'RecordCount', V) or (V.Kind <> tkInteger) then exit;
+    ARowCount := V.AsInteger;
+    SavedRecord := ActiveRecProp.GetValue(Link).AsInteger;
+    if (SavedRecord >= 0) and (SavedRecord < ARowCount)
+    then ACurrentRow := SavedRecord;
+    try
+      for i := 0 to ARowCount - 1 do
+        begin
+          ActiveRecProp.SetValue(Link, i);
+          Line := '';
+          for j := 0 to ColCount - 1 do
+            begin
+              if j > 0
+              then Line := Line + #9;
+              if Fields[j] = NIL then Continue;
+              // DisplayText runs the field's OnGetText, which is app code: a handler that raises costs its cell, not the whole answer.
+              try
+                Line := Line + Cell(TextProps[j].GetValue(Fields[j]).AsString);
+              except
+                BridgeLogWarn('bridge', 'get_text: ' + Fields[j].ClassName + '.DisplayText getter raised ' + ExceptObject.ClassName);
+              end;
+            end;
+          AText := AText + #10 + Line;
+        end;
+    finally
+      ActiveRecProp.SetValue(Link, SavedRecord);
+    end;
+  finally
+    Ctx.Free;
+  end;
+end;
+
+
 { Command handlers — invoked on the main thread ------------------------ }
 
 { Recurse a component tree, emitting one JSON node per component.
@@ -1883,6 +2050,8 @@ var
   Path, Text: String;
   Comp: TComponent;
   Wrap: TJSONObject;
+  IsGrid: Boolean;
+  GridRows, GridCurrentRow: Integer;
 begin
   Assert(GetCurrentThreadId = MainThreadID, 'HandleGetText must run on the main thread');
   Result := Default(TBridgeResponse);
@@ -1908,16 +2077,26 @@ begin
   Comp := ResolvePathOrFail(Path, Result);
   if Comp = NIL then exit;
 
+  IsGrid := FALSE;
   if not TryGetTextProperty(Comp, Text) then
     begin
-      Result.Ok := FALSE;
-      Result.ErrorCode := ErrRttiPropertyMissing;
-      Result.ErrorMessage := Comp.ClassName + ' has no readable Text/Caption property';
-      exit;
+      IsGrid := TryGetDBGridText(Comp, Text, GridRows, GridCurrentRow);
+      if not IsGrid then
+        begin
+          Result.Ok := FALSE;
+          Result.ErrorCode := ErrRttiPropertyMissing;
+          Result.ErrorMessage := Comp.ClassName + ' has no readable Text/Caption property';
+          exit;
+        end;
     end;
 
   Wrap := TJSONObject.Create;
   Wrap.AddPair('text', Text);
+  if IsGrid then
+    begin
+      Wrap.AddPair('rows', TJSONNumber.Create(GridRows));
+      Wrap.AddPair('currentRow', TJSONNumber.Create(GridCurrentRow));
+    end;
   Result.Ok := TRUE;
   Result.ResultJson := Wrap;
 end;
