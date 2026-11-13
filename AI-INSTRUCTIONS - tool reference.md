@@ -154,6 +154,15 @@ Errors: `-32001 not_found`, `-32003 control_disabled` (a disabled action), `-320
 Reads `Caption` / `Text` / `Lines.Text` via RTTI and returns the exact string, embedded `#10` newlines included.
 Use it, NOT `screenshot`, to check that a click produced the expected state.
 
+**A VCL DB grid** (`TDBGrid` and its descendants) has no `Text`: `get_text` answers what the grid shows.
+`text` holds one line per row (lines separated by `#10`, cells by Tab); the first line holds the column titles.
+Hidden columns are left out, and a Tab or line break inside a cell reads as a space.
+A cell is the field's `DisplayText`, the text the grid paints (an `OnGetText` handler runs).
+The answer also carries `rows`, the number of records the grid holds in its buffer (the rows it shows without scrolling; 0 for a closed dataset), and `currentRow`, the 0-based index of the current record among them (-1 when there is none).
+Reading moves no cursor, fetches nothing and fires no dataset event; to see other records, scroll the grid (`send_keys` `PageDown`) and read again.
+`list_tree` gives a grid no `text` field.
+FMX grids are not read.
+
 ### `set_text`
 
 `set_text(path, text, pid?)`
@@ -256,6 +265,7 @@ An event carries `currentValue` (its handler text) only when a handler is assign
 Reads the control's `Text`/`Caption` every `pollIntervalMs` (default 100) until it equals `expectedText` exactly, or `timeoutMs` (default 10000) runs out.
 Use it after starting asynchronous work (a `TTask`, a database query, a Win32 timer).
 Only `Text`/`Caption` can be polled; read other properties (`Checked`, `Enabled`) with `read_property`.
+It polls `get_text`, so on a VCL DB grid `expectedText` is compared with the whole grid text (titles and rows): rarely useful, wait on a label or a status text instead.
 
 Answer: `{matched, currentValue, expectedValue, pollCount}`.
 `matched: false` means only that the deadline passed while the target kept answering; `currentValue` holds the last value seen (a reportable state, not an error), so branch on the field.

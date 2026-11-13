@@ -5,7 +5,7 @@ unit Autopilot.Mcp.Tool.GetText;
    www.GabrielMoraru.com
 --------------------------------------------------------------------------------------------------------------
    - MCP tool: get_text
-   - Reads the Text or Caption of a control in the target app.
+   - Reads the Text or Caption of a control in the target app; for a VCL DB grid, the rows it shows.
    - Runs in Autopilot.Mcp.exe (Windows PC-side MCP server); target may be any platform.
 =============================================================================================================}
 
@@ -48,7 +48,7 @@ constructor TGetTextTool.Create;
 begin
   inherited;
   FName := 'get_text';
-  FDescription := 'Read the Text/Caption of a control.';
+  FDescription := 'Read the Text/Caption of a control. A VCL DB grid (TDBGrid and descendants) answers the rows it shows: one line per row, cells separated by Tab, first line = column titles; plus "rows" and "currentRow" (0-based, -1 = none).';
 end;
 
 

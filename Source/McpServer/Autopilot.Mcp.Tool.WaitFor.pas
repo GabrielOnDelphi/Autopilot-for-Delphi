@@ -71,7 +71,7 @@ constructor TWaitForTool.Create;
 begin
   inherited;
   FName := 'wait_for';
-  FDescription := 'Poll a control''s Text/Caption until it equals a value or the deadline passes.';
+  FDescription := 'Poll a control''s Text/Caption until it equals a value or the deadline passes. It polls get_text, so on a VCL DB grid it compares the whole grid text (titles and rows).';
 end;
 
 
