@@ -1,0 +1,50 @@
+package Autopilot.IdeBridge;
+
+{$R *.res}
+{$IFDEF IMPLICITBUILDING This IFDEF should not be used by users}
+{$ALIGN 8}
+{$ASSERTIONS ON}
+{$BOOLEVAL OFF}
+{$DEBUGINFO ON}
+{$EXTENDEDSYNTAX ON}
+{$IMPORTEDDATA ON}
+{$IOCHECKS ON}
+{$LOCALSYMBOLS ON}
+{$LONGSTRINGS ON}
+{$OPENSTRINGS ON}
+{$OPTIMIZATION OFF}
+{$OVERFLOWCHECKS ON}
+{$RANGECHECKS ON}
+{$REFERENCEINFO ON}
+{$SAFEDIVIDE OFF}
+{$STACKFRAMES ON}
+{$TYPEDADDRESS OFF}
+{$VARSTRINGCHECKS ON}
+{$WRITEABLECONST OFF}
+{$MINENUMSIZE 1}
+{$IMAGEBASE $400000}
+{$DEFINE DEBUG}
+{$DEFINE AUTOPILOT}
+{$ENDIF IMPLICITBUILDING}
+{$DESCRIPTION 'Autopilot for Delphi - bridge inside the IDE'}
+{$LIBSUFFIX AUTO}
+{$DESIGNONLY}
+{$IMPLICITBUILD ON}
+
+requires
+  rtl,
+  vcl,
+  vclimg,
+  designide;
+
+contains
+  Autopilot.IdeBridge.Register in 'Autopilot.IdeBridge.Register.pas',
+  Autopilot.Bridge.Core in '..\Bridge\Autopilot.Bridge.Core.pas',
+  Autopilot.Bridge.Log in '..\Bridge\Autopilot.Bridge.Log.pas',
+  Autopilot.Bridge.Transport in '..\Bridge\Autopilot.Bridge.Transport.pas',
+  Autopilot.Bridge.NamedPipe in '..\Bridge\Autopilot.Bridge.NamedPipe.pas',
+  Autopilot.Bridge.NativeDialogs in '..\Bridge\Autopilot.Bridge.NativeDialogs.pas',
+  Autopilot.Bridge.Worker in '..\Bridge\Autopilot.Bridge.Worker.pas',
+  Autopilot.Bridge.Vcl in '..\Bridge\Autopilot.Bridge.Vcl.pas';
+
+end.
