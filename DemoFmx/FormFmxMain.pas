@@ -10,6 +10,7 @@
      (btnDialog -> lblDialogResult), an action bound to a TButton and a TSpeedButton (actFixture -> lblActionResult),
      a label placed on a panel (pnlFixture.lblInPanel) for the path rule, a TRectangle for a TAlphaColor property,
      and a button whose label changes one second later (btnDelayed -> tmrDelayed -> lblDelayed) for wait_for.
+   - registerAutopilotCommands (called by the constructor): two app commands for the MCP tool call_method (demo.setName, demo.increment).
 =============================================================================================================}
 
 interface
@@ -69,6 +70,10 @@ type
     FActionRuns: Integer;
     FDelayedRuns: Integer;
     FSaveRuns: Integer;
+    procedure registerAutopilotCommands;
+  public
+    constructor Create(AOwner: TComponent); override;
+    destructor Destroy; override;
   end;
 
 var
@@ -86,7 +91,65 @@ uses
   {$IFDEF ANDROID}
   Androidapi.Helpers, Androidapi.JNI.App, Androidapi.JNI.GraphicsContentViewText, Androidapi.JNI.Net,
   {$ENDIF}
-  Autopilot.Bridge.Core;
+  System.JSON, Autopilot.Bridge.Core, Autopilot.Bridge.Commands;
+
+
+const
+  CmdSetName   = 'demo.setName';
+  CmdIncrement = 'demo.increment';
+
+
+{ Registered here, not in the .dpr: before Application.Run, the FMX Application.CreateForm only queues the form (FMX.Forms, TApplication.CreateForm),
+  so frmFmxMain is still NIL after it and the handlers would capture a NIL Self. }
+constructor TfrmFmxMain.Create(AOwner: TComponent);
+begin
+  inherited Create(AOwner);
+  registerAutopilotCommands;
+end;
+
+
+{ The app commands that the MCP tool call_method can call (sample for the E2E script; the same two as the VCL demo).
+  Without AUTOPILOT, RegisterAutopilotCommand does nothing. }
+procedure TfrmFmxMain.registerAutopilotCommands;
+begin
+  RegisterAutopilotCommand(CmdSetName, 'Puts a name into edtName and lblNameEcho. args: text (string). Returns echo (string). Raises without text.',
+    function(AArgs: TJSONObject): TJSONValue
+    var
+      V: TJSONValue;
+    begin
+      V := AArgs.GetValue('text');
+      if not (V is TJSONString)
+      then raise EArgumentException.Create(CmdSetName + ' needs args.text (a string)');
+      edtName.Text := TJSONString(V).Value;
+      lblNameEcho.Text := edtName.Text;
+      Result := TJSONObject.Create(TJSONPair.Create('echo', lblNameEcho.Text));
+    end);
+
+  RegisterAutopilotCommand(CmdIncrement, 'Adds to the counter shown in lblCounter. args: by (number, optional, default 1). Returns counter (number).',
+    function(AArgs: TJSONObject): TJSONValue
+    var
+      V: TJSONValue;
+    begin
+      V := AArgs.GetValue('by');
+      if V = NIL
+      then Inc(FCounter)
+      else
+        if V is TJSONNumber
+        then Inc(FCounter, TJSONNumber(V).AsInt)
+        else raise EArgumentException.Create(CmdIncrement + ' args.by must be a number');
+      lblCounter.Text := IntToStr(FCounter);
+      Result := TJSONObject.Create(TJSONPair.Create('counter', TJSONNumber.Create(FCounter)));
+    end);
+end;
+
+
+{ The handlers use this form: remove them before it is freed. }
+destructor TfrmFmxMain.Destroy;
+begin
+  UnregisterAutopilotCommand(CmdSetName);
+  UnregisterAutopilotCommand(CmdIncrement);
+  inherited Destroy;
+end;
 
 
 procedure OpenUrl(const Url: string);
