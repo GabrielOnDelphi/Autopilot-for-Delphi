@@ -1210,6 +1210,33 @@ begin
 end;
 
 
+{ 'true' / 'false' from error.data.started of a -32004 answer, 'missing' when the answer has no such Boolean. }
+function TimeoutStartedOf(AResp: TJSONObject): String;
+var
+  Data: TJSONObject;
+  V: TJSONValue;
+begin
+  Result := 'missing';
+  Data := GetErrorData(AResp);
+  if Data = NIL then EXIT;
+  V := Data.GetValue('started');
+  if V IS TJSONBool
+  then Result := LowerCase(BoolToStr(TJSONBool(V).AsBoolean, TRUE));
+end;
+
+
+function TimeoutMessageOf(AResp: TJSONObject): String;
+var
+  V: TJSONValue;
+begin
+  Result := '';
+  if AResp = NIL then EXIT;
+  V := AResp.GetValue('error');
+  if V IS TJSONObject
+  then Result := TJSONObject(V).GetValue<String>('message', '');
+end;
+
+
 procedure TBridgeTests.Test_Click_MainThreadBlockedReturnsTimeoutError;
 const
   // Worker timeout is short (200 ms). The OnClick blocks on SlowGate for up to
@@ -1220,10 +1247,15 @@ const
   GateMaxWaitMs   = 2000;
 var
   PipeName: String;
-  Code: Integer;
+  Code, Code2: Integer;
+  Started, Started2, Msg, Msg2: String;
+  ClicksBefore: Integer;
+  Deadline: UInt64;
 begin
   PipeName := FPipeName;
   Code := 0;
+  Code2 := 0;
+  ClicksBefore := GFixtureForm.ClickCount;
   GFixtureForm.SlowSleepMs := GateMaxWaitMs;
   GFixtureForm.SlowGate.ResetEvent;
   RunOnWorkerAndPump(
@@ -1240,19 +1272,46 @@ begin
         Resp := Client.Call(20, 'click', Args, WorkerTimeoutMs);
         try
           Code := GetErrorCode(Resp);
+          Started := TimeoutStartedOf(Resp);
+          Msg := TimeoutMessageOf(Resp);
         finally
           Resp.Free;
         end;
-        // We got the timeout response back. The queued procedure is still
-        // waiting on SlowGate. Releasing it lets it finish cleanly so the
-        // dispatch slot is released on both sides before TearDown fires.
+        { The main thread is still inside OnClick, so a second command cannot even start. }
+        Args := TJSONObject.Create;
+        Args.AddPair('path', 'FixtureForm.btnTest');
+        Resp := Client.Call(21, 'click', Args, WorkerTimeoutMs);
+        try
+          Code2 := GetErrorCode(Resp);
+          Started2 := TimeoutStartedOf(Resp);
+          Msg2 := TimeoutMessageOf(Resp);
+        finally
+          Resp.Free;
+        end;
+        // We got the timeout responses back. The first queued procedure is still
+        // waiting on SlowGate. Releasing it lets both finish cleanly so the
+        // dispatch slots are released on both sides before TearDown fires.
         GFixtureForm.SlowGate.SetEvent;
       finally
         Client.Free;
       end;
     end, GateMaxWaitMs + 3000);
+
+  { The second click stays queued and runs once the main thread is free (what its message promises).
+    Pumping until it ran also lets its dispatch slot be released before the test ends. }
+  Deadline := GetTickCount64 + 3000;
+  while (GFixtureForm.ClickCount = ClicksBefore) and (GetTickCount64 < Deadline) do
+    CheckSynchronize(10);
+
   Assert.AreEqual(ErrMainThreadBlocked, Code, 'expected main_thread_blocked when OnClick exceeds timeoutMs');
   Assert.AreEqual(1, GFixtureForm.SlowClickCount, 'OnClick should still have run on the main thread');
+  Assert.AreEqual(ClicksBefore + 1, GFixtureForm.ClickCount, 'the second click ran later, after the main thread was free');
+  Assert.AreEqual('true', Started, 'error.data.started of the click whose OnClick blocks');
+  Assert.StartsWith('main thread did not respond within 200 ms', Msg, 'the message keeps its first words');
+  Assert.Contains(Msg, 'do not send it again', 'the message of a started command says it was not lost');
+  Assert.AreEqual(ErrMainThreadBlocked, Code2, 'the second command, sent while the main thread is still blocked');
+  Assert.AreEqual('false', Started2, 'error.data.started of a command the blocked main thread never picked up');
+  Assert.Contains(Msg2, 'has not started yet', 'the message of a command that did not start');
 end;
 
 

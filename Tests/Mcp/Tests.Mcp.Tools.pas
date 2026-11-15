@@ -5,7 +5,7 @@ unit Tests.Mcp.Tools;
    www.GabrielMoraru.com
 --------------------------------------------------------------------------------------------------------------
    - DUnitX tests for the MCP tool layer, driven through the JSON-RPC dispatcher the way Claude Code calls it.
-   - Tests.exe links all fourteen tool units, so the tool registry is the production one.
+   - Tests.exe links all fifteen tool units, so the tool registry is the production one.
    - No target is needed: most calls name a pid no target owns (UnknownPid), which exercises the
      -32099 target_not_running path whatever else runs on the machine. The screenshot and busy-pipe
      tests announce a fake target instead (TFakePipeBridge / TBusyPipe in a TPrivateDiscovery folder,
@@ -33,6 +33,10 @@ type
     [Test] procedure Test_Screenshot_ReturnsImageBlockThenTextBlock;
     [Test] procedure Test_Screenshot_FailedCapture_StaysOneTextBlock;
     [Test] procedure Test_Screenshot_ForwardsPathAndMaxWidthOnlyWhenGiven;
+    [Test] procedure Test_ListTree_ForwardsFormAndFormsOnlyOnlyWhenGiven;
+    [Test] procedure Test_CallMethod_ForwardsNameArgsAndTimeout;
+    [Test] procedure Test_CallMethod_BadArguments_IsErrorNamingTheParameter;
+    [Test] procedure Test_CallMethod_SchemaDeclaresArgsAsObject;
     [Test] procedure Test_BusyPipe_Returns32098;
     [Test] procedure Test_WaitFor_BusyPipe_Returns32098AtOnce;
   end;
@@ -291,7 +295,7 @@ begin
     Assert.IsNotNull(Result_, 'result missing');
     Tools := Result_.GetValue('tools') as TJSONArray;
     Assert.IsNotNull(Tools, 'result.tools missing');
-    Assert.AreEqual(14, Tools.Count, 'tool count');
+    Assert.AreEqual(15, Tools.Count, 'tool count');
     Assert.AreEqual('', FindNonAscii(Tools, 'tools'), 'non-ASCII character in the tool list');
   finally
     FreeAndNil(Root);
@@ -548,6 +552,212 @@ begin
     Assert.AreEqual(-5, TJSONNumber(Args.GetValue('maxWidth')).AsInt, 'negative maxWidth');
   finally
     FreeAndNil(Args);
+  end;
+end;
+
+
+/// Calls list_tree with AArgsJson (pid added) against a fake target. Returns the args object of the request the
+/// fake target received; the caller frees it.
+function SentListTreeArgs(const AArgsJson: String): TJSONObject;
+var
+  Fake: TFakePipeBridge;
+  Discovery: TPrivateDiscovery;
+  Root: TJSONObject;
+  Sent: String;
+  V: TJSONValue;
+begin
+  Fake := TFakePipeBridge.Create('{"id":1,"ok":true,"result":{"components":[]}}');
+  try
+    Fake.WaitUntilReady;
+    Discovery := TPrivateDiscovery.Create(Fake.PipeName);
+    try
+      Root := CallToolRoot('list_tree', '{"pid":' + IntToStr(GetCurrentProcessId) + AArgsJson + '}');
+      FreeAndNil(Root);
+    finally
+      FreeAndNil(Discovery);
+    end;
+    Sent := Fake.SawRequest;
+  finally
+    FreeAndNil(Fake);
+  end;
+
+  V := TJSONObject.ParseJSONValue(Sent);
+  try
+    Assert.IsTrue(V is TJSONObject, 'the fake target received no JSON request: ' + Sent);
+    Assert.AreEqual('list_tree', TJSONObject(V).GetValue('cmd').Value, 'cmd: ' + Sent);
+    Assert.IsTrue(TJSONObject(V).GetValue('args') is TJSONObject, 'args missing: ' + Sent);
+    Result := TJSONObject(TJSONObject(V).GetValue('args').Clone);
+  finally
+    FreeAndNil(V);
+  end;
+end;
+
+
+/// form and formsOnly reach the bridge only when the caller gives them (form not empty, formsOnly TRUE), so a call
+/// without them sends the request every older server sent: an empty args object.
+procedure TMcpToolTests.Test_ListTree_ForwardsFormAndFormsOnlyOnlyWhenGiven;
+var
+  Args: TJSONObject;
+begin
+  Args := SentListTreeArgs(',"form":"frmFake","formsOnly":true');
+  try
+    Assert.IsTrue(Args.GetValue('form') is TJSONString, 'form not forwarded: ' + Args.ToJSON);
+    Assert.AreEqual('frmFake', Args.GetValue('form').Value, 'form');
+    Assert.IsTrue(Args.GetValue('formsOnly') is TJSONBool, 'formsOnly not forwarded as a Boolean: ' + Args.ToJSON);
+    Assert.IsTrue(TJSONBool(Args.GetValue('formsOnly')).AsBoolean, 'formsOnly must be true');
+  finally
+    FreeAndNil(Args);
+  end;
+
+  Args := SentListTreeArgs('');
+  try
+    Assert.AreEqual(0, Args.Count, 'nothing may be sent when form and formsOnly are not given: ' + Args.ToJSON);
+  finally
+    FreeAndNil(Args);
+  end;
+
+  Args := SentListTreeArgs(',"form":"","formsOnly":false');
+  try
+    Assert.AreEqual(0, Args.Count, 'an empty form and formsOnly false must not be sent: ' + Args.ToJSON);
+  finally
+    FreeAndNil(Args);
+  end;
+end;
+
+
+/// Calls call_method with AArgsJson (pid added) against a fake target. Returns the whole request the fake target
+/// received; the caller frees it.
+function SentCallMethodRequest(const AArgsJson: String): TJSONObject;
+var
+  Fake: TFakePipeBridge;
+  Discovery: TPrivateDiscovery;
+  Root: TJSONObject;
+  Sent: String;
+  V: TJSONValue;
+begin
+  Fake := TFakePipeBridge.Create('{"id":1,"ok":true,"result":{"name":"demo.x","result":null}}');
+  try
+    Fake.WaitUntilReady;
+    Discovery := TPrivateDiscovery.Create(Fake.PipeName);
+    try
+      Root := CallToolRoot('call_method', '{"pid":' + IntToStr(GetCurrentProcessId) + AArgsJson + '}');
+      FreeAndNil(Root);
+    finally
+      FreeAndNil(Discovery);
+    end;
+    Sent := Fake.SawRequest;
+  finally
+    FreeAndNil(Fake);
+  end;
+
+  V := TJSONObject.ParseJSONValue(Sent);
+  try
+    Assert.IsTrue(V is TJSONObject, 'the fake target received no JSON request: ' + Sent);
+    Assert.AreEqual('call_method', TJSONObject(V).GetValue('cmd').Value, 'cmd: ' + Sent);
+    Assert.IsTrue(TJSONObject(V).GetValue('args') is TJSONObject, 'args missing: ' + Sent);
+  except
+    FreeAndNil(V);   // a failed assert raises past Result: free the parsed request here
+    raise;
+  end;
+  Result := TJSONObject(V);
+end;
+
+
+/// call_method forwards name, args (as an object) and timeoutMs; without them it sends an empty args object and no timeoutMs.
+procedure TMcpToolTests.Test_CallMethod_ForwardsNameArgsAndTimeout;
+var
+  Req, Args: TJSONObject;
+begin
+  Req := SentCallMethodRequest(',"name":"demo.x","args":{"a":1,"s":"t"},"timeoutMs":9000');
+  try
+    Args := Req.GetValue('args') as TJSONObject;
+    Assert.AreEqual('demo.x', Args.GetValue('name').Value, 'name: ' + Req.ToJSON);
+    Assert.IsTrue(Args.GetValue('args') is TJSONObject, 'args.args must be an object: ' + Req.ToJSON);
+    Assert.AreEqual('{"a":1,"s":"t"}', Args.GetValue('args').ToJSON, 'args.args: ' + Req.ToJSON);
+    Assert.IsTrue(Req.GetValue('timeoutMs') is TJSONNumber, 'timeoutMs must reach the bridge: ' + Req.ToJSON);
+    Assert.AreEqual('9000', Req.GetValue('timeoutMs').Value, 'timeoutMs');
+  finally
+    FreeAndNil(Req);
+  end;
+
+  // Some AI clients send a nested object as its JSON text.
+  Req := SentCallMethodRequest(',"name":"demo.x","args":"{\"a\":2}"');
+  try
+    Args := Req.GetValue('args') as TJSONObject;
+    Assert.IsTrue(Args.GetValue('args') is TJSONObject, 'args given as JSON text must reach the bridge as an object: ' + Req.ToJSON);
+    Assert.AreEqual('{"a":2}', Args.GetValue('args').ToJSON, 'args.args from text');
+  finally
+    FreeAndNil(Req);
+  end;
+
+  Req := SentCallMethodRequest('');
+  try
+    Assert.AreEqual(0, (Req.GetValue('args') as TJSONObject).Count, 'without name the bridge args must be empty (the list): ' + Req.ToJSON);
+    Assert.IsNull(Req.GetValue('timeoutMs'), 'without timeoutMs the bridge default must apply: ' + Req.ToJSON);
+  finally
+    FreeAndNil(Req);
+  end;
+end;
+
+
+/// A wrong argument never reaches the target: the tool answers isError with the parameter's name.
+procedure TMcpToolTests.Test_CallMethod_BadArguments_IsErrorNamingTheParameter;
+var
+  IsError: Boolean;
+  Text: String;
+begin
+  Text := CallTool('call_method', '{"name":5}', IsError);
+  Assert.IsTrue(IsError, 'name 5 must be refused: ' + Text);
+  Assert.IsTrue(Text.Contains('"name"'), 'the message must name the parameter: ' + Text);
+
+  Text := CallTool('call_method', '{"name":"demo.x","args":[1]}', IsError);
+  Assert.IsTrue(IsError, 'args [1] must be refused: ' + Text);
+  Assert.IsTrue(Text.Contains('"args"'), 'the message must name the parameter: ' + Text);
+
+  Text := CallTool('call_method', '{"name":"demo.x","timeoutMs":-1}', IsError);
+  Assert.IsTrue(IsError, 'timeoutMs -1 must be refused: ' + Text);
+  Assert.IsTrue(Text.Contains('timeoutms'), 'the message must name the parameter: ' + Text);
+
+  Text := CallTool('call_method', '{"nmae":"demo.x"}', IsError);
+  Assert.IsTrue(IsError, 'an unknown key must be refused: ' + Text);
+  Assert.IsTrue(Text.Contains('nmae'), 'the message must name the unknown key: ' + Text);
+
+  Text := CallTool('call_method', '{"args":{"a":1}}', IsError);
+  Assert.IsTrue(IsError, 'args without name must be refused: ' + Text);
+  Assert.IsTrue(Text.Contains('"name"'), 'the message must say that name is missing: ' + Text);
+end;
+
+
+/// The schema of call_method declares args as an object (the generated schemas cannot), and no parameter is required.
+procedure TMcpToolTests.Test_CallMethod_SchemaDeclaresArgsAsObject;
+var
+  V: TJSONValue;
+  Root: TJSONObject;
+  Tools: TJSONArray;
+  Tool, Schema, Props: TJSONObject;
+  i: Integer;
+begin
+  V := TJSONObject.ParseJSONValue(DispatchLine('{"jsonrpc":"2.0","id":5,"method":"tools/list"}'));
+  Assert.IsTrue(V is TJSONObject, 'tools/list answer is not a JSON object');
+  Root := TJSONObject(V);
+  try
+    Tools := (Root.GetValue('result') as TJSONObject).GetValue('tools') as TJSONArray;
+    Tool := NIL;
+    for i := 0 to Tools.Count - 1 do
+      if (Tools.Items[i] as TJSONObject).GetValue('name').Value = 'call_method'
+      then Tool := Tools.Items[i] as TJSONObject;
+    Assert.IsNotNull(Tool, 'call_method missing from tools/list');
+    Schema := Tool.GetValue('inputSchema') as TJSONObject;
+    Assert.IsNotNull(Schema, 'inputSchema missing');
+    Assert.AreEqual('object', Schema.GetValue('type').Value, 'schema type');
+    Props := Schema.GetValue('properties') as TJSONObject;
+    Assert.AreEqual('string',  (Props.GetValue('name')      as TJSONObject).GetValue('type').Value, 'name type');
+    Assert.AreEqual('object',  (Props.GetValue('args')      as TJSONObject).GetValue('type').Value, 'args type');
+    Assert.AreEqual('integer', (Props.GetValue('timeoutms') as TJSONObject).GetValue('type').Value, 'timeoutms type');
+    Assert.AreEqual('integer', (Props.GetValue('pid')       as TJSONObject).GetValue('type').Value, 'pid type');
+    Assert.IsNull(Schema.GetValue('required'), 'no parameter of call_method is required');
+  finally
+    FreeAndNil(Root);
   end;
 end;
 

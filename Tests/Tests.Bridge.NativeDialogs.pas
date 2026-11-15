@@ -21,13 +21,14 @@ type
     [Test] procedure Test_EnumerateFindsMessageBox_AndDismissByRole;
     [Test] procedure Test_DismissByRole_RoleBeatsCaptionSubstring;
     [Test] procedure Test_NoDialogUp_ClickReturnsNoDialog;
+    [Test] procedure Test_TaskDialog_TextIsRead;
   end;
 
 
 implementation
 
 uses
-  Winapi.Windows,
+  Winapi.Windows, Winapi.CommCtrl,
   System.SysUtils, System.Classes, System.SyncObjs, System.JSON, System.Generics.Collections,
   Autopilot.Bridge.NativeDialogs;
 
@@ -72,6 +73,107 @@ end;
 
 // Find the enumerated dialog whose caption matches, returning its hwnd (0 if absent) and
 // how many buttons it reported.
+type
+  { Owns a Task Dialog (TaskDialogIndirect, the window Delphi 13's ShowMessage/MessageDlg show) on its own thread. Same lifetime rules as TMsgBoxThread. }
+  TTaskDlgThread = class(TThread)
+  public
+    Caption, MainInstruction, Content: String;
+    Returned: Integer;
+    Done    : TEvent;
+    constructor Create(const ACaption, AMainInstruction, AContent: String);
+    destructor Destroy; override;
+    procedure Execute; override;
+  end;
+
+
+constructor TTaskDlgThread.Create(const ACaption, AMainInstruction, AContent: String);
+begin
+  Caption         := ACaption;
+  MainInstruction := AMainInstruction;
+  Content         := AContent;
+  Returned        := 0;
+  Done            := TEvent.Create(nil, True, False, '');
+  inherited Create(False);
+end;
+
+
+destructor TTaskDlgThread.Destroy;
+begin
+  inherited;
+  FreeAndNil(Done);
+end;
+
+
+procedure TTaskDlgThread.Execute;
+var
+  Config: TTaskDialogConfig;
+  Btn: Integer;
+begin
+  FillChar(Config, SizeOf(Config), 0);
+  Config.cbSize             := SizeOf(Config);
+  Config.dwCommonButtons    := TDCBF_OK_BUTTON or TDCBF_CANCEL_BUTTON;
+  Config.pszWindowTitle     := PChar(Caption);
+  Config.pszMainInstruction := PChar(MainInstruction);
+  Config.pszContent         := PChar(Content);
+  Btn := 0;
+  if Succeeded(TaskDialogIndirect(Config, @Btn, nil, nil))
+  then Returned := Btn
+  else Returned := -1;
+  Done.SetEvent;
+end;
+
+
+function DumpEnumProc(AWnd: HWND; AParam: LPARAM): BOOL; stdcall;
+var
+  Buf: array[0..255] of Char;
+  S: String;
+begin
+  SetString(S, Buf, GetClassName(AWnd, Buf, Length(Buf)));
+  TStrings(AParam).Add(S + '(id ' + IntToStr(GetDlgCtrlID(AWnd)) + ')');
+  Result := TRUE;
+end;
+
+
+{ The 'text' field of the enumerated dialog whose caption is ACaption; '<no dialog>' when none matches. }
+function DialogTextByCaption(const ACaption: String): String;
+var
+  NoExclude: TArray<NativeUInt>;
+  Arr: TJSONArray;
+  i: Integer;
+  Node: TJSONObject;
+begin
+  Result := '<no dialog>';
+  NoExclude := nil;
+  Arr := EnumerateNativeDialogs(NoExclude);
+  try
+    for i := 0 to Arr.Count - 1 do
+      begin
+        Node := Arr.Items[i] AS TJSONObject;
+        if SameText(Node.GetValue<String>('caption'), ACaption)
+        then EXIT(Node.GetValue<String>('text'));
+      end;
+  finally
+    FreeAndNil(Arr);
+  end;
+end;
+
+
+{ The class names of every descendant window of ADlg, for a failure message. }
+function DescendantClasses(ADlg: HWND): String;
+var
+  L: TStringList;
+begin
+  L := TStringList.Create;
+  try
+    EnumChildWindows(ADlg, @DumpEnumProc, LPARAM(L));
+    L.Delimiter := ',';
+    Result := L.DelimitedText;
+  finally
+    FreeAndNil(L);
+  end;
+end;
+
+
 function FindDialogByCaption(const ACaption: String; out AButtonCount: Integer): NativeUInt;
 var
   NoExclude: TArray<NativeUInt>;
@@ -208,6 +310,48 @@ begin
     if Th.Done.WaitFor(0) = wrSignaled
     then Th.Free
     else Assert.Fail('MessageBox could not be dismissed; thread left parked to avoid an untimed WaitFor hang');
+  end;
+end;
+
+
+{ A Task Dialog draws its texts inside a DirectUIHWND window, with no Static child, so the Static walk alone answers text ''. }
+procedure TNativeDialogTests.Test_TaskDialog_TextIsRead;
+const
+  UniqueCap = 'AP_TEST_TASKDIALOG_4410';
+  MainText  = 'AP main instruction 4410';
+  BodyText  = 'AP content text 4410';
+var
+  Th: TTaskDlgThread;
+  Dlg, Resolved: NativeUInt;
+  BtnCount, ClickedId: Integer;
+  ClickedCap, Reason, Via, Text, Classes: String;
+  Deadline: UInt64;
+  Junk: TArray<NativeUInt>;
+begin
+  Junk := nil;
+  Th := TTaskDlgThread.Create(UniqueCap, MainText, BodyText);
+  try
+    Dlg := 0; BtnCount := 0;
+    Deadline := TThread.GetTickCount64 + 5000;
+    while (Dlg = 0) and (TThread.GetTickCount64 < Deadline) and (Th.Done.WaitFor(0) <> wrSignaled) do
+      begin
+        Dlg := FindDialogByCaption(UniqueCap, BtnCount);
+        if Dlg = 0 then TThread.Sleep(50);
+      end;
+    Assert.IsTrue(Dlg <> 0, 'the Task Dialog was not found by EnumerateNativeDialogs (TaskDialogIndirect returned ' + IntToStr(Th.Returned) + ')');
+    Classes := DescendantClasses(HWND(Dlg));
+    Text := DialogTextByCaption(UniqueCap);
+    Assert.Contains(Text, MainText, FALSE, 'the main instruction is missing from text; descendants: ' + Classes);
+    Assert.Contains(Text, BodyText, FALSE, 'the content is missing from text; descendants: ' + Classes);
+  finally
+    if Th.Done.WaitFor(0) <> wrSignaled then
+      begin
+        ClickNativeDialogButton(Junk, 0, 'cancel', ClickedId, ClickedCap, Resolved, Reason, Via);
+        Th.Done.WaitFor(2000);
+      end;
+    if Th.Done.WaitFor(0) = wrSignaled
+    then FreeAndNil(Th)
+    else Assert.Fail('the Task Dialog could not be dismissed; thread left parked to avoid an untimed WaitFor hang');
   end;
 end;
 

@@ -1,4 +1,4 @@
-# WHAT: end-to-end regression test of all 14 Autopilot MCP tools and of the documented error codes, through the real MCP server EXE, the way an AI host drives it.
+# WHAT: end-to-end regression test of all 15 Autopilot MCP tools and of the documented error codes, through the real MCP server EXE, the way an AI host drives it.
 #   It starts the target app (-ExePath), starts its OWN copy of Autopilot.Mcp.exe with redirected standard input/output/error, speaks MCP JSON-RPC to it
 #   (initialize, notifications/initialized, tools/list, tools/call), and checks every answer against the contract in AI-INSTRUCTIONS.md, "AI-INSTRUCTIONS - tool reference.md" and CLAUDE.md
 #   (sections "Click dispatch", "Path rule", "screenshot", "Native dialogs", "TColor coercion", "Parent-inheritance auto-flip", "Error model").
@@ -112,7 +112,7 @@ $InPanelText    = 'Inside the panel'
 $InPanelVisual  = $M.Panel + '.' + ($M.InPanel -split '\.')[-1]      # Form.Panel.Control: needs the visual-parent fallback of the path rule
 $CheckedProp    = $F.CheckedProp
 $FontSizeProp   = 'Font.Size'
-$ExpectedTools  = @('attach','click','dismiss_dialog','execute_action','get_text','list_tree','read_property','screenshot','send_keys','set_checked','set_keep_awake','set_property','set_text','wait_for')
+$ExpectedTools  = @('attach','click','dismiss_dialog','execute_action','get_text','list_tree','read_property','screenshot','send_keys','set_checked','set_keep_awake','set_property','set_text','wait_for','call_method')
 
 $ExchangeFile   = Join-Path $OutDir "$OutPrefix$Framework exchange.txt"
 $ResultsFile    = Join-Path $OutDir "$OutPrefix$Framework results.txt"
@@ -460,7 +460,7 @@ try {
     $tl = Send 'tools/list' @{}
     $names = @($tl.result.tools | ForEach-Object { [string]$_.name } | Sort-Object)
     $want  = @($ExpectedTools | Sort-Object)
-    Case 'tools/list: the 14 tools' (($names.Count -eq 14) -and (($names -join ',') -eq ($want -join ','))) "14 tools: $($want -join ',')" "$($names.Count) tools: $($names -join ',')"
+    Case 'tools/list: the 15 tools' (($names.Count -eq 15) -and (($names -join ',') -eq ($want -join ','))) "15 tools: $($want -join ',')" "$($names.Count) tools: $($names -join ',')"
   }
 
   # Bad lines and non-ASCII text on the server's standard input. The expected values come from the JSON-RPC 2.0 specification
@@ -527,7 +527,7 @@ try {
       $withPid = @($tl.result.tools | Where-Object { ($null -ne $_.inputSchema.properties) -and ($null -ne $_.inputSchema.properties.PSObject.Properties['pid']) })
       $notInt  = @($withPid | Where-Object { [string]$_.inputSchema.properties.pid.type -ne 'integer' })
       $types   = @($withPid | ForEach-Object { "$($_.name)=$($_.inputSchema.properties.pid.type)" })
-      Case 'tools/list: the pid property of every tool has type integer' (($withPid.Count -eq 14) -and ($notInt.Count -eq 0)) '14 tools with a pid property, each of type integer' "$($withPid.Count) tools with pid, $($notInt.Count) not integer: $($types -join ', ')"
+      Case 'tools/list: the pid property of every tool has type integer' (($withPid.Count -eq 15) -and ($notInt.Count -eq 0)) '15 tools with a pid property, each of type integer' "$($withPid.Count) tools with pid, $($notInt.Count) not integer: $($types -join ', ')"
     }
     # Latin-1, Romanian, CJK and U+1F600 (the surrogate pair D83D DE00), built from code units: Windows PowerShell 5.1 reads a .ps1
     # without a byte order mark as ANSI, so this file holds no raw non-ASCII character.
@@ -566,6 +566,30 @@ try {
     }
     $node = $comps | Where-Object { $_.path -ceq $M.InPanel } | Select-Object -First 1
     Case 'list_tree: a control on a panel of its own form has no parent field' (($null -ne $node) -and ($null -eq $node.PSObject.Properties['parent'])) 'no "parent" field' $(if ($null -eq $node) { 'node missing' } else { ($node | ConvertTo-Json -Compress) })
+
+    # { The filter arguments form and formsOnly ("AI-INSTRUCTIONS - tool reference.md", section list_tree), checked against the unfiltered answer above.
+    #   Both demos have one form, so the form case alone cannot tell a filter from no filter: formsOnly, the unknown form and form + formsOnly can. }
+    $formNodes = @($comps | Where-Object { $_.path -ceq $_.form })
+    $lt2 = Tool 'list_tree' @{ pid = $script:TargetPid; formsOnly = $true }
+    $c2 = @($lt2.J.result.components)
+    $nonForm = @($c2 | Where-Object { $_.path -cne $_.form })
+    $ok = (IsOk $lt2) -and ($formNodes.Count -gt 0) -and ($c2.Count -eq $formNodes.Count) -and ($nonForm.Count -eq 0) -and (@($c2 | Where-Object { $_.path -ceq $M.Form }).Count -eq 1)
+    Case 'list_tree formsOnly: only the form nodes' $ok "$($formNodes.Count) node(s), all of them forms, $($M.Form) among them" $(if (IsOk $lt2) { "$($c2.Count) node(s), $($nonForm.Count) not a form: $(@($c2 | ForEach-Object { $_.path }) -join ',')" } else { Describe $lt2 })
+
+    $upper = $M.Form.ToUpper()
+    $lt3 = Tool 'list_tree' @{ pid = $script:TargetPid; form = $upper }
+    $c3 = @($lt3.J.result.components)
+    $want = @($comps | Where-Object { $_.form -ceq $M.Form } | ForEach-Object { $_.path }) -join ','
+    $got  = @($c3 | ForEach-Object { $_.path }) -join ','
+    Case "list_tree form=${upper}: the nodes of that form, case-insensitive" ((IsOk $lt3) -and ($c3.Count -gt 1) -and ($got -ceq $want)) "$(@($comps | Where-Object { $_.form -ceq $M.Form }).Count) nodes, the same paths as the unfiltered answer" $(if (IsOk $lt3) { "$($c3.Count) nodes, same paths: $($got -ceq $want)" } else { Describe $lt3 })
+
+    $lt4 = Tool 'list_tree' @{ pid = $script:TargetPid; form = 'NoSuchFormE2E' }
+    $ok = $lt4.IsError -and ($lt4.Code -eq -32001) -and ($lt4.Msg -clike '*NoSuchFormE2E*') -and ($lt4.Msg -clike "*$($M.Form)*")
+    Case 'list_tree form=NoSuchFormE2E: -32001 naming the forms that exist' $ok "isError, code -32001, the message names NoSuchFormE2E and $($M.Form)" (Describe $lt4)
+
+    $lt5 = Tool 'list_tree' @{ pid = $script:TargetPid; form = $M.Form; formsOnly = $true }
+    $c5 = @($lt5.J.result.components)
+    Case 'list_tree form + formsOnly: that form node only' ((IsOk $lt5) -and ($c5.Count -eq 1) -and ($c5[0].path -ceq $M.Form)) "1 node, path $($M.Form)" $(if (IsOk $lt5) { "$($c5.Count) node(s): $(@($c5 | ForEach-Object { $_.path }) -join ',')" } else { Describe $lt5 })
   }
 
   Section 'click' {
@@ -774,8 +798,39 @@ try {
     ExpectCode 'send_keys: a label cannot take the focus' $r -32005
   }
 
-  # A control disabled through set_property cannot be enabled again through any tool: "AI-INSTRUCTIONS - tool reference.md", section read_property,
-  # "Contrast with click / set_property, which refuse to act on disabled controls". So this test uses the check box, which no later case needs.
+  # The demos register demo.setName and demo.increment (RegisterAutopilotCommands in the demo form).
+  Section 'call_method' {
+    $r = Tool 'call_method' @{ pid = $script:TargetPid }
+    $names = @(); if (IsOk $r) { $names = @($r.J.result.commands | ForEach-Object { [string]$_.name }) }
+    $descOk = (IsOk $r) -and (@($r.J.result.commands | Where-Object { [string]::IsNullOrEmpty([string]$_.description) }).Count -eq 0)
+    Case 'call_method without name: the sorted command list with descriptions' ($descOk -and (($names -join ',') -ceq 'demo.increment,demo.setName')) 'demo.increment,demo.setName, each with a description' (Describe $r)
+
+    $r = Tool 'call_method' @{ pid = $script:TargetPid; name = 'demo.setName'; args = @{ text = 'viaCommand' } }
+    Case 'call_method demo.setName: the handler result' ((IsOk $r) -and ([string]$r.J.result.name -ceq 'demo.setName') -and ([string]$r.J.result.result.echo -ceq 'viaCommand')) 'ok, result.name=demo.setName, result.result.echo=viaCommand' (Describe $r)
+    ExpectText 'call_method demo.setName: the edit holds the text' $M.Edit 'viaCommand'
+    ExpectText 'call_method demo.setName: the echo label holds the text' $M.Echo 'viaCommand'
+
+    $n0 = ToInt (GetText $M.Counter)
+    if ($n0 -lt 0) { $n0 = 0 }   # the counter label still shows its design-time caption
+    $r = Tool 'call_method' @{ pid = $script:TargetPid; name = 'DEMO.INCREMENT'; args = @{ by = 5 }; timeoutMs = 8000 }
+    Case 'call_method DEMO.INCREMENT (case-insensitive) by=5, timeoutMs=8000' ((IsOk $r) -and ([int]$r.J.result.result.counter -eq ($n0 + 5))) "ok, result.result.counter=$($n0 + 5)" (Describe $r)
+    ExpectText 'call_method demo.increment: the counter label' $M.Counter ([string]($n0 + 5))
+
+    $r = Tool 'call_method' @{ pid = $script:TargetPid; name = 'NoSuchCommandE2E' }
+    $ok = $r.IsError -and ($r.Code -eq -32001) -and ($r.Msg -clike '*NoSuchCommandE2E*') -and ($r.Msg -clike '*demo.setName*')
+    Case 'call_method unknown name: -32001 naming the commands' $ok 'isError, code -32001, the message names NoSuchCommandE2E and demo.setName' (Describe $r)
+
+    $r = Tool 'call_method' @{ pid = $script:TargetPid; name = 'demo.setName' }
+    $ok = $r.IsError -and ($r.Code -eq -32603) -and ($r.Msg -clike '*EArgumentException*') -and ($r.Msg -clike '*args.text*')
+    Case 'call_method raising handler: -32603 with the class and message' $ok 'isError, code -32603, the message names EArgumentException and args.text' (Describe $r)
+    ExpectText 'call_method raising handler: the echo label is unchanged' $M.Echo 'viaCommand'
+
+    $r = Tool 'call_method' @{ pid = $script:TargetPid; name = 'demo.setName'; args = @(1, 2) }
+    Case 'call_method args not an object: isError naming args' ($r.IsError -and ($r.Text -clike '*"args"*')) 'isError, the message names "args"' (Describe $r)
+  }
+
+  # On a disabled control every tool answers -32003, except set_property of Enabled itself, which may enable it again
+  # ("AI-INSTRUCTIONS - tool reference.md", section set_property, "Disabled controls"); the last cases of this section do exactly that.
   Section 'disabled control' {
     # The delayed-text button: it has an OnClick on both frameworks (the FMX cbxFlag has only OnChange, so an FMX click on it is -32005 by contract),
     # and nothing after this section needs it.
@@ -912,6 +967,9 @@ try {
   Section 'blocked main thread' {
     $r = Tool 'click' @{ pid = $script:TargetPid; path = $M.DialogButton }
     Case 'blocked: a default click on the dialog button gives -32004 after its 5000 ms timeout' ($r.IsError -and ($r.Code -eq -32004) -and ($r.Ms -ge 4500) -and ($r.Ms -le 8000)) 'isError=true, error.code -32004, after 4500..8000 ms' "$(Describe $r) [$($r.Ms) ms]"
+    $started = $null
+    if (($null -ne $r.J) -and ($null -ne $r.J.error) -and ($null -ne $r.J.error.PSObject.Properties['data'])) { $started = $r.J.error.data.started }
+    Case 'blocked: the -32004 says the click started and must not be sent again' (($started -eq $true) -and ($r.Msg -clike '*started and is still running*') -and ($r.Msg -clike '*do not send it again*')) 'error.data.started=true, the message says "started and is still running" and "do not send it again"' "started=$started | $(Describe $r)"
     $d = PollDialogs $true
     $dl = @()
     if (IsOk $d) { $dl = @($d.J.result.dialogs) }
@@ -925,6 +983,20 @@ try {
     $r = Tool 'get_text' @{ pid = $script:TargetPid; path = $M.Counter }
     Case 'blocked: the app answers again' ((IsOk $r) -and ($r.Ms -lt 3000)) 'get_text ok within 3000 ms' "$(Describe $r) [$($r.Ms) ms]"
     if ($M.Contains('DialogResult')) { ExpectText 'blocked: the dialog returned No (mrNo = 7)' $M.DialogResult 'Dialog closed with 7' }
+  }
+
+  # waitMs: ONE dismiss_dialog call right after the click waits for the dialog, instead of the caller's own poll loop (PollDialogs).
+  Section 'dismiss_dialog waitMs' {
+    $r = Tool 'dismiss_dialog' @{ pid = $script:TargetPid; waitMs = 10001 }
+    Case 'waitMs above 10000: isError naming waitMs' ($r.IsError -and ($r.Text -clike '*waitMs*')) 'isError, the message names waitMs' (Describe $r)
+    $r = Tool 'dismiss_dialog' @{ pid = $script:TargetPid; waitMs = 300 }
+    Case 'waitMs with no dialog: an empty list after about the wait' ((IsOk $r) -and (@($r.J.result.dialogs).Count -eq 0) -and ($r.Ms -ge 250) -and ($r.Ms -le 3000)) 'ok, dialogs=[], after 250..3000 ms' "$(DialogSummary $r) [$($r.Ms) ms]"
+    if ($IsVcl) { $r = Tool 'click' @{ pid = $script:TargetPid; path = $M.DialogButton; mode = 'message' } }
+    else        { $r = Tool 'click' @{ pid = $script:TargetPid; path = $M.DialogButton; timeoutMs = 300 } }
+    $r = Tool 'dismiss_dialog' @{ pid = $script:TargetPid; button = 'cancel'; waitMs = 5000 }
+    Case 'waitMs: the first dismiss_dialog after the click finds and clicks the dialog' ((IsOk $r) -and ($r.J.result.clicked -eq $true) -and ([string]$r.J.result.clickedCaption -eq 'Cancel')) 'clicked=true, clickedCaption=Cancel' "clicked=$($r.J.result.clicked), clickedCaption=$($r.J.result.clickedCaption), reason=$($r.J.result.reason) [$($r.Ms) ms] | $(Short (Describe $r) 150)"
+    $d = PollDialogs $false
+    Case 'waitMs: the dialog is gone' ((IsOk $d) -and (@($d.J.result.dialogs).Count -eq 0)) 'dialogs=[]' (DialogSummary $d)
   }
 
   Section 'busy pipe (-32098)' {

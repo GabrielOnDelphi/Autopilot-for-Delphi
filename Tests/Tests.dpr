@@ -33,6 +33,7 @@ USES
   Autopilot.Bridge.NamedPipe in '..\Source\Bridge\Autopilot.Bridge.NamedPipe.pas',
   Autopilot.Bridge.NativeDialogs in '..\Source\Bridge\Autopilot.Bridge.NativeDialogs.pas',
   Autopilot.Bridge.Vcl       in '..\Source\Bridge\Autopilot.Bridge.Vcl.pas',
+  Autopilot.Bridge.Commands  in '..\Source\Bridge\Autopilot.Bridge.Commands.pas',
   Autopilot.Client           in '..\Source\Client\Autopilot.Client.pas',
   Bridge.TestClient           in 'Bridge.TestClient.pas',
   Bridge.Tests                in 'Bridge.Tests.pas',
@@ -49,7 +50,9 @@ USES
   Tests.ErrorCodes            in 'Tests.ErrorCodes.pas',
   Tests.Bridge.KeyNames       in 'Tests.Bridge.KeyNames.pas',
   Tests.Bridge.Guide          in 'Tests.Bridge.Guide.pas',
-  Tests.Bridge.EventHandlers  in 'Tests.Bridge.EventHandlers.pas';
+  Tests.Bridge.EventHandlers  in 'Tests.Bridge.EventHandlers.pas',
+  Tests.Bridge.ListTreeFilter in 'Tests.Bridge.ListTreeFilter.pas',
+  Tests.Bridge.CallMethod     in 'Tests.Bridge.CallMethod.pas';
 
 VAR
   Runner       : ITestRunner;

@@ -8,7 +8,7 @@
    - tools/call protocol errors (-32602): an unknown tool, a missing or non-string name, arguments that are not an object.
    - A bad argument value (missing, wrong type, out of range) is an isError result, never a JSON-RPC error
      (https://modelcontextprotocol.io/specification/2025-11-25/server/tools section "Error Handling").
-   - Tests.exe links the fourteen production tool units, so tools/list returns them. Tool behaviour is tested in Tests.Mcp.Tools.
+   - Tests.exe links the fifteen production tool units, so tools/list returns them. Tool behaviour is tested in Tests.Mcp.Tools.
 =============================================================================================================}
 
 interface
@@ -145,7 +145,7 @@ end;
 procedure TJsonRpcTests.Setup;
 begin
   // Each test gets a clean tool cache. The registry is whatever production code
-  // wired up (the fourteen tool units Tests.dpr links).
+  // wired up (the fifteen tool units Tests.dpr links).
   ResetToolCache;
 end;
 
@@ -383,7 +383,7 @@ begin
     Result_ := Root.GetValue('result') AS TJSONObject;
     Tools := Result_.GetValue('tools') AS TJSONArray;
     Assert.IsNotNull(Tools, 'result.tools missing');
-    Assert.AreEqual(14, Tools.Count, 'Tests.dpr links all fourteen tool units');
+    Assert.AreEqual(15, Tools.Count, 'Tests.dpr links all fifteen tool units');
   finally
     Root.Free;
   end;

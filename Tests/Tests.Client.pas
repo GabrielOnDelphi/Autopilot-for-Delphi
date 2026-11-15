@@ -33,6 +33,7 @@ type
   public
     [Test] procedure Test_GetText_ReturnsTheAnswerText;
     [Test] procedure Test_EveryRequestCarriesTimeoutMs;
+    [Test] procedure Test_CallMethod_RequestCarriesTheClickTimeout;
     [Test] procedure Test_ProtocolMismatch_RaisesWithBothVersions;
     [Test] procedure Test_ErrorAnswer_RaisesWithCodeAndData;
     [Test] procedure Test_SilentTarget_RaisesNotRespondingAfterTimeoutPlusGrace;
@@ -603,6 +604,38 @@ begin
   Assert.AreEqual(2, Count, 'requests the fake received');
   Assert.AreEqual(Want(2000), First, 'timeoutMs of get_text (the bridge default of a read command)');
   Assert.AreEqual(5200, Second, 'timeoutMs of a click with count 3 (5000 + 2 x 100)');
+end;
+
+
+{ call_method runs an app command on the main thread, so the bridge gives it the 5000 ms click bucket (decision "Per-command timeout").
+  The client sends its own default in every request, so a wrong default here overrides the bridge's. }
+procedure TClientTransportTests.Test_CallMethod_RequestCarriesTheClickTimeout;
+var
+  Fake: TFakeBridge;
+  App : TAutopilotApp;
+  Res : TJSONObject;
+  Count, Timeout: Integer;
+begin
+  Timeout := -1;
+  Fake := TFakeBridge.Create(NewPipeName, [Session('"ok":true,"result":{"name":"x","result":null}')], 0, 0);
+  try
+    Assert.IsTrue(Fake.WaitReady, 'the fake bridge did not start');
+    App := TAutopilotAppAccess.CreateForPipe(Fake.PipeName, 0);
+    try
+      Res := App.Call('call_method', NIL);
+      FreeAndNil(Res);
+    finally
+      FreeAndNil(App);
+    end;
+    Fake.Shutdown;
+    Count := Fake.Requests.Count;
+    if Count > 0 then Timeout := TimeoutOf(Fake.Requests[0]);
+  finally
+    Fake.Shutdown;
+    FreeAndNil(Fake);
+  end;
+  Assert.AreEqual(1, Count, 'requests the fake received');
+  Assert.AreEqual(Want(5000), Timeout, 'timeoutMs of call_method (the bridge default of a command that runs user code)');
 end;
 
 

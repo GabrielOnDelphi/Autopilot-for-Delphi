@@ -51,6 +51,7 @@ USES
   Autopilot.Mcp.Tool.SetKeepAwake  in '..\..\Source\McpServer\Autopilot.Mcp.Tool.SetKeepAwake.pas',
   Autopilot.Mcp.Tool.DismissDialog in '..\..\Source\McpServer\Autopilot.Mcp.Tool.DismissDialog.pas',
   Autopilot.Mcp.Tool.SendKeys      in '..\..\Source\McpServer\Autopilot.Mcp.Tool.SendKeys.pas',
+  Autopilot.Mcp.Tool.CallMethod    in '..\..\Source\McpServer\Autopilot.Mcp.Tool.CallMethod.pas',
   Tests.Mcp.Schema            in 'Tests.Mcp.Schema.pas',
   Tests.Mcp.Serializer        in 'Tests.Mcp.Serializer.pas',
   Tests.Mcp.JsonRpc           in 'Tests.Mcp.JsonRpc.pas',

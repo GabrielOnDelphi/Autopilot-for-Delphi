@@ -1,7 +1,7 @@
 unit Tests.Bridge.PropertyTypes;
 
 {=============================================================================================================
-   2026.10.07
+   2026.11.15
    www.GabrielMoraru.com
 --------------------------------------------------------------------------------------------------------------
    - DUnitX tests for list_tree, set_text and set_checked on components whose Visible / Enabled / Text / Caption /
@@ -12,6 +12,9 @@ unit Tests.Bridge.PropertyTypes;
      the EInvalidCast raises during one bridge command (TRaiseCounter, Tests.RaiseCounter.pas).
    - The data-aware path is reached through RTTI only (DataField -> DataSource -> DataSet), so stand-in classes
      with the same property names exercise it without Data.DB.
+   - set_text, set_checked and set_property on a control that the app's own code frees during the command:
+     TZombieControl keeps its memory after the free and counts every later read, so "the bridge read nothing"
+     is an assertion instead of a crash that may or may not happen.
    - Win32 only (TRaiseCounter reads the Delphi exception record), like Tests.LeakSuppressor.
 =============================================================================================================}
 
@@ -39,6 +42,12 @@ type
     [Test] procedure Test_SetChecked_EnumCheckedIsMissing;
     [Test] procedure Test_SetChecked_DataBoundEnumCheckedIsUnsupported;
     [Test] procedure Test_SetText_DataBoundEnumFlagsAreSkipped;
+
+    { The app's own code frees the control in the middle of the command }
+    [Test] procedure Test_SetProperty_SetterFreesTheControl_BridgeReadsNothingAfter;
+    [Test] procedure Test_SetText_DataBoundSetterFreesTheControl_BridgeReadsNothingAfter;
+    [Test] procedure Test_SetText_DataBoundEditFreesTheControl_TextNotWritten;
+    [Test] procedure Test_SetChecked_DataBoundClickFreesTheControl_BridgeReadsNothingAfter;
   end;
 
 
@@ -46,8 +55,9 @@ implementation
 
 uses
   Winapi.Windows,   // GetCurrentProcessId for the pipe name
+  Winapi.Messages,  // TMessage, BM_CLICK for TZombieControl
   System.SysUtils, System.Classes, System.JSON, System.Generics.Collections,
-  Vcl.Controls, Vcl.StdCtrls,
+  Vcl.Graphics, Vcl.Controls, Vcl.StdCtrls,
   Autopilot.Bridge.Core, Autopilot.Bridge.Vcl,
   Bridge.TestClient, Bridge.Tests, Tests.RaiseCounter;
 
@@ -118,6 +128,7 @@ type
     FDataSet: TFakeDataSet;
     FAutoEdit: TItemVisible;
   public
+    OnEdit: TProc;                                              // runs inside Edit, as a dataset event would (BeforeEdit, OnStateChange)
     procedure Edit;                                             // found by the bridge through RTTI
   published
     property DataSet: TFakeDataSet read FDataSet write FDataSet;
@@ -149,6 +160,50 @@ type
     property DataField: String read FDataField write FDataField;
     property DataSource: TFakeDataSource read FDataSource write FDataSource;
     property Checked: TItemVisible read FChecked write FChecked default ivAlways;
+  end;
+
+  { A control that the app's own code frees in the middle of a bridge command, and whose memory outlives that free.
+    A read of freed memory is undefined: it may crash, or quietly return garbage, so it cannot be asserted.
+    This control keeps its memory until ReleaseMemory (FreeInstance does not free it), and every published getter and setter, and WndProc, counts a call made after Destroy has finished.
+    ReadsAfterFree > 0 therefore proves that the bridge touched the control after it was freed. }
+  TZombieControl = class(TWinControl)
+  private
+    FKeepMemory: Boolean;
+    FDataField: String;
+    FDataSource: TFakeDataSource;
+    FZText: String;
+    FZChecked: Boolean;
+    FZColor: TColor;
+    procedure countIfDead;
+    function  getDataField: String;
+    function  getDataSource: TFakeDataSource;
+    function  getZText: String;
+    procedure setZText(const AValue: String);
+    function  getZChecked: Boolean;
+    procedure setZChecked(AValue: Boolean);
+    function  getZColor: TColor;
+    procedure setZColor(AValue: TColor);
+    function  getZParentColor: Boolean;
+    procedure setZParentColor(AValue: Boolean);
+  protected
+    procedure WndProc(var Message: TMessage); override;
+  public
+    Dead: Boolean;              // TRUE once Destroy has finished
+    ReadsAfterFree: Integer;
+    FreeOnTextSet: Boolean;     // the Text setter frees the control, as an OnChange that closes its frame would
+    FreeOnCheckedClick: Boolean; // BM_CLICK toggles Checked, then frees the control, as an OnClick would
+    FreeOnColorSet: Boolean;    // the Color setter frees the control
+    constructor Create(AOwner: TComponent); override;
+    destructor Destroy; override;
+    procedure FreeInstance; override;
+    procedure Dispose;          // frees the control if it still lives, then its memory
+  published
+    property DataField: String read getDataField write FDataField;
+    property DataSource: TFakeDataSource read getDataSource write FDataSource;
+    property Text: String read getZText write setZText;
+    property Checked: Boolean read getZChecked write setZChecked;
+    property Color: TColor read getZColor write setZColor;
+    property ParentColor: Boolean read getZParentColor write setZParentColor;   // TurnOffParentInheritFor reads it after a Color write
   end;
 
   TPropTypesForm = class(TForm)
@@ -187,6 +242,153 @@ procedure TFakeDataSource.Edit;
 begin
   Assert.IsNotNull(FDataSet, 'TFakeDataSource.Edit: no DataSet');
   FDataSet.State := dsEdit;
+  if Assigned(OnEdit)
+  then OnEdit();
+end;
+
+
+{ TZombieControl }
+
+constructor TZombieControl.Create(AOwner: TComponent);
+begin
+  inherited Create(AOwner);
+  FKeepMemory := TRUE;
+end;
+
+
+destructor TZombieControl.Destroy;
+begin
+  inherited Destroy;
+  Dead := TRUE;   // from here on, a getter, setter or message counts as a read after the free
+end;
+
+
+// Keeps the memory of a freed control, so the counters stay readable and a late read stays harmless. Dispose frees it.
+procedure TZombieControl.FreeInstance;
+begin
+  if not FKeepMemory
+  then inherited FreeInstance;
+end;
+
+
+procedure TZombieControl.Dispose;
+begin
+  FKeepMemory := FALSE;
+  if Dead
+  then FreeInstance   // Destroy already ran; CleanupInstance and FreeMem were left for now
+  else Free;
+end;
+
+
+procedure TZombieControl.countIfDead;
+begin
+  if Dead
+  then Inc(ReadsAfterFree);
+end;
+
+
+function TZombieControl.getDataField: String;
+begin
+  countIfDead;
+  Result := FDataField;
+end;
+
+
+function TZombieControl.getDataSource: TFakeDataSource;
+begin
+  countIfDead;
+  Result := FDataSource;
+end;
+
+
+function TZombieControl.getZText: String;
+begin
+  countIfDead;
+  Result := FZText;
+end;
+
+
+procedure TZombieControl.setZText(const AValue: String);
+begin
+  countIfDead;
+  FZText := AValue;
+  if FreeOnTextSet
+  then Free;   // the last statement: nothing reads Self after it
+end;
+
+
+function TZombieControl.getZChecked: Boolean;
+begin
+  countIfDead;
+  Result := FZChecked;
+end;
+
+
+procedure TZombieControl.setZChecked(AValue: Boolean);
+begin
+  countIfDead;
+  FZChecked := AValue;
+end;
+
+
+function TZombieControl.getZColor: TColor;
+begin
+  countIfDead;
+  Result := FZColor;
+end;
+
+
+procedure TZombieControl.setZColor(AValue: TColor);
+begin
+  countIfDead;
+  FZColor := AValue;
+  if FreeOnColorSet
+  then Free;   // the last statement: nothing reads Self after it
+end;
+
+
+function TZombieControl.getZParentColor: Boolean;
+begin
+  countIfDead;
+  Result := TRUE;   // inherits, so TurnOffParentInheritFor would write FALSE
+end;
+
+
+procedure TZombieControl.setZParentColor(AValue: Boolean);
+begin
+  countIfDead;
+end;
+
+
+procedure TZombieControl.WndProc(var Message: TMessage);
+begin
+  if Dead then
+    begin
+      Inc(ReadsAfterFree);
+      EXIT;
+    end;
+  if (Message.Msg = BM_CLICK) and FreeOnCheckedClick then
+    begin
+      FZChecked := not FZChecked;
+      Free;   // the last statement: nothing reads Self after it
+      EXIT;
+    end;
+  inherited WndProc(Message);
+end;
+
+
+// A zombie on AForm named AName; bound to the form's fake data source when ADataBound.
+function MakeZombie(AForm: TForm; const AName: String; ADataBound: Boolean): TZombieControl;
+begin
+  Result := TZombieControl.Create(AForm);
+  Result.Name   := AName;
+  Result.Parent := AForm;   // set_checked creates the handle of a data-bound control
+  if ADataBound then
+    begin
+      Result.DataField  := BoundFieldName;
+      Result.DataSource := AForm.FindComponent('dbSource') as TFakeDataSource;
+      Assert.IsNotNull(Result.DataSource, 'dbSource must exist');
+    end;
 end;
 
 
@@ -549,6 +751,147 @@ begin
     Assert.AreEqual('typed', DBEdit.Text, 'the text must be written');
   finally
     FreeAndNil(Root);
+  end;
+end;
+
+
+{ Freed-control tests ----------------------------------------------------- }
+
+// TRUE when the ok answer ARoot carries freed = true.
+function AnswerSaysFreed(ARoot: TJSONObject): Boolean;
+var
+  R: TJSONObject;
+  V: TJSONValue;
+begin
+  R := GetOkResult(ARoot);
+  Assert.IsNotNull(R, 'the command must succeed: ' + ARoot.ToJSON);
+  V := R.GetValue('freed');
+  Result := (V is TJSONBool) and TJSONBool(V).AsBoolean;
+end;
+
+
+// set_property Color, whose setter frees the control. Before the fix the bridge then read and wrote ParentColor of the freed control (TurnOffParentInheritFor).
+procedure TPropertyTypeTests.Test_SetProperty_SetterFreesTheControl_BridgeReadsNothingAfter;
+var
+  Args, Root: TJSONObject;
+  Casts: Integer;
+  Zombie: TZombieControl;
+begin
+  Zombie := MakeZombie(FForm, 'zombieColor', FALSE);
+  try
+    Zombie.FreeOnColorSet := TRUE;
+    Args := TJSONObject.Create;
+    Args.AddPair('path', 'PropTypesForm.zombieColor');
+    Args.AddPair('propName', 'Color');
+    Args.AddPair('value', 'clRed');
+    Root := CallCountingCasts(FPipeName, 'set_property', Args, Casts);
+    try
+      Assert.IsNotNull(Root, 'set_property must answer');
+      Assert.IsTrue(Zombie.Dead, 'fixture: the Color setter must have freed the control');
+      Assert.AreEqual(0, Zombie.ReadsAfterFree, 'the bridge must not touch the control after the app''s own code freed it');
+      Assert.IsTrue(AnswerSaysFreed(Root), 'the answer must say freed = true: ' + Root.ToJSON);
+    finally
+      FreeAndNil(Root);
+    end;
+  finally
+    Zombie.Dispose;
+  end;
+end;
+
+
+// set_text on a data-bound control whose Text setter frees it. Before the fix the bridge then sent CM_EXIT to the freed control (DataBoundExit).
+procedure TPropertyTypeTests.Test_SetText_DataBoundSetterFreesTheControl_BridgeReadsNothingAfter;
+var
+  Args, Root: TJSONObject;
+  Casts: Integer;
+  Zombie: TZombieControl;
+begin
+  (FForm.FindComponent('dbDataSet') as TFakeDataSet).State := dsBrowse;
+  Zombie := MakeZombie(FForm, 'zombieText', TRUE);
+  try
+    Zombie.FreeOnTextSet := TRUE;
+    Args := TJSONObject.Create;
+    Args.AddPair('path', 'PropTypesForm.zombieText');
+    Args.AddPair('text', 'typed');
+    Root := CallCountingCasts(FPipeName, 'set_text', Args, Casts);
+    try
+      Assert.IsNotNull(Root, 'set_text must answer');
+      Assert.IsTrue(Zombie.Dead, 'fixture: the Text setter must have freed the control');
+      Assert.AreEqual('typed', Zombie.FZText, 'the text must be written before the control is freed');
+      Assert.AreEqual(0, Zombie.ReadsAfterFree, 'the bridge must not touch the control after the app''s own code freed it');
+      Assert.IsTrue(AnswerSaysFreed(Root), 'the answer must say freed = true: ' + Root.ToJSON);
+    finally
+      FreeAndNil(Root);
+    end;
+  finally
+    Zombie.Dispose;
+  end;
+end;
+
+
+// set_text on a data-bound control that a dataset event frees while DataSource.Edit runs. Before the fix the bridge then wrote Text into the freed control.
+procedure TPropertyTypeTests.Test_SetText_DataBoundEditFreesTheControl_TextNotWritten;
+var
+  Args, Root: TJSONObject;
+  Casts: Integer;
+  Zombie: TZombieControl;
+  DataSource: TFakeDataSource;
+begin
+  (FForm.FindComponent('dbDataSet') as TFakeDataSet).State := dsBrowse;
+  DataSource := FForm.FindComponent('dbSource') as TFakeDataSource;
+  Zombie := MakeZombie(FForm, 'zombieEdit', TRUE);
+  try
+    Zombie.FZText := 'old';
+    DataSource.OnEdit :=
+      procedure
+      begin
+        Zombie.Free;   // memory stays (TZombieControl.FreeInstance)
+      end;
+    Args := TJSONObject.Create;
+    Args.AddPair('path', 'PropTypesForm.zombieEdit');
+    Args.AddPair('text', 'typed');
+    Root := CallCountingCasts(FPipeName, 'set_text', Args, Casts);
+    try
+      Assert.IsNotNull(Root, 'set_text must answer');
+      Assert.IsTrue(Zombie.Dead, 'fixture: DataSource.Edit must have freed the control');
+      Assert.AreEqual(0, Zombie.ReadsAfterFree, 'the bridge must not touch the control after the app''s own code freed it');
+      Assert.AreEqual('old', Zombie.FZText, 'the text must not be written into a freed control');
+      Assert.AreEqual(ErrNotFound, GetErrorCode(Root), 'a control freed before the write must answer not_found: ' + Root.ToJSON);
+    finally
+      FreeAndNil(Root);
+    end;
+  finally
+    DataSource.OnEdit := NIL;
+    Zombie.Dispose;
+  end;
+end;
+
+
+// set_checked on a data-bound control whose click frees it. Before the fix the bridge then read Checked of the freed control, and sent it CM_EXIT.
+procedure TPropertyTypeTests.Test_SetChecked_DataBoundClickFreesTheControl_BridgeReadsNothingAfter;
+var
+  Args, Root: TJSONObject;
+  Casts: Integer;
+  Zombie: TZombieControl;
+begin
+  Zombie := MakeZombie(FForm, 'zombieCheck', TRUE);
+  try
+    Zombie.FZChecked := FALSE;
+    Zombie.FreeOnCheckedClick := TRUE;
+    Args := TJSONObject.Create;
+    Args.AddPair('path', 'PropTypesForm.zombieCheck');
+    Args.AddPair('checked', TJSONBool.Create(TRUE));
+    Root := CallCountingCasts(FPipeName, 'set_checked', Args, Casts);
+    try
+      Assert.IsNotNull(Root, 'set_checked must answer');
+      Assert.IsTrue(Zombie.Dead, 'fixture: the click must have freed the control');
+      Assert.AreEqual(0, Zombie.ReadsAfterFree, 'the bridge must not touch the control after the app''s own code freed it');
+      Assert.IsTrue(AnswerSaysFreed(Root), 'the answer must say freed = true: ' + Root.ToJSON);
+    finally
+      FreeAndNil(Root);
+    end;
+  finally
+    Zombie.Dispose;
   end;
 end;
 

@@ -98,6 +98,7 @@
         <DCCReference Include="..\..\Source\McpServer\Autopilot.Mcp.Tool.SetKeepAwake.pas"/>
         <DCCReference Include="..\..\Source\McpServer\Autopilot.Mcp.Tool.DismissDialog.pas"/>
         <DCCReference Include="..\..\Source\McpServer\Autopilot.Mcp.Tool.SendKeys.pas"/>
+        <DCCReference Include="..\..\Source\McpServer\Autopilot.Mcp.Tool.CallMethod.pas"/>
         <DCCReference Include="Tests.Mcp.Schema.pas"/>
         <DCCReference Include="Tests.Mcp.Serializer.pas"/>
         <DCCReference Include="Tests.Mcp.JsonRpc.pas"/>
