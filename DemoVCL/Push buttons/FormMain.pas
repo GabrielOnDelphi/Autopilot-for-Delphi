@@ -10,6 +10,7 @@
      (actFixture -> lblActionResult), a check box (chkFixture -> lblCheckState), a label placed on a panel
      (pnlFixture.lblInPanel) for the path rule, and a button whose label changes one second later (btnDelayed -> tmrDelayed -> lblDelayed) for wait_for.
    - AutopilotGuide (AUTOPILOT builds only): the guide text that list_tree shows on the frmMain node.
+   - registerAutopilotCommands (called by the constructor): two app commands for the MCP tool call_method (demo.setName, demo.increment).
 =============================================================================================================}
 
 interface
@@ -67,6 +68,10 @@ type
     FActionRuns: Integer;
     FDelayedRuns: Integer;
     FSaveRuns: Integer;
+    procedure registerAutopilotCommands;
+  public
+    constructor Create(AOwner: TComponent); override;
+    destructor Destroy; override;
   {$IFDEF AUTOPILOT}
   private
     function GetAutopilotGuide: string;
@@ -85,7 +90,64 @@ implementation
 {$R *.dfm}
 
 uses
-  Winapi.ShellAPI, Autopilot.Bridge.Core;
+  Winapi.ShellAPI, System.JSON, Autopilot.Bridge.Core, Autopilot.Bridge.Commands;
+
+
+const
+  CmdSetName   = 'demo.setName';
+  CmdIncrement = 'demo.increment';
+
+
+{ Registered in the constructor, as in the FMX demo (where the .dpr cannot do it: FMX creates the form only in Application.Run). }
+constructor TfrmMain.Create(AOwner: TComponent);
+begin
+  inherited Create(AOwner);
+  registerAutopilotCommands;
+end;
+
+
+{ The app commands that the MCP tool call_method can call (sample for the E2E script).
+  Without AUTOPILOT, RegisterAutopilotCommand does nothing. }
+procedure TfrmMain.registerAutopilotCommands;
+begin
+  RegisterAutopilotCommand(CmdSetName, 'Puts a name into edtName and lblNameEcho. args: text (string). Returns echo (string). Raises without text.',
+    function(AArgs: TJSONObject): TJSONValue
+    var
+      V: TJSONValue;
+    begin
+      V := AArgs.GetValue('text');
+      if not (V is TJSONString)
+      then raise EArgumentException.Create(CmdSetName + ' needs args.text (a string)');
+      edtName.Text := TJSONString(V).Value;
+      lblNameEcho.Caption := edtName.Text;
+      Result := TJSONObject.Create(TJSONPair.Create('echo', lblNameEcho.Caption));
+    end);
+
+  RegisterAutopilotCommand(CmdIncrement, 'Adds to the counter shown in lblIncrement. args: by (number, optional, default 1). Returns counter (number).',
+    function(AArgs: TJSONObject): TJSONValue
+    var
+      V: TJSONValue;
+    begin
+      V := AArgs.GetValue('by');
+      if V = NIL
+      then Inc(FCounter)
+      else
+        if V is TJSONNumber
+        then Inc(FCounter, TJSONNumber(V).AsInt)
+        else raise EArgumentException.Create(CmdIncrement + ' args.by must be a number');
+      lblIncrement.Caption := IntToStr(FCounter);
+      Result := TJSONObject.Create(TJSONPair.Create('counter', TJSONNumber.Create(FCounter)));
+    end);
+end;
+
+
+{ The handlers use this form: remove them before it is freed. }
+destructor TfrmMain.Destroy;
+begin
+  UnregisterAutopilotCommand(CmdSetName);
+  UnregisterAutopilotCommand(CmdIncrement);
+  inherited Destroy;
+end;
 
 
 procedure TfrmMain.btnIncrementClick(Sender: TObject);
