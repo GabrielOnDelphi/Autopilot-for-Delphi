@@ -8,7 +8,7 @@
 
      TMCPToolBase                — non-generic.
                                    Tools that don't have a typed params class can subclass this and override BuildSchema and Execute by hand.
-                                   Unused by the bridge tools today, kept for future tools that take no parameters.
+                                   call_method uses it: its argument args is a JSON object, which a params class cannot carry.
 
      TMCPToolBase<T: class,
                   constructor>   — generic.
@@ -18,7 +18,7 @@
 
    IMCPTool.Execute returns a plain String (a JSON string in practice — the dispatcher wraps it into the MCP tools/call content[] array).
    GDK had a TValue return because of an unused second generic variant; we dropped that.
-   None of the nine tool units reference Execute or TValue directly — they only override ExecuteWithParams — so this is a safe simplification.
+   No tool unit uses TValue: the generic tools only override ExecuteWithParams, and call_method (non-generic) returns its String from Execute.
 
    IMCPTool.ExtractImage lets a tool whose answer carries a picture (screenshot) hand it over separately: the dispatcher then sends an MCP image content block plus a text block with the rest of the answer.
    Both base classes return FALSE (text only).
@@ -75,7 +75,7 @@ type
     function ExtractImage(var AText: String; OUT AImageBase64, AMimeType: String): Boolean; virtual;
   end;
 
-  { Generic base used by all nine bridge tools.
+  { Generic base used by every tool except call_method.
     T is the params class — a plain TObject descendant with published / public writable properties marked with [Optional] and [SchemaDescription].
     Schema and deserialization both come for free; the subclass only needs to set FName/FDescription in its constructor and override ExecuteWithParams. }
   TMCPToolBase<T: class, constructor> = class(TInterfacedObject, IMCPTool)

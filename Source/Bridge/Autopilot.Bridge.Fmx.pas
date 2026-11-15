@@ -1,14 +1,15 @@
 ﻿unit Autopilot.Bridge.Fmx;
 
 {=============================================================================================================
-   2026.11.04
+   2026.11.14
    www.GabrielMoraru.com
 --------------------------------------------------------------------------------------------------------------
    - Public bridge interface for FMX target projects (cross-platform: Windows pipe + POSIX AF_UNIX socket)
    - StartBridge / StopBridge / IsBridgeRunning; real bodies only when AUTOPILOT is defined
-   - FMX dispatcher: the same 12 bridge commands as the VCL twin (the MCP server adds attach and wait_for); click dispatches via OnClick RTTI, or via the protected TControl.Click when the control is bound to an action
+   - FMX dispatcher: the same 13 bridge commands as the VCL twin (the MCP server adds attach and wait_for); call_method runs the app commands of Autopilot.Bridge.Commands; click dispatches via OnClick RTTI, or via the protected TControl.Click when the control is bound to an action
    - screenshot: a whole form, or one control cropped out of it (path), optionally scaled down (maxWidth)
    - list_tree: a form with a published string property AutopilotGuide gets its text as the field guide of the form's node
+   - list_tree: optional filters form (one form's nodes) and formsOnly (only the form nodes), as in the VCL twin
    - Paths resolve through the Owner tree first, then through the visual parent tree (re-parented controls)
    - TAlphaColor coercion only (no TColor - FMX uses TAlphaColor throughout); keep-screen-on on Android
    - How Autopilot works and how to use it with an AI: the book "Delphi in All Its Glory" Part 5, "AI-Assisted Development for Delphi", chapter "We Need a Hero - Enter Autopilot for Delphi".
@@ -33,7 +34,7 @@ uses
   System.SysUtils, System.Types, System.SyncObjs, System.JSON, System.Rtti, System.TypInfo,
   System.NetEncoding, System.UITypes, System.UIConsts,
   FMX.Forms, FMX.Types, FMX.StdCtrls, FMX.Controls, FMX.Graphics,
-  Autopilot.Bridge.Core, Autopilot.Bridge.Log, Autopilot.Bridge.Worker, Autopilot.Bridge.NativeDialogs,
+  Autopilot.Bridge.Core, Autopilot.Bridge.Log, Autopilot.Bridge.Worker, Autopilot.Bridge.NativeDialogs, Autopilot.Bridge.Commands,
   {$IFDEF MSWINDOWS}
   Autopilot.Bridge.NamedPipe;
   {$ELSE}
@@ -1339,6 +1340,19 @@ begin
 end;
 
 
+// Mirror of the VCL twin: the names of all forms in Screen.Forms[], empty names included.
+function ScreenFormNames: TArray<String>;
+var
+  i: Integer;
+begin
+  Assert(TThread.CurrentThread.ThreadID = MainThreadID, 'ScreenFormNames: FMX touched off the main thread');
+  SetLength(Result, Screen.FormCount);
+  for i := 0 to Screen.FormCount - 1 do
+    Result[i] := Screen.Forms[i].Name;
+end;
+
+
+// The optional args form and formsOnly: see the VCL twin.
 function HandleListTree(const AReq: TBridgeRequest): TBridgeResponse;
 var
   Items: TJSONArray;
@@ -1347,10 +1361,26 @@ var
   i: Integer;
   Form: TCommonCustomForm;
   Guide, GuideError: String;
+  FormFilter, ArgError: String;
+  FormsOnly: Boolean;
 begin
   Assert(TThread.CurrentThread.ThreadID = MainThreadID, 'HandleListTree must run on the main thread');
   Result := Default(TBridgeResponse);
   Result.Id := AReq.Id;
+  if not TryParseListTreeArgs(AReq.Args, FormFilter, FormsOnly, ArgError) then
+    begin
+      Result.Ok := FALSE;
+      Result.ErrorCode := ErrInvalidRequest;
+      Result.ErrorMessage := ArgError;
+      EXIT;
+    end;
+  if not CheckListTreeFormFilter(FormFilter, ScreenFormNames, ArgError) then
+    begin
+      Result.Ok := FALSE;
+      Result.ErrorCode := ErrNotFound;
+      Result.ErrorMessage := ArgError;
+      EXIT;
+    end;
   Result.Ok := TRUE;
   Items := TJSONArray.Create;
   try
@@ -1358,6 +1388,7 @@ begin
     for i := 0 to Screen.FormCount - 1 do
       begin
         Form := Screen.Forms[i];
+        if (FormFilter <> '') and not SameText(Form.Name, FormFilter) then Continue;
         Visited := TList.Create;
         try
           { Emit the form as its own node first, then recurse owned components (including frames).
@@ -1371,7 +1402,8 @@ begin
           else
             if GuideError <> ''
             then FormNode.AddPair('guideError', GuideError);
-          WalkComponents(Form.Name, Form.Name, Form, Items, Visited);
+          if not FormsOnly
+          then WalkComponents(Form.Name, Form.Name, Form, Items, Visited);
         finally
           FreeAndNil(Visited);
         end;
@@ -2920,13 +2952,16 @@ begin
                         if SameText(AReq.Cmd, 'send_keys')
                         then Result := HandleSendKeys(AReq)
                         else
-                          begin
-                            Result := Default(TBridgeResponse);
-                            Result.Id := AReq.Id;
-                            Result.Ok := FALSE;
-                            Result.ErrorCode := ErrUnsupportedAction;
-                            Result.ErrorMessage := 'unknown cmd: ' + AReq.Cmd;
-                          end;
+                          if SameText(AReq.Cmd, 'call_method')
+                          then Result := HandleCallMethod(AReq)   // Autopilot.Bridge.Commands
+                          else
+                            begin
+                              Result := Default(TBridgeResponse);
+                              Result.Id := AReq.Id;
+                              Result.Ok := FALSE;
+                              Result.ErrorCode := ErrUnsupportedAction;
+                              Result.ErrorMessage := 'unknown cmd: ' + AReq.Cmd;
+                            end;
 end;
 
 

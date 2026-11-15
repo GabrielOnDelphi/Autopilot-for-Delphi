@@ -45,6 +45,8 @@ contains
   Autopilot.Bridge.NamedPipe in '..\Bridge\Autopilot.Bridge.NamedPipe.pas',
   Autopilot.Bridge.NativeDialogs in '..\Bridge\Autopilot.Bridge.NativeDialogs.pas',
   Autopilot.Bridge.Worker in '..\Bridge\Autopilot.Bridge.Worker.pas',
-  Autopilot.Bridge.Vcl in '..\Bridge\Autopilot.Bridge.Vcl.pas';
+  Autopilot.Bridge.Vcl in '..\Bridge\Autopilot.Bridge.Vcl.pas',
+  Autopilot.Bridge.Commands in '..\Bridge\Autopilot.Bridge.Commands.pas',
+  Autopilot.IdeBridge.Commands in 'Autopilot.IdeBridge.Commands.pas';
 
 end.

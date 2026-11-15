@@ -118,6 +118,9 @@ type
       The queued dispatcher reads THIS (not the worker's parsed Root) so the timeout path can FreeAndNil(Root) without dangling the Args the late-firing proc still dereferences.
       Freed in Destroy when the last ref drops - outlives both the worker's return and a late proc run. }
     ArgsClone: TJSONObject;
+    { 1 once the queued procedure has begun to run on the main thread, else 0. Written with TInterlocked.Exchange.
+      On a timeout it tells "the command is running (a modal dialog it opened waits for the user)" from "the main thread never picked it up". }
+    Started: Integer;
     constructor Create;
     destructor Destroy; override;
     procedure AddRef;
@@ -136,6 +139,7 @@ begin
   FState    := 0;
   Resp      := Default(TBridgeResponse);
   ArgsClone := NIL;
+  Started   := 0;
   Done      := TEvent.Create(NIL, TRUE, FALSE, '');
 end;
 
@@ -244,6 +248,7 @@ var
   T0      : UInt64;
   WaitRes : TWaitResult;
   ElapsedMs: UInt64;
+  CmdStarted: Boolean;
 begin
   Result := FALSE;
   Stream := FTransport.ConnectionStream;
@@ -276,11 +281,11 @@ begin
         end;
 
       { Resolve timeout: caller-supplied > per-command default.
-        The 5000 ms bucket is every command that runs USER code on the main thread: click/set_text/set_checked/set_property fire setters + OnChange/OnClick handlers; execute_action fires OnExecute; send_keys fires the key handlers and ShortCuts; dismiss_dialog's SendMessageTimeout alone can block up to 4000 ms on a cross-thread dialog - all of them can overrun the 2000 ms list/get default. }
+        The 5000 ms bucket is every command that runs USER code on the main thread: click/set_text/set_checked/set_property fire setters + OnChange/OnClick handlers; execute_action fires OnExecute; send_keys fires the key handlers and ShortCuts; call_method runs an app command; dismiss_dialog's SendMessageTimeout alone can block up to 4000 ms on a cross-thread dialog - all of them can overrun the 2000 ms list/get default. }
       if Req.TimeoutMs > 0
       then Timeout := Req.TimeoutMs
       else
-        if (Req.Cmd = 'click') or (Req.Cmd = 'set_text') or (Req.Cmd = 'set_checked') or (Req.Cmd = 'set_property') or (Req.Cmd = 'execute_action') or (Req.Cmd = 'dismiss_dialog') or (Req.Cmd = 'send_keys')
+        if (Req.Cmd = 'click') or (Req.Cmd = 'set_text') or (Req.Cmd = 'set_checked') or (Req.Cmd = 'set_property') or (Req.Cmd = 'execute_action') or (Req.Cmd = 'dismiss_dialog') or (Req.Cmd = 'send_keys') or (Req.Cmd = 'call_method')
         then Timeout := DefaultTimeoutClickMs
         else
           if Req.Cmd = 'screenshot'
@@ -317,6 +322,7 @@ begin
           var
             LocalResp: TBridgeResponse;
           begin
+            TInterlocked.Exchange(Slot.Started, 1);
             try
               try
                 LocalResp := CapturedDispatch(CapturedReq);
@@ -388,7 +394,17 @@ begin
               Resp.Id := Req.Id;
               Resp.Ok := FALSE;
               Resp.ErrorCode := ErrMainThreadBlocked;
+              { The message keeps its old first words, so a caller that matches them still works. }
+              CmdStarted := TInterlocked.CompareExchange(Slot.Started, 0, 0) = 1;
               Resp.ErrorMessage := 'main thread did not respond within ' + IntToStr(Timeout) + ' ms';
+              if CmdStarted
+              then Resp.ErrorMessage := Resp.ErrorMessage + ': the command started and is still running on the main thread' +
+                     ' - often it waits in a modal dialog or form that it opened (dismiss_dialog closes a native dialog).' +
+                     ' It was not lost: do not send it again.'
+              else Resp.ErrorMessage := Resp.ErrorMessage + ': the command has not started yet, because the main thread is busy' +
+                     ' (a long loop, a wait, or the command sent before it, still running). It stays queued and runs later: do not send it again.';
+              Resp.ErrorData := TJSONObject.Create;
+              Resp.ErrorData.AddPair('started', TJSONBool.Create(CmdStarted));
             end
           else
             begin

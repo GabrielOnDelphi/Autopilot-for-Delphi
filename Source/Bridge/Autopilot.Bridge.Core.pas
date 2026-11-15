@@ -1,13 +1,14 @@
 ﻿unit Autopilot.Bridge.Core;
 
 {=============================================================================================================
-   2026.11.02
+   2026.11.14
    www.GabrielMoraru.com
 --------------------------------------------------------------------------------------------------------------
    - Shared protocol types and wire-framing helpers for the Autopilot bridge (all platforms)
    - Stdlib-only: no VCL, no FMX, no LightSaber — usable by both the pipe and socket transports
    - Defines TBridgeRequest, TBridgeResponse, TBridgeDispatcher, TBridgeWire, and JSON-RPC error codes
    - The screenshot argument and scale-size helpers that the VCL and FMX bridges share
+   - The list_tree filter helpers (form, formsOnly) that the VCL and FMX bridges share
    - KeyNameToVk, the key-name table of send_keys that the VCL and FMX bridges share
    - How the bridge links your app to the AI: the book "Delphi in All Its Glory" Part 5, "AI-Assisted Development for Delphi", chapter "We Need a Hero - Enter Autopilot for Delphi", sections "The Bridge" and "How it Works?".
      https://gabrielmoraru.com/the-delphi-in-all-its-glory-book-5-ai-assisted-development-for-delphi/
@@ -20,7 +21,7 @@ uses
 
 const
   ProtocolVersion = 1;
-  BridgeVersion   = '3.7.0';
+  BridgeVersion   = '3.8.0';
 
   { Licence terms: the LICENSE file at LicenseURL.
     The texts only link to it and never say what it allows, so the licence can change without a change here.
@@ -132,6 +133,16 @@ type
     FALSE, with AError set, for a path that is not a string or a maxWidth that is not a whole number >= 0: the caller answers ErrInvalidRequest. }
   function TryParseScreenshotArgs(AArgs: TJSONObject; OUT APath: String; OUT AMaxWidth: Integer; OUT AError: String): Boolean;
 
+  { Reads the optional arguments of the list_tree command, shared by the VCL and FMX bridges.
+    AForm: args.form ('' when absent or empty = every form). AFormsOnly: args.formsOnly (FALSE when absent).
+    FALSE, with AError set, for a form that is not a string or a formsOnly that is not a JSON Boolean: the caller answers ErrInvalidRequest. }
+  function TryParseListTreeArgs(AArgs: TJSONObject; OUT AForm: String; OUT AFormsOnly: Boolean; OUT AError: String): Boolean;
+
+  { Checks the form filter of list_tree against the names of the forms that exist (AFormNames, empty names included).
+    TRUE when AForm is '' or matches a name case-insensitively.
+    FALSE, with AError set to the text of the ErrNotFound answer, which names the forms that exist (at most ListTreeFormNamesCap). }
+  function CheckListTreeFormFilter(const AForm: String; const AFormNames: TArray<String>; OUT AError: String): Boolean;
+
   { The size of an AWidth x AHeight image scaled down to exactly AMaxWidth pixels wide, aspect ratio kept (height rounded, at least 1).
     FALSE, with the size unchanged, when AMaxWidth is 0 or not smaller than AWidth: an image is never scaled up. }
   function ScreenshotScaledSize(AWidth, AHeight, AMaxWidth: Integer; OUT ANewWidth, ANewHeight: Integer): Boolean;
@@ -156,6 +167,7 @@ type
 
 const
   AllowedNamesCap = 50;
+  ListTreeFormNamesCap = 100;
 
 
 implementation
@@ -319,6 +331,73 @@ begin
       else AMaxWidth := Integer(N);
     end;
   Result := TRUE;
+end;
+
+
+function TryParseListTreeArgs(AArgs: TJSONObject; OUT AForm: String; OUT AFormsOnly: Boolean; OUT AError: String): Boolean;
+var
+  V: TJSONValue;
+begin
+  AForm := '';
+  AFormsOnly := FALSE;
+  AError := '';
+  if AArgs = NIL then EXIT(TRUE);
+
+  V := AArgs.GetValue('form');
+  if V <> NIL then
+    begin
+      if not (V is TJSONString) or (V is TJSONNumber) then   // up to Delphi 12 TJSONNumber descends from TJSONString
+        begin
+          AError := 'list_tree args.form must be a string (got ' + V.ToJSON + ')';
+          EXIT(FALSE);
+        end;
+      AForm := TJSONString(V).Value;
+    end;
+
+  V := AArgs.GetValue('formsOnly');
+  if V <> NIL then
+    begin
+      if not (V is TJSONBool) then
+        begin
+          AError := 'list_tree args.formsOnly must be true or false (got ' + V.ToJSON + ')';
+          EXIT(FALSE);
+        end;
+      AFormsOnly := TJSONBool(V).AsBoolean;
+    end;
+  Result := TRUE;
+end;
+
+
+function CheckListTreeFormFilter(const AForm: String; const AFormNames: TArray<String>; OUT AError: String): Boolean;
+var
+  i, Listed: Integer;
+  Names: String;
+begin
+  AError := '';
+  if AForm = '' then EXIT(TRUE);
+  for i := 0 to High(AFormNames) do
+    if SameText(AFormNames[i], AForm) then EXIT(TRUE);
+
+  // A form with an empty name cannot be asked for by name, so it is not listed.
+  Names := '';
+  Listed := 0;
+  for i := 0 to High(AFormNames) do
+    if AFormNames[i] <> '' then
+      begin
+        if Listed = ListTreeFormNamesCap then
+          begin
+            Names := Names + ', ... (' + IntToStr(Length(AFormNames)) + ' forms in all)';
+            Break;
+          end;
+        if Listed > 0
+        then Names := Names + ', ';
+        Names := Names + AFormNames[i];
+        Inc(Listed);
+      end;
+  if Names = ''
+  then Names := '(none with a name)';
+  AError := 'list_tree: no form named "' + AForm + '". Forms: ' + Names;
+  Result := FALSE;
 end;
 
 

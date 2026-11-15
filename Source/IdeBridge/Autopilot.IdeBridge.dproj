@@ -108,6 +108,8 @@
         <DCCReference Include="..\Bridge\Autopilot.Bridge.NativeDialogs.pas"/>
         <DCCReference Include="..\Bridge\Autopilot.Bridge.Worker.pas"/>
         <DCCReference Include="..\Bridge\Autopilot.Bridge.Vcl.pas"/>
+        <DCCReference Include="..\Bridge\Autopilot.Bridge.Commands.pas"/>
+        <DCCReference Include="Autopilot.IdeBridge.Commands.pas"/>
         <BuildConfiguration Include="Base">
             <Key>Base</Key>
         </BuildConfiguration>

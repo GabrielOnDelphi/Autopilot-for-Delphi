@@ -233,7 +233,7 @@ end;
   They are decided in Autopilot.Bridge.Worker (ServeOneRequest); the client sends the value in every request and builds its own deadline from the same number. }
 function DefaultTimeoutFor(const ACmd: String): Cardinal;
 begin
-  if (ACmd = 'click') or (ACmd = 'set_text') or (ACmd = 'set_checked') or (ACmd = 'set_property') or (ACmd = 'execute_action') or (ACmd = 'dismiss_dialog') or (ACmd = 'send_keys')
+  if (ACmd = 'click') or (ACmd = 'set_text') or (ACmd = 'set_checked') or (ACmd = 'set_property') or (ACmd = 'execute_action') or (ACmd = 'dismiss_dialog') or (ACmd = 'send_keys') or (ACmd = 'call_method')
   then Result := DefaultTimeoutClickMs
   else
     if ACmd = 'screenshot'

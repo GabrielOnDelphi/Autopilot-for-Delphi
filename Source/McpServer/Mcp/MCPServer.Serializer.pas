@@ -7,7 +7,7 @@ unit MCPServer.Serializer;
    www.GabrielMoraru.com
 --------------------------------------------------------------------------------------------------------------
    One-way (JSON -> Delphi) RTTI deserializer for the tool params classes.
-   The reverse direction is unused — our tools always produce JSON strings manually.
+   The reverse direction is unused - our tools always produce JSON strings manually.
 
    Rules:
      - Property names match case-insensitively, with '_' stripped from the JSON key.
@@ -73,7 +73,7 @@ var
   Pair  : TJSONPair;
   Target: String;
 begin
-  // Fast path: exact match (the common case for Claude — it sends lower-case keys).
+  // Fast path: exact match (the common case for Claude - it sends lower-case keys).
   Result := AJson.GetValue(APropName);
   if Result <> nil then Exit;
 

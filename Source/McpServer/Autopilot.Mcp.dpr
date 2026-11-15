@@ -76,7 +76,8 @@ USES
   Autopilot.Mcp.Tool.Screenshot  in 'Autopilot.Mcp.Tool.Screenshot.pas',
   Autopilot.Mcp.Tool.SetKeepAwake in 'Autopilot.Mcp.Tool.SetKeepAwake.pas',
   Autopilot.Mcp.Tool.DismissDialog in 'Autopilot.Mcp.Tool.DismissDialog.pas',
-  Autopilot.Mcp.Tool.SendKeys in 'Autopilot.Mcp.Tool.SendKeys.pas';
+  Autopilot.Mcp.Tool.SendKeys in 'Autopilot.Mcp.Tool.SendKeys.pas',
+  Autopilot.Mcp.Tool.CallMethod in 'Autopilot.Mcp.Tool.CallMethod.pas';
 
 
 begin

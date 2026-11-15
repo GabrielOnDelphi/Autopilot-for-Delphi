@@ -1,11 +1,11 @@
 ﻿unit Autopilot.Bridge.NativeDialogs;
 
 {=============================================================================================================
-   2026.09.01
+   2026.11.15
    www.GabrielMoraru.com
 --------------------------------------------------------------------------------------------------------------
    - Native Win32 dialog escape hatch: reaches MessageBox / Task Dialog / common dialogs with no TComponent
-   - EnumerateNativeDialogs: lists this process's visible non-VCL top-level dialog windows as JSON
+   - EnumerateNativeDialogs: lists this process's visible non-VCL top-level dialog windows as JSON (a Task Dialog's text through MSAA)
    - ClickNativeDialogButton: dispatches a button by role keyword, caption, or control id
    - Interface is stdlib-only (System.JSON + NativeUInt); the body is MSWINDOWS-only
 =============================================================================================================}
@@ -39,8 +39,8 @@ implementation
 
 {$IFDEF MSWINDOWS}
 uses
-  Winapi.Windows, Winapi.Messages,
-  System.SysUtils, System.StrUtils, System.Generics.Collections;
+  Winapi.Windows, Winapi.Messages, Winapi.ActiveX, Winapi.oleacc,
+  System.SysUtils, System.StrUtils, System.Variants, System.Generics.Collections;
 
 
 function NativeDialogsSupported: Boolean;
@@ -202,13 +202,105 @@ begin
 end;
 
 
+const
+  MaxAccDepth = 6;     // a Task Dialog nests its texts 2-3 levels deep
+  MaxAccNodes = 300;   // hard cap on the walk, whatever the dialog holds
+
+
+{ Appends the name of every static-text / text element under AAcc to AText, depth first. }
+procedure CollectAccTexts(const AAcc: IAccessible; ADepth: Integer; var ANodes: Integer; var AText: String);
+var
+  Count, i: Integer;
+  Disp: IDispatch;
+  Child: IAccessible;
+  Role: OleVariant;
+  Name: WideString;
+  S: String;
+begin
+  if (AAcc = NIL) or (ADepth > MaxAccDepth) then EXIT;
+  Count := 0;
+  if Failed(AAcc.Get_accChildCount(Count)) then EXIT;
+  for i := 1 to Count do
+    begin
+      Inc(ANodes);
+      if ANodes > MaxAccNodes then EXIT;
+      Disp := NIL;
+      Child := NIL;
+      if (AAcc.Get_accChild(i, Disp) = S_OK) and (Disp <> NIL) and Supports(Disp, IAccessible, Child)
+      then
+        begin
+          { A full child object: its own name and role, then its children. }
+          if Succeeded(Child.Get_accRole(CHILDID_SELF, Role)) and VarIsOrdinal(Role)
+            and ((Integer(Role) = ROLE_SYSTEM_STATICTEXT) or (Integer(Role) = ROLE_SYSTEM_TEXT))
+            and Succeeded(Child.Get_accName(CHILDID_SELF, Name)) then
+            begin
+              S := Trim(String(Name));
+              if S <> '' then
+                if AText = '' then AText := S else AText := AText + ' ' + S;
+            end;
+          CollectAccTexts(Child, ADepth + 1, ANodes, AText);
+        end
+      else
+        { A simple element: the parent answers for it by child id. }
+        if Succeeded(AAcc.Get_accRole(i, Role)) and VarIsOrdinal(Role)
+          and ((Integer(Role) = ROLE_SYSTEM_STATICTEXT) or (Integer(Role) = ROLE_SYSTEM_TEXT))
+          and Succeeded(AAcc.Get_accName(i, Name)) then
+          begin
+            S := Trim(String(Name));
+            if S <> '' then
+              if AText = '' then AText := S else AText := AText + ' ' + S;
+          end;
+    end;
+end;
+
+
+{ The texts of a Task Dialog (and Delphi 13's ShowMessage / MessageDlg, which show one).
+  A Task Dialog draws its main instruction and content inside a DirectUIHWND window: no Static child exists, so JoinStaticText finds nothing.
+  MSAA (Active Accessibility) is the documented way to read them; each text is a static-text element of the DirectUIHWND.
+  The DirectUIHWND is tested with SendMessageTimeout(WM_NULL) first: AccessibleObjectFromWindow sends WM_GETOBJECT with no timeout, and the guard keeps a hung dialog thread from freezing the caller (as WindowTextOf does for WM_GETTEXT).
+  COM is initialized for the call when the thread has no apartment yet; a thread already in another apartment mode works as it is. }
+function DirectUIText(ADlg: HWND): String;
+var
+  DUI: HWND;
+  Hr: HRESULT;
+  NeedUninit: Boolean;
+  Acc: IAccessible;
+  Nodes: Integer;
+  Dummy: DWORD_PTR;
+begin
+  Result := '';
+  DUI := FindWindowEx(ADlg, 0, 'DirectUIHWND', NIL);
+  if DUI = 0 then EXIT;
+  if SendMessageTimeout(DUI, WM_NULL, 0, 0, SMTO_ABORTIFHUNG, TextReadTimeoutMs, @Dummy) = 0 then EXIT;
+  Hr := CoInitializeEx(NIL, COINIT_APARTMENTTHREADED);
+  NeedUninit := Succeeded(Hr);   // S_OK and S_FALSE both need the matching CoUninitialize
+  try
+    Acc := NIL;
+    if Succeeded(AccessibleObjectFromWindow(DUI, OBJID_CLIENT, IID_IAccessible, Acc)) and (Acc <> NIL) then
+      begin
+        Nodes := 0;
+        CollectAccTexts(Acc, 1, Nodes, Result);
+      end;
+    Acc := NIL;   // release before CoUninitialize
+  finally
+    if NeedUninit
+    then CoUninitialize;
+  end;
+end;
+
+
 function BuildDialogNode(ADlg: HWND; const AButtons, AStatics: TList<HWND>): TJSONObject;
+var
+  Text: String;
 begin
   Result := TJSONObject.Create;
   Result.AddPair('hwnd', TJSONNumber.Create(Int64(ADlg)));
   Result.AddPair('class', ClassNameOf(ADlg));
   Result.AddPair('caption', WindowTextOf(ADlg));
-  Result.AddPair('text', JoinStaticText(AStatics));
+  Text := JoinStaticText(AStatics);
+  if Text = ''
+  then Text := DirectUIText(ADlg);
+  Result.AddPair('text', Text);
   Result.AddPair('buttons', BuildButtonsArray(AButtons));
 end;
 

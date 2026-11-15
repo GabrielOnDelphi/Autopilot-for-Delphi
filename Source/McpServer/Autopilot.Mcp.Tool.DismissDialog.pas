@@ -1,13 +1,14 @@
 unit Autopilot.Mcp.Tool.DismissDialog;
 
 {=============================================================================================================
-   2026.09
+   2026.11.15
    www.GabrielMoraru.com
 --------------------------------------------------------------------------------------------------------------
    - MCP tool: dismiss_dialog
    - Lists and dismisses native OS dialogs (MessageBox, Vista Task Dialog, common file dialogs) raised by the target.
-     These are raw Win32 windows with no TComponent, so the path-based tools (list_tree / click) cannot see them — they return not_found while the app's main thread is blocked in the dialog's modal loop.
+     These are raw Win32 windows with no TComponent, so the path-based tools (list_tree / click) cannot see them - they return not_found while the app's main thread is blocked in the dialog's modal loop.
    - Call with no 'button' to LIST the dialogs currently up; call with 'button' to dismiss one.
+   - 'waitMs' polls until a dialog is up, for the call that follows the click which opens it.
    - Windows targets only.
      Against an Android FMX target the response is supported:false.
    - Runs in Autopilot.Mcp.exe (Windows PC-side MCP server); target may be any platform.
@@ -16,7 +17,7 @@ unit Autopilot.Mcp.Tool.DismissDialog;
 interface
 
 uses
-  System.SysUtils, System.JSON,
+  System.SysUtils, System.Classes, System.JSON,
   MCPServer.Tool.Base, MCPServer.Types,
   Autopilot.Mcp.ToolBase;
 
@@ -25,6 +26,7 @@ type
   private
     FButton: String;
     FHwnd  : Int64;
+    FWaitMs: Integer;
     FPid   : Integer;
   public
     [Optional]
@@ -34,6 +36,10 @@ type
     [Optional]
     [SchemaDescription('Dialog hwnd from a prior list. Omit for the topmost dialog.')]
     property Hwnd: Int64 read FHwnd write FHwnd;
+
+    [Optional]
+    [SchemaDescription('Wait up to this many ms (max 10000) for a dialog to appear. Pass e.g. 2000 right ' + 'after the click that opens it. Default 0: answer at once.')]
+    property WaitMs: Integer read FWaitMs write FWaitMs;
 
     [Optional]
     [SchemaDescription('Target PID. Needed only when several targets run.')]
@@ -62,16 +68,60 @@ begin
 end;
 
 
+{ TRUE when AAnswer needs no further poll: an error, a platform without native dialogs, a click that found a dialog (clicked or not), or a list that is not empty.
+  FALSE only for "no dialog yet": a click with reason 'no_dialog', or an empty 'dialogs' list. }
+function AnswerIsFinal(const AAnswer: String; AClicking: Boolean): Boolean;
+var
+  Root, Dialogs: TJSONValue;
+  Res: TJSONObject;
+begin
+  Result := TRUE;
+  Root := TJSONObject.ParseJSONValue(AAnswer);
+  try
+    if not (Root is TJSONObject) then EXIT;
+    if not TJSONObject(Root).GetValue<Boolean>('ok', FALSE) then EXIT;
+    if not (TJSONObject(Root).GetValue('result') is TJSONObject) then EXIT;
+    Res := TJSONObject(TJSONObject(Root).GetValue('result'));
+    if not Res.GetValue<Boolean>('supported', TRUE) then EXIT;
+    if AClicking
+    then Result := Res.GetValue<String>('reason', '') <> 'no_dialog'
+    else
+      begin
+        Dialogs := Res.GetValue('dialogs');
+        Result := not ((Dialogs is TJSONArray) and (TJSONArray(Dialogs).Count = 0));
+      end;
+  finally
+    FreeAndNil(Root);
+  end;
+end;
+
+
+{ With waitMs the command is sent again every PollEveryMs until a dialog shows up or the time is over.
+  The wait runs here, in the MCP server, never in the bridge: the bridge answers on the target's main thread, which must stay free to run the click that opens the dialog. }
 function TDismissDialogTool.ExecuteWithParams(const Params: TDismissDialogParams): String;
+const
+  MaxWaitMs   = 10000;
+  PollEveryMs = 50;
 var
   Args: TJSONObject;
+  Clicking: Boolean;
+  Deadline: UInt64;
 begin
-  Args := TJSONObject.Create;
-  if Trim(Params.Button) <> ''
-  then Args.AddPair('button', Params.Button);
-  if Params.Hwnd <> 0
-  then Args.AddPair('hwnd', TJSONNumber.Create(Params.Hwnd));
-  Result := RunCommandOnTarget(Cardinal(Params.Pid), BuildRequest(1, 'dismiss_dialog', Args));
+  if (Params.WaitMs < 0) or (Params.WaitMs > MaxWaitMs)
+  then raise EArgumentException.Create('waitMs must be 0..' + IntToStr(MaxWaitMs) + ', got ' + IntToStr(Params.WaitMs));
+  Clicking := Trim(Params.Button) <> '';
+  Deadline := TThread.GetTickCount64 + UInt64(Params.WaitMs);
+  repeat
+    Args := TJSONObject.Create;   // BuildRequest consumes it, and RunCommandOnTarget frees the request: build both anew for every poll
+    if Clicking
+    then Args.AddPair('button', Params.Button);
+    if Params.Hwnd <> 0
+    then Args.AddPair('hwnd', TJSONNumber.Create(Params.Hwnd));
+    Result := RunCommandOnTarget(Cardinal(Params.Pid), BuildRequest(1, 'dismiss_dialog', Args));
+    if (Params.WaitMs = 0) or AnswerIsFinal(Result, Clicking) or (TThread.GetTickCount64 >= Deadline)
+    then EXIT;
+    Sleep(PollEveryMs);
+  until FALSE;
 end;
 
 

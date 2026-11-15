@@ -11,7 +11,8 @@ UNIT Autopilot.IdeBridge.Register;
    a design-time package shares vcl370.bpl with the IDE, so Application and Screen are the IDE's.
 
    StartBridge does nothing when the bridge already runs, so a second Register call is harmless.
-   No finalization here: the finalization of Autopilot.Bridge.Vcl calls StopBridge when the package unloads.
+   No finalization here: the finalization of Autopilot.Bridge.Vcl calls StopBridge when the package unloads,
+   and the finalization of Autopilot.IdeBridge.Commands removes the ide.* commands.
 =============================================================================================================}
 
 INTERFACE
@@ -21,12 +22,13 @@ procedure Register;
 IMPLEMENTATION
 
 USES
-  Autopilot.Bridge.Vcl;
+  Autopilot.Bridge.Vcl, Autopilot.IdeBridge.Commands;
 
 
 procedure Register;
 begin
   Autopilot.Bridge.Vcl.StartBridge;
+  RegisterIdeCommands;   // the ide.* commands of call_method; registering again replaces them
 end;
 
 

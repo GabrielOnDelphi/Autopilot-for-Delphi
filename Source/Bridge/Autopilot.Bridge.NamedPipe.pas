@@ -25,7 +25,7 @@ type
   strict private
     FPipeName       : String;
     FPipeHandle     : THandle;       // current pipe instance; INVALID_HANDLE_VALUE between client sessions
-    FDiscoveryPath  : String;        // %TEMP%\Autopilot\active\<PID>.pipe — empty when not written
+    FDiscoveryPath  : String;        // %TEMP%\Autopilot\active\<PID>.pipe - empty when not written
     FDiscoveryTried : Boolean;       // the discovery write is attempted ONCE
     FStopping       : Integer;       // 0 = running, 1 = WakeAndStop began. Written by the owner thread, read by the worker thread: TInterlocked
     FHandleLock     : TCriticalSection;  // FPipeHandle changes (worker) vs. CancelIoEx on it (owner): a closed handle value can be reused by another open in this process

@@ -195,10 +195,10 @@
         <DCC_Namespace>Winapi;System.Win;Data.Win;Datasnap.Win;Web.Win;Soap.Win;Xml.Win;Bde;$(DCC_Namespace)</DCC_Namespace>
         <DCC_UsePackage>vclwinx;DataSnapServer;fmx;DbxCommonDriver;vclie;bindengine;IndyIPCommon;VCLRESTComponents;DBXMSSQLDriver;FireDACCommonODBC;emsclient;IndyProtocols;vclx;Skia.Package.RTL;dbxcds;vcledge;FFmpeg_DX13;FmxTeeUI;DBXFirebirdDriver;FireDACSqliteDriver;DbxClientDriver;soapmidas;TeeUI;dbexpress;LightVcl.Visual;inet;vcltouch;LightCore;FireDACDBXDriver;fmxdae;CustomIPTransport;FireDACMSSQLDriver;LightProteus;madExcept_;IndySystem;ibxbindings;vclFireDAC;madDisAsm_;FireDACCommon;FireDACODBCDriver;DataSnapServerMidas;emsserverresource;DOSCommandDR;bindcompdbx;rtl;FireDACMySQLDriver;DBXSqliteDriver;DBXSybaseASEDriver;vclimg;DataSnapFireDAC;inetdbxpress;FireDAC;xmlrtl;ibxpress;madShell_;dsnap;FireDACDb2Driver;DBXOracleDriver;DBXInformixDriver;vclib;fmxobj;bindcompvclsmp;DataSnapNativeClient;madSecurity_;DatasnapConnectorsFreePascal;emshosting;BioControl;FireDACCommonDriver;RadiantShapesFmx_Design;IndyIPClient;VisualInheritanceR;LightVcl.Graphics;bindcompvclwinx;emsedge;bindcompfmx;madBasic_;inetdb;ibmonitor;GR32_R;FireDACASADriver;BionixVCL;Tee;vclactnband;DragDropR;fmxFireDAC;FireDACInfxDriver;Split_Panel;DBXMySQLDriver;VclSmp;DataSnapCommon;fmxase;DBXOdbcDriver;dbrtl;FireDACOracleDriver;Skia.Package.FMX;TeeDB;madKernel_;FireDACMSAccDriver;vclwinxnav;DataSnapIndy10ServerTransport;DataSnapConnectors;vcldsnap;DBXInterBaseDriver;FireDACMongoDBDriver;LightCore.Win;RadiantShapesFmx;FireDACTDataDriver;LightVcl.Common;Skia.Package.VCL;vcldb;FFmpeg_DXT4;ThirdPartyLibs;bindcomp;inetstn;IndyCore;RESTBackendComponents;LightFmxCommon;LightFmxVisual;LightVcl.Internet;FireDACADSDriver;RESTComponents;IndyIPServer;vcl;dsnapxml;adortl;dsnapcon;DataSnapClient;DataSnapProviderClient;DBXDb2Driver;emsclientfiredac;FireDACPgDriver;FireDACDSDriver;LightExternal;tethering;bindcompvcl;CloudService;DBXSybaseASADriver;FMXTee;soaprtl;soapserver;FireDACIBDriver;$(DCC_UsePackage)</DCC_UsePackage>
         <VerInfo_IncludeVerInfo>true</VerInfo_IncludeVerInfo>
-        <VerInfo_Keys>CompanyName=SciVance Tech.;FileDescription=Autopilot for Delphi, MCP server;FileVersion=3.7.0.0;InternalName=Autopilot.Mcp;LegalCopyright=SciVance Tech.;LegalTrademarks=SciVance Tech.;OriginalFilename=Autopilot.Mcp.exe;ProgramID=com.embarcadero.$(MSBuildProjectName);ProductName=Autopilot for Delphi;ProductVersion=3.7.0.0;Comments=</VerInfo_Keys>
+        <VerInfo_Keys>CompanyName=SciVance Tech.;FileDescription=Autopilot for Delphi, MCP server;FileVersion=3.8.0.0;InternalName=Autopilot.Mcp;LegalCopyright=SciVance Tech.;LegalTrademarks=SciVance Tech.;OriginalFilename=Autopilot.Mcp.exe;ProgramID=com.embarcadero.$(MSBuildProjectName);ProductName=Autopilot for Delphi;ProductVersion=3.8.0.0;Comments=</VerInfo_Keys>
         <VerInfo_Locale>1033</VerInfo_Locale>
         <VerInfo_MajorVer>3</VerInfo_MajorVer>
-        <VerInfo_MinorVer>7</VerInfo_MinorVer>
+        <VerInfo_MinorVer>8</VerInfo_MinorVer>
         <VerInfo_Release>0</VerInfo_Release>
     </PropertyGroup>
     <PropertyGroup Condition="'$(Cfg_1)'!=''">
@@ -276,6 +276,7 @@
         <DCCReference Include="Autopilot.Mcp.Tool.SetKeepAwake.pas"/>
         <DCCReference Include="Autopilot.Mcp.Tool.DismissDialog.pas"/>
         <DCCReference Include="Autopilot.Mcp.Tool.SendKeys.pas"/>
+        <DCCReference Include="Autopilot.Mcp.Tool.CallMethod.pas"/>
         <BuildConfiguration Include="Base">
             <Key>Base</Key>
         </BuildConfiguration>

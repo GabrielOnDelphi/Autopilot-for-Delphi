@@ -1,16 +1,18 @@
 ﻿unit Autopilot.Bridge.Vcl;
 
 {=============================================================================================================
-   2026.11.04
+   2026.11.14
    www.GabrielMoraru.com
 --------------------------------------------------------------------------------------------------------------
    Public bridge interface for VCL target projects (Windows only)
 --------------------------------------------------------------------------------------------------------------
    - Paths resolve through the Owner tree first, then through the visual parent tree (re-parented controls)
    - StartBridge / StopBridge / IsBridgeRunning; real bodies only when AUTOPILOT is defined
-   - Full VCL dispatcher, 12 bridge commands: list_tree, click, get_text, set_text, set_checked, set_property, read_property, screenshot, execute_action, set_keep_awake, dismiss_dialog, send_keys.
-     The MCP server's 14 tools are these 12 plus attach and wait_for, which the MCP server handles itself
+   - Full VCL dispatcher, 13 bridge commands: list_tree, click, get_text, set_text, set_checked, set_property, read_property, screenshot, execute_action, set_keep_awake, dismiss_dialog, send_keys, call_method.
+     The MCP server's 15 tools are these 13 plus attach and wait_for, which the MCP server handles itself
+   - call_method runs the app commands registered with Autopilot.Bridge.Commands (RTL only, shared with the FMX twin)
    - list_tree: a form with a published string property AutopilotGuide gets its text as the field guide of the form's node
+   - list_tree: optional filters form (one form's nodes) and formsOnly (only the form nodes), for a large app such as the Delphi IDE
    - screenshot: a whole form, or one control cropped out of it (path), optionally scaled down (maxWidth); a minimized form keeps its labels and other controls without a window
    - TColor and TAlphaColor coercion, one-level dotted propName, parent-inheritance auto-flip (VCL-only), opt-in click mode='message' (click queued to run after the answer, button-class controls)
    - How Autopilot works and how to use it with an AI: the book "Delphi in All Its Glory" Part 5, "AI-Assisted Development for Delphi", chapter "We Need a Hero - Enter Autopilot for Delphi".
@@ -51,7 +53,7 @@ uses
   System.SysUtils, System.SyncObjs, System.JSON, System.Rtti, System.TypInfo,
   System.NetEncoding, System.UITypes, System.UIConsts,
   Vcl.Forms, Vcl.Controls, Vcl.StdCtrls, Vcl.ExtCtrls, Vcl.Graphics, Vcl.Imaging.PngImage,
-  Autopilot.Bridge.Core, Autopilot.Bridge.Log, Autopilot.Bridge.NamedPipe, Autopilot.Bridge.NativeDialogs, Autopilot.Bridge.Worker;
+  Autopilot.Bridge.Core, Autopilot.Bridge.Log, Autopilot.Bridge.NamedPipe, Autopilot.Bridge.NativeDialogs, Autopilot.Bridge.Worker, Autopilot.Bridge.Commands;
 {$ELSE}
 uses
   System.SysUtils;
@@ -71,7 +73,7 @@ type
   TWinControlClass = class(TWinControl);   // breaks protected scope for .Click
   TControlAccess   = class(TControl);      // breaks protected scope for .Click and .ActionLink
 
-  { Tells HandleClick that an event handler freed the control it clicks.
+  { Tells HandleClick, HandleSetText, HandleSetChecked and HandleSetProperty that the app's own code freed the control they act on.
     Freeing raises nothing, so a try..except cannot see it.
     TComponent.Destroy calls Notification(opRemove) on every component registered through FreeNotification, before the memory is released (RemoveFreeNotifications in System.Classes.pas). }
   TFreeWatch = class(TComponent)
@@ -1824,6 +1826,21 @@ begin
 end;
 
 
+// The names of all forms in Screen.Forms[], empty names included: for the form filter of list_tree.
+function ScreenFormNames: TArray<String>;
+var
+  i: Integer;
+begin
+  Assert(GetCurrentThreadId = MainThreadID, 'ScreenFormNames: VCL touched off the main thread');
+  SetLength(Result, Screen.FormCount);
+  for i := 0 to Screen.FormCount - 1 do
+    Result[i] := Screen.Forms[i].Name;
+end;
+
+
+{ Optional args: form (only the nodes of the forms with that name, case-insensitive) and formsOnly (only the form nodes).
+  Both together give the form node of that form only.
+  Without them the answer is the whole tree, as it always was. }
 function HandleListTree(const AReq: TBridgeRequest): TBridgeResponse;
 var
   Items: TJSONArray;
@@ -1832,10 +1849,28 @@ var
   i: Integer;
   Form: TCustomForm;
   Guide, GuideError: String;
+  FormFilter, ArgError: String;
+  FormsOnly: Boolean;
 begin
   Assert(GetCurrentThreadId = MainThreadID, 'HandleListTree must run on the main thread');
   Result := Default(TBridgeResponse);
   Result.Id := AReq.Id;
+
+  if not TryParseListTreeArgs(AReq.Args, FormFilter, FormsOnly, ArgError) then
+    begin
+      Result.Ok := FALSE;
+      Result.ErrorCode := ErrInvalidRequest;
+      Result.ErrorMessage := ArgError;
+      EXIT;
+    end;
+  // Checked before Items exists, so the not_found answer allocates nothing.
+  if not CheckListTreeFormFilter(FormFilter, ScreenFormNames, ArgError) then
+    begin
+      Result.Ok := FALSE;
+      Result.ErrorCode := ErrNotFound;
+      Result.ErrorMessage := ArgError;
+      EXIT;
+    end;
   Result.Ok := TRUE;
 
   Items := TJSONArray.Create;
@@ -1845,6 +1880,8 @@ begin
     for i := 0 to Screen.FormCount - 1 do
       begin
         Form := Screen.Forms[i];
+        // Every form with that name: a form name is unique only among the components of one owner.
+        if (FormFilter <> '') and not SameText(Form.Name, FormFilter) then Continue;
         Visited := TList.Create;
         try
           { Emit the form as its own node first.
@@ -1859,7 +1896,8 @@ begin
           else
             if GuideError <> ''
             then FormNode.AddPair('guideError', GuideError);
-          WalkComponents(Form.Name, Form.Name, Form, Items, Visited);
+          if not FormsOnly
+          then WalkComponents(Form.Name, Form.Name, Form, Items, Visited);
         finally
           FreeAndNil(Visited);
         end;
@@ -1925,7 +1963,8 @@ end;
 
 { click mode=message: the click runs on the main thread AFTER this command's answer, so a button whose OnClick opens a modal dialog does not block the dispatcher into -32004 (pair with dismiss_dialog).
   It used to post BM_CLICK.
-  Measured 2026-10-12 (Test_Click_ModeMessageOnMinimizedForm): a BM_CLICK posted to a button whose form is minimized never reaches OnClick - the E2E demo started with SW_SHOWMINNOACTIVE, and any customer app sitting minimized.
+  Measured (Test_Click_ModeMessageOnMinimizedForm): a BM_CLICK posted to a button whose form is minimized does not reach OnClick when the button does not hold the focus - the E2E demo started with SW_SHOWMINNOACTIVE, and any customer app sitting minimized.
+  It does reach OnClick when the button already holds the focus of its thread (Footguns.md, section "Mouse messages posted or sent to a VCL control"), so the outcome depends on the focus; ForceQueue does not.
   So for a minimized form the click is queued through TThread.ForceQueue instead (it runs at the app's next CheckSynchronize, which the VCL main loop does on the WM_NULL that WakeMainThread posts).
   The path is resolved again when it runs, because the control may be gone by then; a control that vanished or was disabled meanwhile is skipped with a log line. }
 procedure QueueDeferredClick(const APath: String);
@@ -2041,7 +2080,7 @@ var
     if DispatchedVia = 'message'
     then
       begin
-        { A posted BM_CLICK is lost when the button's top-level window is minimized (see QueueDeferredClick); there the click is queued instead.
+        { A posted BM_CLICK can be lost when the button's top-level window is minimized (see QueueDeferredClick); there the click is queued instead.
           Otherwise the BM_CLICK post stays: the BUTTON class proc turns it into WM_LBUTTONDOWN+UP plus BN_CLICKED (learn.microsoft.com, BM_CLICK).
           A failed post (e.g. full message queue) raises EOSError, which the caller's loop reports as stoppedReason. }
         if IsIconic(GetAncestor(TButtonControl(Comp).Handle, GA_ROOT))
@@ -2313,6 +2352,8 @@ var
   DataBound: Boolean;
   DataSet, Field: TObject;
   ErrMsg: String;
+  Watch: TFreeWatch;
+  Freed, EditOk: Boolean;
 begin
   Assert(GetCurrentThreadId = MainThreadID, 'HandleSetText must run on the main thread');
   Result := Default(TBridgeResponse);
@@ -2354,43 +2395,61 @@ begin
       exit;
     end;
 
-  DataBound := TryResolveDataBinding(Comp, DataSet, Field);
-  if DataBound then
-    begin
-      { Only a writable Text reaches the field: TDBLookupComboBox has a read-only Text, TDBRadioGroup none at all, and the Caption fallback would just relabel the control while the dataset sits in dsEdit. }
-      if not HasWritableProperty(Comp, 'Text') then
-        begin
-          Result.Ok := FALSE;
-          Result.ErrorCode := ErrUnsupportedAction;
-          Result.ErrorMessage := Comp.ClassName + ' is data-aware but has no writable Text; use click or set_property';
-          exit;
-        end;
-      { Edit BEFORE the write: entering dsEdit fires DataChange, which reloads the control from the field and would overwrite a value written earlier. }
-      if not TryDataBoundEdit(Comp, DataSet, Field, ErrMsg) then
-        begin
-          Result.Ok := FALSE;
-          Result.ErrorCode := ErrUnsupportedAction;
-          Result.ErrorMessage := Comp.Name + ': ' + ErrMsg;
-          exit;
-        end;
-    end;
+  { The app's own code runs inside this command (DataSource.Edit fires the dataset events, the Text setter fires OnChange) and may free the control, or the form that owns it.
+    Comp then points at freed memory, so Watch is checked before every later read of Comp, as in HandleClick. }
+  Watch := TFreeWatch.Create(Comp);
+  try
+    DataBound := TryResolveDataBinding(Comp, DataSet, Field);
+    if DataBound then
+      begin
+        { Only a writable Text reaches the field: TDBLookupComboBox has a read-only Text, TDBRadioGroup none at all, and the Caption fallback would just relabel the control while the dataset sits in dsEdit. }
+        if not HasWritableProperty(Comp, 'Text') then
+          begin
+            Result.Ok := FALSE;
+            Result.ErrorCode := ErrUnsupportedAction;
+            Result.ErrorMessage := Comp.ClassName + ' is data-aware but has no writable Text; use click or set_property';
+            exit;
+          end;
+        { Edit BEFORE the write: entering dsEdit fires DataChange, which reloads the control from the field and would overwrite a value written earlier. }
+        EditOk := TryDataBoundEdit(Comp, DataSet, Field, ErrMsg);
+        if Watch.Freed then
+          begin
+            Result.Ok := FALSE;
+            Result.ErrorCode := ErrNotFound;
+            Result.ErrorMessage := Path + ' was freed by the app''s own code while its dataset entered edit mode; the text was not written';
+            exit;
+          end;
+        if not EditOk then
+          begin
+            Result.Ok := FALSE;
+            Result.ErrorCode := ErrUnsupportedAction;
+            Result.ErrorMessage := Comp.Name + ': ' + ErrMsg;
+            exit;
+          end;
+      end;
 
-  if not TrySetTextProperty(Comp, Text, ErrCode) then
-    begin
-      Result.Ok := FALSE;
-      Result.ErrorCode := ErrCode;
-      if ErrCode = ErrUnsupportedAction
-      then Result.ErrorMessage := Comp.ClassName + '.Text/Caption is read-only'
-      else Result.ErrorMessage := Comp.ClassName + ' has no writable Text/Caption property';
-      exit;
-    end;
+    if not TrySetTextProperty(Comp, Text, ErrCode) then
+      begin
+        Result.Ok := FALSE;
+        Result.ErrorCode := ErrCode;
+        if ErrCode = ErrUnsupportedAction
+        then Result.ErrorMessage := Comp.ClassName + '.Text/Caption is read-only'
+        else Result.ErrorMessage := Comp.ClassName + ' has no writable Text/Caption property';
+        exit;
+      end;
 
-  if DataBound
-  then DataBoundExit(Comp);
+    Freed := Watch.Freed;
+    if DataBound and not Freed
+    then DataBoundExit(Comp);
+  finally
+    FreeAndNil(Watch);   // its destructor unlinks it from Comp when Comp is still alive
+  end;
 
   Wrap := TJSONObject.Create;
   Wrap.AddPair('path', Path);
   Wrap.AddPair('dataBound', TJSONBool.Create(DataBound));
+  if Freed
+  then Wrap.AddPair('freed', TJSONBool.Create(TRUE));
   Result.Ok := TRUE;
   Result.ResultJson := Wrap;
 end;
@@ -2408,6 +2467,8 @@ var
   DataBound, Current: Boolean;
   DataSet, Field: TObject;
   Attempts: Integer;
+  Watch: TFreeWatch;
+  Freed: Boolean;
 begin
   Assert(GetCurrentThreadId = MainThreadID, 'HandleSetChecked must run on the main thread');
   Result := Default(TBridgeResponse);
@@ -2449,53 +2510,71 @@ begin
       exit;
     end;
 
-  DataBound := TryResolveDataBinding(Comp, DataSet, Field);
-  if DataBound
-  then
-    begin
-      { TDBCheckBox writes to its DataLink only from Toggle (protected), which the VCL reaches via BN_CLICKED.
-        A direct Checked write would never mark the link modified and CMExit would then skip the field update.
-        So toggle through BM_CLICK (Perform = synchronous); Toggle runs DataLink.Edit itself, so no Edit up front.
-        Then re-read: Toggle is a no-op when the link refuses Edit (ReadOnly, AutoEdit = FALSE), and with AllowGrayed a NULL field needs a second step (unchecked -> grayed -> checked). }
-      if not (Comp is TWinControl) or not TryGetCheckedProperty(Comp, Current) then
-        begin
-          Result.Ok := FALSE;
-          Result.ErrorCode := ErrUnsupportedAction;
-          Result.ErrorMessage := Comp.ClassName + ' is data-aware but not a windowed control with Checked';
-          exit;
-        end;
-      TWinControl(Comp).HandleNeeded;
-      Attempts := 0;
-      while (Current <> Checked) and (Attempts < 2) do
-        begin
-          TWinControl(Comp).Perform(BM_CLICK, 0, 0);
-          TryGetCheckedProperty(Comp, Current);
-          Inc(Attempts);
-        end;
-      if Current <> Checked then
-        begin
-          Result.Ok := FALSE;
-          Result.ErrorCode := ErrUnsupportedAction;
-          Result.ErrorMessage := Comp.Name + ': Checked did not change (data link refused Edit: ReadOnly field/control or DataSource.AutoEdit = FALSE)';
-          exit;
-        end;
-      DataBoundExit(Comp);
-    end
-  else
-    if not TrySetCheckedProperty(Comp, Checked, ErrCode) then
+  { The click below fires OnClick, a direct Checked write fires it too, and either may free the control or its form.
+    Watch is checked before every later read of Comp, as in HandleClick. }
+  Watch := TFreeWatch.Create(Comp);
+  try
+    DataBound := TryResolveDataBinding(Comp, DataSet, Field);
+    if DataBound
+    then
       begin
-        Result.Ok := FALSE;
-        Result.ErrorCode := ErrCode;
-        if ErrCode = ErrUnsupportedAction
-        then Result.ErrorMessage := Comp.ClassName + '.Checked is read-only'
-        else Result.ErrorMessage := Comp.ClassName + ' has no Checked property';
-        exit;
+        { TDBCheckBox writes to its DataLink only from Toggle (protected), which the VCL reaches via BN_CLICKED.
+          A direct Checked write would never mark the link modified and CMExit would then skip the field update.
+          So toggle through BM_CLICK (Perform = synchronous); Toggle runs DataLink.Edit itself, so no Edit up front.
+          Then re-read: Toggle is a no-op when the link refuses Edit (ReadOnly, AutoEdit = FALSE), and with AllowGrayed a NULL field needs a second step (unchecked -> grayed -> checked).
+          A control freed by its click is not read again: the click happened, the final Checked cannot be confirmed. }
+        if not (Comp is TWinControl) or not TryGetCheckedProperty(Comp, Current) then
+          begin
+            Result.Ok := FALSE;
+            Result.ErrorCode := ErrUnsupportedAction;
+            Result.ErrorMessage := Comp.ClassName + ' is data-aware but not a windowed control with Checked';
+            exit;
+          end;
+        TWinControl(Comp).HandleNeeded;
+        Attempts := 0;
+        while (Current <> Checked) and (Attempts < 2) and not Watch.Freed do
+          begin
+            TWinControl(Comp).Perform(BM_CLICK, 0, 0);
+            Inc(Attempts);
+            if not Watch.Freed
+            then TryGetCheckedProperty(Comp, Current);
+          end;
+        Freed := Watch.Freed;
+        if not Freed then
+          begin
+            if Current <> Checked then
+              begin
+                Result.Ok := FALSE;
+                Result.ErrorCode := ErrUnsupportedAction;
+                Result.ErrorMessage := Comp.Name + ': Checked did not change (data link refused Edit: ReadOnly field/control or DataSource.AutoEdit = FALSE)';
+                exit;
+              end;
+            DataBoundExit(Comp);
+          end;
+      end
+    else
+      begin
+        if not TrySetCheckedProperty(Comp, Checked, ErrCode) then
+          begin
+            Result.Ok := FALSE;
+            Result.ErrorCode := ErrCode;
+            if ErrCode = ErrUnsupportedAction
+            then Result.ErrorMessage := Comp.ClassName + '.Checked is read-only'
+            else Result.ErrorMessage := Comp.ClassName + ' has no Checked property';
+            exit;
+          end;
+        Freed := Watch.Freed;
       end;
+  finally
+    FreeAndNil(Watch);   // its destructor unlinks it from Comp when Comp is still alive
+  end;
 
   Wrap := TJSONObject.Create;
   Wrap.AddPair('path', Path);
   Wrap.AddPair('checked', TJSONBool.Create(Checked));
   Wrap.AddPair('dataBound', TJSONBool.Create(DataBound));
+  if Freed
+  then Wrap.AddPair('freed', TJSONBool.Create(TRUE));
   Result.Ok := TRUE;
   Result.ResultJson := Wrap;
 end;
@@ -2517,6 +2596,8 @@ var
   DotPos: Integer;
   HasOld: Boolean;
   OldValue, OldKind, OldUnit: String;
+  Watch: TFreeWatch;
+  Written, Freed: Boolean;
 begin
   Assert(GetCurrentThreadId = MainThreadID, 'HandleSetProperty must run on the main thread');
   Result := Default(TBridgeResponse);
@@ -2574,7 +2655,17 @@ begin
     TrySetGenericProperty resets ErrCode, ErrMsg and FailedInstance first, so the read may use them. }
   HasOld := TryReadGenericProperty(Comp, PropName, OldValue, OldKind, OldUnit, ErrCode, ErrMsg, FailedInstance);
 
-  if not TrySetGenericProperty(Comp, PropName, StrValue, ErrCode, ErrMsg, FailedInstance, Elided) then
+  { The setter may run the app's own code (OnChange, a custom setter) that frees the control or its form; Watch tells, and the Parent<X> flip below then never touches the freed memory.
+    A FALSE return of TrySetGenericProperty happens before any SetValue, so the failure branch reads a live Comp. }
+  Watch := TFreeWatch.Create(Comp);
+  try
+    Written := TrySetGenericProperty(Comp, PropName, StrValue, ErrCode, ErrMsg, FailedInstance, Elided);
+    Freed := Watch.Freed;
+  finally
+    FreeAndNil(Watch);   // its destructor unlinks it from Comp when Comp is still alive
+  end;
+
+  if not Written then
     begin
       Result.Ok := FALSE;
       Result.ErrorCode := ErrCode;
@@ -2605,10 +2696,13 @@ begin
     On failure the flip is skipped on purpose: a rejected value must not detach the control from parent inheritance.
     Value-changing writes are auto-flipped by the VCL itself already — this call matters for the ELIDED resend, where SetValue is skipped and the VCL auto-flip never runs.
     See TurnOffParentInheritFor's header comment. }
-  DotPos := Pos('.', PropName);
-  if DotPos > 0
-  then TurnOffParentInheritFor(Comp, Copy(PropName, 1, DotPos - 1))
-  else TurnOffParentInheritFor(Comp, PropName);
+  if not Freed then
+    begin
+      DotPos := Pos('.', PropName);
+      if DotPos > 0
+      then TurnOffParentInheritFor(Comp, Copy(PropName, 1, DotPos - 1))
+      else TurnOffParentInheritFor(Comp, PropName);
+    end;
 
   Wrap := TJSONObject.Create;
   Wrap.AddPair('path', Path);
@@ -2619,6 +2713,8 @@ begin
   Wrap.AddPair('elided', TJSONBool.Create(Elided));
   if HasOld
   then Wrap.AddPair('oldValue', OldValue);
+  if Freed
+  then Wrap.AddPair('freed', TJSONBool.Create(TRUE));
   Result.Ok := TRUE;
   Result.ResultJson := Wrap;
 end;
@@ -3854,13 +3950,16 @@ begin
                         if SameText(AReq.Cmd, 'send_keys')
                         then Result := HandleSendKeys(AReq)
                         else
-                          begin
-                            Result := Default(TBridgeResponse);
-                            Result.Id := AReq.Id;
-                            Result.Ok := FALSE;
-                            Result.ErrorCode := ErrUnsupportedAction;
-                            Result.ErrorMessage := 'unknown cmd: ' + AReq.Cmd;
-                          end;
+                          if SameText(AReq.Cmd, 'call_method')
+                          then Result := HandleCallMethod(AReq)   // Autopilot.Bridge.Commands
+                          else
+                            begin
+                              Result := Default(TBridgeResponse);
+                              Result.Id := AReq.Id;
+                              Result.Ok := FALSE;
+                              Result.ErrorCode := ErrUnsupportedAction;
+                              Result.ErrorMessage := 'unknown cmd: ' + AReq.Cmd;
+                            end;
 end;
 
 
