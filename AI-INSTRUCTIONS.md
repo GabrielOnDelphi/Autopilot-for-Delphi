@@ -5,7 +5,7 @@
 > One line in the user's global `CLAUDE.md` points at this file (`README.md`, section "How to install it").
 >
 > **Two companion files lie in the same folder as this file:**
-> - `AI-INSTRUCTIONS - tool reference.md`: every argument, answer field and error of the fourteen tools.
+> - `AI-INSTRUCTIONS - tool reference.md`: every argument, answer field and error of the fifteen tools.
 >   Open it before you use a tool's options beyond the basics, or when a tool answers something this file does not explain.
 > - `AI-INSTRUCTIONS - troubleshooting.md`: open it when a call fails, the target does not answer, or the MCP tools are not available.
 
@@ -16,6 +16,7 @@
 2. **Use `count=N` on `click` for repeated clicks:** one tool call, one turn, whatever N is.
 3. **Bundle independent tool calls into one assistant turn (parallel tool_use).** To click A, set text on B and read C, emit all three tool_use blocks in one response.
 4. **Don't pre-flight with `list_tree` when you already know the path.** Discover once, then act.
+   On a large app (the Delphi IDE: about 580 KB) call `list_tree(formsOnly=true)` first, then `list_tree(form=<name>)` for the one form you need.
 5. **On a wrong property name, `set_property` answers `availableProperties`:** every writable property with its `kind` and live `currentValue`.
    Use it instead of guessing names again.
 6. **`screenshot` is a fallback, not a check.** To check a result, `get_text` returns the exact string in a few ms with no image tokens: ~1000× cheaper.
@@ -33,21 +34,23 @@ This does NOT hold for FMX, nor for an app that calls `SetForegroundWindow` / `A
 
 ## Never drive the app with mouse or keyboard scripts
 
-Do every job through the bridge: `execute_action`, `click`, `set_text`, `set_checked`, `set_property`, `send_keys`, `dismiss_dialog`.
+Do every job through the bridge: `call_method`, `execute_action`, `click`, `set_text`, `set_checked`, `set_property`, `send_keys`, `dismiss_dialog`.
+**When the app offers a command for the job, prefer `call_method` to a chain of clicks:** call `call_method` without `name` once to see the app's commands and their descriptions.
 Never move the mouse or send global keys (SendInput, AutoIt, screen-coordinate scripts) to do a job: such tools are only for testing the real Windows input pipeline (section "What this bridge deliberately does NOT do").
 The bridge exists only in a build that defines `AUTOPILOT`, normally Debug: never drive a build without it.
 A modal dialog is no reason to change the app: `click(path, mode='message')` opens it without blocking, the tools then work on it, and `dismiss_dialog` closes a native one (`AI-INSTRUCTIONS - tool reference.md`, section `dismiss_dialog`).
 
-Add a named action (a small debug-only command component) to the app only when both are true:
+Add a `call_method` command to the app only when both are true:
 - the tools cannot do the job: a Windows file or folder picker (`dismiss_dialog` clicks its buttons but cannot type a file name), or a dialog where the recipe above failed;
 - the job will be repeated, by a regression check or by later sessions on the same app.
 
-For a one-time job, add no code to the app: tell the user in one line which action is missing.
+For a one-time job, add no code to the app: tell the user in one line which command is missing.
 
-A named action is a `TComponent` owned by the main form, created under `{$IFDEF AUTOPILOT}` only, with two published string properties: writing `Command` (an action name, a space, a parameter) runs the action, and `Answer` holds the result text.
-Each action calls the same routine the GUI calls after its dialog closes, never a copy of it, with `TAppDataCore.Unattended` (LightSaber) or the app's own switch set, so no message box blocks the call.
-The getter of `Command` returns `''`, so write-side elision (TL;DR rule 7) never skips a repeated command.
-Call it with `set_property(path='frmMain.Autopilot', propName='Command', value='load_file C:\Data\a.txt')`, then `read_property(path='frmMain.Autopilot', propName='Answer')`.
+Register the command with `RegisterAutopilotCommand` (unit `Autopilot.Bridge.Commands`) under `{$IFDEF AUTOPILOT}` only, in the main form's constructor, and remove it with `UnregisterAutopilotCommand` in the form's destructor.
+Never register it in the `.dpr`: in FMX, `Application.CreateForm` only queues the form until `Application.Run`, so the form variable is still NIL there.
+The command calls the same routine the GUI calls after its dialog closes, never a copy of it, with `TAppDataCore.Unattended` (LightSaber) or the app's own switch set, so no message box blocks the call.
+Call it with `call_method(name='LoadFile', args={"fileName": "C:\\Data\\a.txt"})`: the answer's `result` is what the command returned.
+The handler code, who frees what, and the errors: `AI-INSTRUCTIONS - tool reference.md`, section `call_method`.
 
 ## Debug-channel selection - read live state without a recompile
 
@@ -88,7 +91,7 @@ All bridge errors use JSON-RPC error envelopes with custom codes:
 | -32001 | `not_found` | No component matches path | Typo, control not yet created, form not visible |
 | -32002 | `ambiguous_path` | The path matched 2+ controls through the visual tree | The owner path found nothing and several shown controls fit. The message lists each by its owner path - retry with one of them |
 | -32003 | `control_disabled` | Found but `Enabled = False` | The UI deliberately blocks this action. `set_property` of `Enabled` itself is still allowed |
-| -32004 | `main_thread_blocked` | Dispatch timed out | Target main thread is busy (long handler, modal with custom message loop) |
+| -32004 | `main_thread_blocked` | Dispatch timed out | Target main thread is busy (long handler, modal with custom message loop). `error.data.started: true` = the command runs and waits (often in a dialog it opened: `dismiss_dialog`); never resend it |
 | -32005 | `unsupported_action` | Class doesn't support the request | e.g. clicking a `TLabel` with no `OnClick`, set_property on a non-writable kind |
 | -32006 | `rtti_property_missing` | Property not exposed via RTTI | Property isn't `published`, or doesn't exist. The error carries `availableProperties` (TL;DR rule 5) |
 | -32098 | `target_not_responding` | The target stopped answering (MCP side) | It accepted the connection but did not reply in time (the call fails after the per-call timeout + 2 s instead of hanging), or its pipe stayed busy for the whole per-call timeout. Typical: the whole app is stopped on an IDE breakpoint or hung |
