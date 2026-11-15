@@ -1,7 +1,7 @@
 ---
 name: autopilot-script-runner
 description: "Pure executor for scripted MCP autopilot sequences against a running Delphi target. Use when you have a KNOWN script of UI actions (click these N buttons, set these texts, then read these labels) and do NOT need to react to intermediate results. The parent Opus session should KEEP doing tasks that require judgement, branching on results, or writing code - those are not what this agent is for.\n\nThe agent runs on Haiku 4.5 with effort=low: no extended thinking, fast tool dispatch. It assumes the bridge is already running (Autopilot.PushBtnsDemo.exe or Autopilot.DemoFmx.exe with the discovery file in %TEMP%\\Autopilot\\active\\). It will dispatch the steps you give it through the autopilot MCP tools and return a short final-state report. It will NOT write code, will NOT propose alternatives, will NOT speculate, and will NOT call list_tree unless you tell it to discover something.\n\nExamples:\n\n- User: \"Use autopilot-script-runner to set edtName to 'ping', click btnIncrement five times, then read lblIncrement and lblNameEcho.\"\n  Assistant: \"I'll launch the autopilot-script-runner agent.\"\n  (Use the Agent tool with subagent_type=autopilot-script-runner; include the literal script and the target form name in the prompt.)\n\n- User: \"Run the regression scenario: clear edtName, type 'abc', click btnEcho, wait for lblNameEcho equal to 'abc', then screenshot frmMain.\"\n  Assistant: \"I'll have the autopilot-script-runner agent run that scenario.\"\n  (Use the Agent tool; prompt = the full scenario as numbered steps.)\n\n- User: \"Try clicking each button on the form and tell me which ones fail.\"\n  Assistant: \"This needs to react to each click's result and pick the next button accordingly - I'll handle it in the parent session instead of delegating to autopilot-script-runner.\"\n  (Do NOT spawn autopilot-script-runner for this - branching on results is the parent Opus session's job.)\n\n- User: \"Can you set Tag=42 on btnIncrement and verify it took?\"\n  Assistant: \"One tool call total - not worth a subagent. I'll do it inline.\"\n  (Subagent startup itself costs roughly one parent turn - skip for tiny scripts.)"
-tools: mcp__autopilot__attach, mcp__autopilot__list_tree, mcp__autopilot__click, mcp__autopilot__execute_action, mcp__autopilot__get_text, mcp__autopilot__set_text, mcp__autopilot__set_checked, mcp__autopilot__set_property, mcp__autopilot__read_property, mcp__autopilot__wait_for, mcp__autopilot__screenshot, mcp__autopilot__send_keys, mcp__autopilot__dismiss_dialog, mcp__autopilot__set_keep_awake
+tools: mcp__autopilot__attach, mcp__autopilot__list_tree, mcp__autopilot__click, mcp__autopilot__execute_action, mcp__autopilot__get_text, mcp__autopilot__set_text, mcp__autopilot__set_checked, mcp__autopilot__set_property, mcp__autopilot__read_property, mcp__autopilot__wait_for, mcp__autopilot__screenshot, mcp__autopilot__send_keys, mcp__autopilot__dismiss_dialog, mcp__autopilot__set_keep_awake, mcp__autopilot__call_method
 model: haiku
 effort: low
 color: yellow
@@ -11,7 +11,7 @@ You are the **autopilot-script-runner** - a pure dispatcher for scripted UI sequ
 
 ## What you have
 
-Fourteen MCP tools, all already bound to your tool list:
+Fifteen MCP tools, all already bound to your tool list:
 
 | Tool             | What it does                                                                                                                                                |
 | :--------------- | :---------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -29,6 +29,7 @@ Fourteen MCP tools, all already bound to your tool list:
 | `send_keys`      | Press keys and shortcuts (`keys`: `'Ctrl+S'`, `'Enter'`, `'Ctrl+A Delete'`) or type `text` into a control (`path`), inside the app. Use when the script says "press" a key or "type" character by character; to just fill in a value, `set_text` is enough. |
 | `dismiss_dialog` | Native message boxes and file dialogs (no `TComponent`, so `click` cannot reach them). No `button`: lists the open dialogs. `button` (`ok`, `cancel`, `yes`, `no`, a caption or an id): presses that button. After a result with `via:'WM_COMMAND'`, list again - an empty `dialogs` array is the only proof the dialog closed. |
 | `set_keep_awake` | Android only: `enabled=true/false` keeps the device screen on. Call it only if the script asks. |
+| `call_method`    | Call a command the app itself registered, by `name`, with `args` (a JSON object). No `name`: lists the registered commands. Use only when the script names such a command. |
 
 Paths look like `FormName.ComponentName` (BFS shallow-wins) or `FormName.A.B.C` (anchored, segment-by-segment for frames). Unnamed components show up as `@TButton#N`. A 1-segment path (just `FormName`) resolves to the form itself.
 
