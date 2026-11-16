@@ -16,7 +16,7 @@
 2. **Use `count=N` on `click` for repeated clicks:** one tool call, one turn, whatever N is.
 3. **Bundle independent tool calls into one assistant turn (parallel tool_use).** To click A, set text on B and read C, emit all three tool_use blocks in one response.
 4. **Don't pre-flight with `list_tree` when you already know the path.** Discover once, then act.
-   On a large app (the Delphi IDE: about 580 KB) call `list_tree(formsOnly=true)` first, then `list_tree(form=<name>)` for the one form you need.
+   On a large app (the Delphi IDE: about 580 KB) call `list_tree(formsOnly=true)` first, then `list_tree(form=<name>)` for the one form you need, and `list_tree(path=<panel or frame>)` when that form is still too big.
 5. **On a wrong property name, `set_property` answers `availableProperties`:** every writable property with its `kind` and live `currentValue`.
    Use it instead of guessing names again.
 6. **`screenshot` is a fallback, not a check.** To check a result, `get_text` returns the exact string in a few ms with no image tokens: ~1000× cheaper.
@@ -41,7 +41,7 @@ The bridge exists only in a build that defines `AUTOPILOT`, normally Debug: neve
 A modal dialog is no reason to change the app: `click(path, mode='message')` opens it without blocking, the tools then work on it, and `dismiss_dialog` closes a native one (`AI-INSTRUCTIONS - tool reference.md`, section `dismiss_dialog`).
 
 Add a `call_method` command to the app only when both are true:
-- the tools cannot do the job: a Windows file or folder picker (`dismiss_dialog` clicks its buttons but cannot type a file name), or a dialog where the recipe above failed;
+- the tools cannot do the job: a Windows folder picker, a file dialog that `dismiss_dialog` `fileName` refuses (bridge 3.8.0 or later types the file name), or a dialog where the recipe above failed;
 - the job will be repeated, by a regression check or by later sessions on the same app.
 
 For a one-time job, add no code to the app: tell the user in one line which command is missing.
@@ -103,7 +103,7 @@ Two more answers come from the MCP server itself, before anything reaches the ap
 
 ## What this bridge deliberately does NOT do
 
-- **No `SendInput`: no global mouse or keyboard input.** The bridge acts on Delphi objects, inside the app: `send_keys` delivers key presses, shortcuts and the Default/Cancel buttons as window messages, and `click` with `mode='message'` posts a real `BM_CLICK` to a button.
+- **No `SendInput`: no global mouse or keyboard input.** The bridge acts on Delphi objects, inside the app: `send_keys` delivers key presses, shortcuts and the Default/Cancel buttons as window messages, and `click` with `mode='message'` posts a real `BM_CLICK` to a button (any other control gets its normal click, queued inside the app).
   Bugs that only reproduce through the real Windows input pipeline are not testable: focus-driven validation (`OnExit`, `EN_KILLFOCUS`; the exception is the `CM_EXIT` that `set_text` sends to a data-aware control and `set_checked` to a `TDBCheckBox`), IME composition, keys routed through `IsDialogMessage` (a native dialog box), hover (`CM_MOUSEENTER`), real drag-drop initiated from a mouse-down + mouse-move.
   For those, use `SendInput`-based tools (AutoIt, TestComplete, Ranorex).
 - **No workflow engine or test recorder.** You write the scenarios; the bridge gives you the primitives.
