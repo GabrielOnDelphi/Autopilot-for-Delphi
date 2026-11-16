@@ -36,6 +36,7 @@ type
     [Test] procedure Test_NullIdPreserved;
     [Test] procedure Test_BatchArrayRejectedAsInvalidRequest;
     [Test] procedure Test_ToolsList_ReturnsTools_Array;
+    [Test] procedure Test_ToolsList_ReadOnlyToolsCarryReadOnlyHint;
     [Test] procedure Test_ToolsCall_UnknownTool_Returns32602;
     [Test] procedure Test_ServerDiscover_Returns32601;
     [Test] procedure Test_NumericMethod_Returns32600;
@@ -386,6 +387,62 @@ begin
     Assert.AreEqual(15, Tools.Count, 'Tests.dpr links all fifteen tool units');
   finally
     Root.Free;
+  end;
+end;
+
+
+/// The six tools that change nothing in the target carry "annotations":{"readOnlyHint":true} (MCP 2025-11-25 schema, ToolAnnotations);
+/// the other nine carry no annotations at all (readOnlyHint defaults to false there).
+/// The six names are written here by hand, never read from the tool units.
+procedure TJsonRpcTests.Test_ToolsList_ReadOnlyToolsCarryReadOnlyHint;
+const
+  ReadOnlyTools: array[0..5] of String = ('list_tree', 'get_text', 'read_property', 'screenshot', 'wait_for', 'attach');
+var
+  Resp, Name, Wrong: String;
+  Root: TJSONObject;
+  Tools: TJSONArray;
+  Entry, Ann: TJSONObject;
+  V: TJSONValue;
+  i, k, ReadOnlyCount: Integer;
+  IsReadOnlyName: Boolean;
+begin
+  Resp := DispatchLine('{"jsonrpc":"2.0","id":6,"method":"tools/list"}');
+  Root := Parse(Resp);
+  try
+    Tools := (Root.GetValue('result') AS TJSONObject).GetValue('tools') AS TJSONArray;
+    Assert.IsNotNull(Tools, 'result.tools missing');
+    Wrong := '';
+    ReadOnlyCount := 0;
+    for i := 0 to Tools.Count - 1 do
+      begin
+        Entry := Tools.Items[i] AS TJSONObject;
+        Name := Entry.GetValue<String>('name');
+        IsReadOnlyName := FALSE;
+        for k := Low(ReadOnlyTools) to High(ReadOnlyTools) do
+          if ReadOnlyTools[k] = Name
+          then IsReadOnlyName := TRUE;
+        V := Entry.GetValue('annotations');
+        if IsReadOnlyName
+        then
+          begin
+            Inc(ReadOnlyCount);
+            if not (V is TJSONObject)
+            then Wrong := Wrong + Name + ': no annotations object; '
+            else
+              begin
+                Ann := TJSONObject(V);
+                if Ann.ToJSON <> '{"readOnlyHint":true}'
+                then Wrong := Wrong + Name + ': annotations ' + Ann.ToJSON + '; ';
+              end;
+          end
+        else
+          if V <> NIL
+          then Wrong := Wrong + Name + ' changes the app but has annotations ' + V.ToJSON + '; ';
+      end;
+    Assert.AreEqual(6, ReadOnlyCount, 'all six read-only tools must be listed');
+    Assert.AreEqual('', Wrong, 'wrong annotations');
+  finally
+    FreeAndNil(Root);
   end;
 end;
 

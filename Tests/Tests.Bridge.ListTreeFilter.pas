@@ -27,6 +27,7 @@ type
     FPipeCounter: Integer;
     FFormA      : TForm;
     FFormB      : TForm;
+    FFormC      : TForm;
     function CallListTree(const AArgsJson: String): TJSONObject;
   public
     [SetupFixture]    procedure SetupFixture;
@@ -41,6 +42,10 @@ type
     [Test] procedure Test_ListTree_FormsOnly_ReturnsOnlyFormNodes;
     [Test] procedure Test_ListTree_FormAndFormsOnly_ReturnsThatFormNodeOnly;
     [Test] procedure Test_ListTree_BadArgumentTypes_ReturnInvalidRequest;
+    [Test] procedure Test_ListTree_Path_ReturnsTheNodeAndWhatLiesUnderIt;
+    [Test] procedure Test_ListTree_Path_OfAForm_EqualsTheFormFilter;
+    [Test] procedure Test_ListTree_Path_CombinesWithFormAndFormsOnly;
+    [Test] procedure Test_ListTree_Path_UnknownOrBadType_IsRefused;
   end;
 
 
@@ -57,6 +62,7 @@ uses
 const
   FormAName = 'FilterFormA';
   FormBName = 'FilterFormB';
+  FormCName = 'FilterFormC';
 
 type
   // A form with a button and a panel that owns a label (so the walk goes deeper than one level).
@@ -70,6 +76,43 @@ type
   public
     constructor Create(AOwner: TComponent); override;
   end;
+
+  { The form for the path filter.
+    pnlC owns lblOwned; lblShown, pnlInner and lblDeep are owned by the form but shown inside pnlC (lblDeep inside pnlInner); btnOutside is outside pnlC. }
+  TFilterFormC = class(TForm)
+  public
+    constructor Create(AOwner: TComponent); override;
+  end;
+
+
+constructor TFilterFormC.Create(AOwner: TComponent);
+var
+  PnlC, PnlInner: TPanel;
+  Lbl: TLabel;
+  Btn: TButton;
+begin
+  inherited CreateNew(AOwner);
+  Name    := FormCName;
+  Caption := 'Filter C';
+  Btn := TButton.Create(Self);
+  Btn.Name   := 'btnOutside';
+  Btn.Parent := Self;
+  PnlC := TPanel.Create(Self);
+  PnlC.Name   := 'pnlC';
+  PnlC.Parent := Self;
+  Lbl := TLabel.Create(PnlC);
+  Lbl.Name   := 'lblOwned';
+  Lbl.Parent := PnlC;
+  Lbl := TLabel.Create(Self);
+  Lbl.Name   := 'lblShown';
+  Lbl.Parent := PnlC;
+  PnlInner := TPanel.Create(Self);
+  PnlInner.Name   := 'pnlInner';
+  PnlInner.Parent := PnlC;
+  Lbl := TLabel.Create(Self);
+  Lbl.Name   := 'lblDeep';
+  Lbl.Parent := PnlInner;
+end;
 
 
 constructor TFilterFormA.Create(AOwner: TComponent);
@@ -207,6 +250,7 @@ begin
   FPipeCounter := 0;
   FFormA := TFilterFormA.Create(NIL);
   FFormB := TFilterFormB.Create(NIL);
+  FFormC := TFilterFormC.Create(NIL);
 end;
 
 
@@ -226,6 +270,7 @@ end;
 
 procedure TListTreeFilterTests.TearDownFixture;
 begin
+  FreeAndNil(FFormC);
   FreeAndNil(FFormB);
   FreeAndNil(FFormA);
 end;
@@ -416,6 +461,115 @@ begin
     Assert.IsNotNull(Root, 'no answer for formsOnly "yes"');
     Assert.AreEqual(ErrInvalidRequest, GetErrorCode(Root), 'formsOnly that is not a Boolean must answer -32600: ' + Root.ToJSON);
     Assert.IsTrue(ErrorMessageOf(Root).Contains('formsOnly'), 'the message must name the argument: ' + Root.ToJSON);
+  finally
+    FreeAndNil(Root);
+  end;
+end;
+
+
+// The nodes of AComponents whose path is one of APaths, in the order of AComponents, each as ToJSON, one per line.
+function NodesWithPaths(AComponents: TJSONArray; const APaths: array of String): String;
+var
+  i, k: Integer;
+begin
+  Result := '';
+  for i := 0 to AComponents.Count - 1 do
+    for k := 0 to High(APaths) do
+      if StrField(AComponents.Items[i], 'path') = APaths[k] then
+        begin
+          Result := Result + AComponents.Items[i].ToJSON + sLineBreak;
+          Break;
+        end;
+end;
+
+
+{ path keeps the node and every component under it: owned by it (lblOwned) or shown inside it (lblShown, and lblDeep through pnlInner).
+  Each node is byte-identical to the same node of the unfiltered answer, in the same order. }
+procedure TListTreeFilterTests.Test_ListTree_Path_ReturnsTheNodeAndWhatLiesUnderIt;
+var
+  Plain, Filtered: TJSONObject;
+  Comps: TJSONArray;
+  Expected: String;
+begin
+  Plain := NIL; Filtered := NIL;
+  try
+    Plain    := CallListTree('');
+    Filtered := CallListTree('{"path":"' + FormCName + '.pnlC"}');
+    Expected := NodesWithPaths(ComponentsOf(Plain, 'no arguments'),
+                  [FormCName + '.pnlC', FormCName + '.pnlC.lblOwned', FormCName + '.lblShown', FormCName + '.pnlInner', FormCName + '.lblDeep']);
+    Comps := ComponentsOf(Filtered, 'path pnlC');
+    Assert.AreEqual(5, Comps.Count, 'pnlC, lblOwned, lblShown, pnlInner and lblDeep. Got: ' + AllNodes(Comps));
+    Assert.IsFalse(HasPath(Comps, FormCName + '.btnOutside'), 'a control outside pnlC must not be listed');
+    Assert.IsFalse(HasPath(Comps, FormCName), 'the form node must not be listed');
+    Assert.AreEqual(Expected, AllNodes(Comps), 'the nodes must be exactly those of the unfiltered answer, in the same order');
+  finally
+    FreeAndNil(Filtered);
+    FreeAndNil(Plain);
+  end;
+end;
+
+
+procedure TListTreeFilterTests.Test_ListTree_Path_OfAForm_EqualsTheFormFilter;
+var
+  ByForm, ByPath: TJSONObject;
+begin
+  ByForm := NIL; ByPath := NIL;
+  try
+    ByForm := CallListTree('{"form":"' + FormCName + '"}');
+    ByPath := CallListTree('{"path":"' + FormCName + '"}');
+    Assert.AreEqual(AllNodes(ComponentsOf(ByForm, 'form C')), AllNodes(ComponentsOf(ByPath, 'path C')), 'path of a form must give what form gives');
+  finally
+    FreeAndNil(ByPath);
+    FreeAndNil(ByForm);
+  end;
+end;
+
+
+// The filters just combine: a node is listed only when every filter given keeps it.
+procedure TListTreeFilterTests.Test_ListTree_Path_CombinesWithFormAndFormsOnly;
+var
+  Root: TJSONObject;
+begin
+  Root := CallListTree('{"path":"' + FormCName + '.pnlC","form":"' + FormAName + '"}');
+  try
+    Assert.AreEqual(0, ComponentsOf(Root, 'path in C, form A').Count, 'pnlC lies in another form: nothing is left. Got: ' + Root.ToJSON);
+  finally
+    FreeAndNil(Root);
+  end;
+
+  Root := CallListTree('{"path":"' + FormCName + '.pnlC","formsOnly":true}');
+  try
+    Assert.AreEqual(0, ComponentsOf(Root, 'path pnlC, formsOnly').Count, 'no form lies under pnlC. Got: ' + Root.ToJSON);
+  finally
+    FreeAndNil(Root);
+  end;
+
+  Root := CallListTree('{"path":"' + FormCName + '","formsOnly":true}');
+  try
+    Assert.AreEqual(1, ComponentsOf(Root, 'path C, formsOnly').Count, 'the form node of C only. Got: ' + Root.ToJSON);
+    Assert.AreEqual(FormCName, StrField(ComponentsOf(Root, 'path C, formsOnly').Items[0], 'path'), 'wrong node');
+  finally
+    FreeAndNil(Root);
+  end;
+end;
+
+
+procedure TListTreeFilterTests.Test_ListTree_Path_UnknownOrBadType_IsRefused;
+var
+  Root: TJSONObject;
+begin
+  Root := CallListTree('{"path":"' + FormCName + '.noSuchControl"}');
+  try
+    Assert.AreEqual(ErrNotFound, GetErrorCode(Root), 'an unknown path must answer -32001: ' + Root.ToJSON);
+    Assert.IsTrue(ErrorMessageOf(Root).Contains('noSuchControl'), 'the message must name the path: ' + Root.ToJSON);
+  finally
+    FreeAndNil(Root);
+  end;
+
+  Root := CallListTree('{"path":7}');
+  try
+    Assert.AreEqual(ErrInvalidRequest, GetErrorCode(Root), 'a path that is not a string must answer -32600: ' + Root.ToJSON);
+    Assert.IsTrue(ErrorMessageOf(Root).Contains('path'), 'the message must name the argument: ' + Root.ToJSON);
   finally
     FreeAndNil(Root);
   end;

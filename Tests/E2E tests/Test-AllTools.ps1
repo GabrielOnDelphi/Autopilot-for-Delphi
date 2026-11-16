@@ -56,6 +56,7 @@ $Maps = @{
     Echo         = 'frmMain.lblNameEcho'
     Label        = 'frmMain.lblHeader'
     DialogButton = 'frmMain.btnDialog'         # OnClick opens Application.MessageBox (MB_YESNOCANCEL, caption 'Native Dialog')
+    DialogMenuItem = 'frmMain.mnuPopupDialog'  # TMenuItem of the never-shown pmDialog; OnClick = btnDialogClick
     ActionButton = 'frmMain.btnAction'         # TButton,      Action = actFixture
     ActionSpeed  = 'frmMain.sbAction'          # TSpeedButton, Action = actFixture
     ActionList   = 'frmMain.actlFixture'
@@ -70,6 +71,10 @@ $Maps = @{
     DelayLabel   = 'frmMain.lblDelayed'
     LastKey      = 'frmMain.lblLastKey'        # edtName.OnKeyDown writes 'Key <code>' or 'Key <code> Ctrl'
     SaveCount    = 'frmMain.lblSaveCount'      # actSave (ShortCut Ctrl+S) writes 'Saved <N>'
+    MsgDlgButton = 'frmMain.btnMsgDlg'         # OnClick opens MessageDlg (mtConfirmation, Yes/No/Abort) = a Task Dialog
+    MsgDlgResult = 'frmMain.lblDialogResult'   # btnMsgDlg writes 'MessageDlg closed with <TModalResult>'
+    OpenButton   = 'frmMain.btnOpenFile'       # TOpenDialog titled 'Autopilot open fixture'; writes 'Open: <FileName>' or 'Open: cancelled' to lblDialogResult
+    SaveButton   = 'frmMain.btnSaveFile'       # TSaveDialog titled 'Autopilot save fixture'; writes 'Save: <FileName>' or 'Save: cancelled' to lblDialogResult
   }
   FMX = [ordered]@{
     Form         = 'frmFmxMain'
@@ -319,6 +324,49 @@ function Tool([string]$name, [hashtable]$a, [switch]$AsciiOnly) {
   }
   return $res
 }
+# Several tools/call requests written one after the other BEFORE any answer is read, the way Claude Code sends the calls of read-only
+# tools in parallel (https://code.claude.com/docs/en/mcp, "readOnlyHint: ... runs the tool's calls in parallel with other read-only calls").
+# $calls = array of @{ name = ...; arguments = @{...} }. Returns one object per call, in call order: .Id, .Res (as Tool returns it, $null when
+# no answer came), .Arrival (1 = first answer read), .Ms (time from the first write to this answer).
+function SendPipelined([object[]]$calls, [int]$ms = 30000) {
+  $ids = @()
+  foreach ($c in $calls) {
+    $script:NextId++
+    $ids += $script:NextId
+    $json = ([ordered]@{ jsonrpc = '2.0'; id = $script:NextId; method = 'tools/call'; params = @{ name = $c.name; arguments = $c.arguments } }) | ConvertTo-Json -Depth 10 -Compress
+    $script:LastRequest = (Get-Date -Format 'HH:mm:ss.fff') + ' ' + $json
+    Log ">>> $(Get-Date -Format 'HH:mm:ss.fff') (pipelined) $json"
+    [void](WriteServerLine $json)
+  }
+  $got = @{}
+  $sw = [Diagnostics.Stopwatch]::StartNew()
+  $arrival = 0
+  while (($got.Count -lt $ids.Count) -and ($sw.ElapsedMilliseconds -lt $ms)) {
+    $r = ReadJsonRpc ([math]::Max(1, $ms - $sw.ElapsedMilliseconds)) 'pipelined tools/call'
+    if ($null -eq $r) { break }
+    if (($null -ne $r.PSObject.Properties['id']) -and ($ids -contains [int]$r.id) -and (-not $got.ContainsKey([int]$r.id))) {
+      $arrival++
+      $got[[int]$r.id] = [pscustomobject]@{ R = $r; Arrival = $arrival; Ms = $sw.ElapsedMilliseconds }
+    }
+  }
+  $out = @()
+  for ($i = 0; $i -lt $ids.Count; $i++) {
+    $res = $null; $arr = 0; $t = -1
+    if ($got.ContainsKey($ids[$i])) {
+      $g = $got[$ids[$i]]; $arr = $g.Arrival; $t = $g.Ms
+      $res = [pscustomobject]@{ Name = $calls[$i].name; Content = @(); IsError = $false; Text = $null; J = $null; Code = $null; Msg = $null; Ms = $t }
+      if (($null -eq $g.R.PSObject.Properties['result']) -or ($null -eq $g.R.result)) { $res.IsError = $true; $res.Text = 'JSON-RPC error: ' + ($g.R.error | ConvertTo-Json -Compress -Depth 5) }
+      else {
+        $res.Content = @($g.R.result.content)
+        $res.IsError = ($g.R.result.isError -eq $true)
+        $tb = $res.Content | Where-Object { $_.type -eq 'text' } | Select-Object -First 1
+        if ($null -ne $tb) { $res.Text = [string]$tb.text; try { $res.J = $res.Text | ConvertFrom-Json } catch { $res.J = $null } }
+      }
+    }
+    $out += [pscustomobject]@{ Id = $ids[$i]; Res = $res; Arrival = $arr; Ms = $t }
+  }
+  return $out
+}
 function IsOk($res) { return ((-not $res.IsError) -and ($null -ne $res.J) -and ($res.J.ok -eq $true)) }
 function Describe($res) {
   if ($res.IsError) {
@@ -461,6 +509,11 @@ try {
     $names = @($tl.result.tools | ForEach-Object { [string]$_.name } | Sort-Object)
     $want  = @($ExpectedTools | Sort-Object)
     Case 'tools/list: the 15 tools' (($names.Count -eq 15) -and (($names -join ',') -eq ($want -join ','))) "15 tools: $($want -join ',')" "$($names.Count) tools: $($names -join ',')"
+    # MCP ToolAnnotations: the 6 tools that change nothing carry readOnlyHint = true, the other 9 carry no annotations at all.
+    $wantRO = @('attach','get_text','list_tree','read_property','screenshot','wait_for')
+    $hasRO  = @($tl.result.tools | Where-Object { ($null -ne $_.PSObject.Properties['annotations']) -and ($_.annotations.readOnlyHint -eq $true) } | ForEach-Object { [string]$_.name } | Sort-Object)
+    $anyAnn = @($tl.result.tools | Where-Object { $null -ne $_.PSObject.Properties['annotations'] } | ForEach-Object { [string]$_.name } | Sort-Object)
+    Case 'tools/list: readOnlyHint on the 6 read-only tools only' ((($hasRO -join ',') -eq ($wantRO -join ',')) -and (($anyAnn -join ',') -eq ($wantRO -join ','))) "readOnlyHint=true on $($wantRO -join ','), no annotations elsewhere" "readOnlyHint on: $($hasRO -join ','); annotations on: $($anyAnn -join ',')"
   }
 
   # Bad lines and non-ASCII text on the server's standard input. The expected values come from the JSON-RPC 2.0 specification
@@ -590,6 +643,22 @@ try {
     $lt5 = Tool 'list_tree' @{ pid = $script:TargetPid; form = $M.Form; formsOnly = $true }
     $c5 = @($lt5.J.result.components)
     Case 'list_tree form + formsOnly: that form node only' ((IsOk $lt5) -and ($c5.Count -eq 1) -and ($c5[0].path -ceq $M.Form)) "1 node, path $($M.Form)" $(if (IsOk $lt5) { "$($c5.Count) node(s): $(@($c5 | ForEach-Object { $_.path }) -join ',')" } else { Describe $lt5 })
+
+    # { The path filter: the panel and what lies under it, here lblInPanel, which the form owns and the panel shows.
+    #   Each node must be the same as its node in the unfiltered answer above. }
+    $lt6 = Tool 'list_tree' @{ pid = $script:TargetPid; path = $M.Panel }
+    $c6 = @($lt6.J.result.components)
+    $p6 = @($c6 | ForEach-Object { [string]$_.path })
+    $same = $true
+    foreach ($n in $c6) {
+      $u = @($comps | Where-Object { $_.path -ceq $n.path })
+      if (($u.Count -ne 1) -or (($u[0] | ConvertTo-Json -Compress -Depth 5) -cne ($n | ConvertTo-Json -Compress -Depth 5))) { $same = $false }
+    }
+    $ok = (IsOk $lt6) -and ($p6 -ccontains $M.Panel) -and ($p6 -ccontains $M.InPanel) -and (-not ($p6 -ccontains $M.Button)) -and (-not ($p6 -ccontains $M.Form)) -and $same
+    Case 'list_tree path=panel: the panel and the label shown on it, nodes as in the full tree' $ok "$($M.Panel) and $($M.InPanel), not $($M.Button) or the form, each node unchanged" $(if (IsOk $lt6) { "$($c6.Count) node(s): $($p6 -join ','); unchanged: $same" } else { Describe $lt6 })
+
+    $lt7 = Tool 'list_tree' @{ pid = $script:TargetPid; path = "$($M.Form).noSuchControlE2E" }
+    Case 'list_tree path=unknown: -32001' ($lt7.IsError -and ($lt7.Code -eq -32001) -and ($lt7.Msg -clike '*noSuchControlE2E*')) 'isError, code -32001, the message names the path' (Describe $lt7)
   }
 
   Section 'click' {
@@ -604,8 +673,9 @@ try {
     Case 'click: count=5' ((IsOk $r) -and ($r.J.result.clicksDispatched -eq 5) -and ($null -eq $r.J.result.PSObject.Properties['stoppedReason'])) 'clicksDispatched=5, no stoppedReason' (Describe $r)
     ExpectText 'click: count=5 ran OnClick 5 times' $M.Counter ([string]($c0 + 6))
 
-    $r = Tool 'click' @{ pid = $script:TargetPid; path = $M.Edit; mode = 'message' }
-    ExpectCode 'click: mode=message on a non-button control' $r -32005
+    # The counter label has no OnClick and no action. (The timer is disabled, so it answers -32003 first.)
+    $r = Tool 'click' @{ pid = $script:TargetPid; path = $M.Counter; mode = 'message' }
+    ExpectCode 'click: mode=message on a control with no click path (a TLabel without OnClick)' $r -32005
 
     $r = Tool 'click' @{ pid = $script:TargetPid; path = $M.Button; mode = 'bogus' }
     ExpectCode 'click: bad mode value' $r -32600
@@ -621,15 +691,8 @@ try {
 
   Section 'click mode=message and wait_for' {
     $c0 = ToInt (GetText $M.Counter)
-    if ($IsVcl) {
-      $r = Tool 'click' @{ pid = $script:TargetPid; path = $M.Button; mode = 'message' }
-      Case 'click: mode=message on a TButton' ((IsOk $r) -and ($r.J.result.dispatchedVia -eq 'message')) 'dispatchedVia=message' (Describe $r)
-    }
-    else {
-      $r = Tool 'click' @{ pid = $script:TargetPid; path = $M.Button; mode = 'message' }
-      ExpectCode 'click: mode=message on FMX (rejected on every control)' $r -32005
-      $r = Tool 'click' @{ pid = $script:TargetPid; path = $M.Button }
-    }
+    $r = Tool 'click' @{ pid = $script:TargetPid; path = $M.Button; mode = 'message' }
+    Case 'click: mode=message on a TButton' ((IsOk $r) -and ($r.J.result.dispatchedVia -eq 'message')) 'dispatchedVia=message' (Describe $r)
     $want = [string]($c0 + 1)
     $w = Tool 'wait_for' @{ pid = $script:TargetPid; path = $M.Counter; expectedText = $want; timeoutMs = 5000 }
     Case 'wait_for: matches the text that the click changed' ((-not $w.IsError) -and ($w.J.matched -eq $true) -and ([string]$w.J.currentValue -ceq $want)) "matched=true, currentValue=$want" "$(Describe $w) [$($w.Ms) ms]"
@@ -641,6 +704,21 @@ try {
 
     $w = Tool 'wait_for' @{ pid = $script:TargetPid; path = $M.Counter; expectedText = 'never-E2E'; timeoutMs = 1000 }
     Case 'wait_for: deadline passes while the target answers' ((-not $w.IsError) -and ($w.J.matched -eq $false) -and ([string]$w.J.currentValue -ceq $want) -and ($w.J.pollCount -ge 2)) "isError absent, matched=false, currentValue=$want, pollCount>=2" "$(Describe $w) [$($w.Ms) ms]"
+  }
+
+  # The calls of read-only tools reach the server together (Claude Code sends them in parallel when a tool has readOnlyHint).
+  # The server reads one line at a time, so they are answered one after the other: every answer must still carry its own id.
+  Section 'pipelined read-only calls' {
+    $want1 = GetText $M.Counter
+    $want2 = GetText $M.Label
+    $p = SendPipelined @(@{ name = 'get_text'; arguments = @{ pid = $script:TargetPid; path = $M.Counter } }, @{ name = 'get_text'; arguments = @{ pid = $script:TargetPid; path = $M.Label } })
+    $ok = (IsOk $p[0].Res) -and (IsOk $p[1].Res) -and ([string]$p[0].Res.J.result.text -ceq $want1) -and ([string]$p[1].Res.J.result.text -ceq $want2)
+    Case 'pipelined: two get_text sent together, each answer has its own id and text' $ok "id $($p[0].Id) = '$want1', id $($p[1].Id) = '$want2'" "id $($p[0].Id): $(if ($null -ne $p[0].Res) { Describe $p[0].Res } else { 'no answer' }) [arrival $($p[0].Arrival)] | id $($p[1].Id): $(if ($null -ne $p[1].Res) { Describe $p[1].Res } else { 'no answer' }) [arrival $($p[1].Arrival)]"
+
+    $p = SendPipelined @(@{ name = 'wait_for'; arguments = @{ pid = $script:TargetPid; path = $M.Counter; expectedText = 'never-E2E'; timeoutMs = 3000 } }, @{ name = 'get_text'; arguments = @{ pid = $script:TargetPid; path = $M.Counter } })
+    $w = $p[0].Res; $g = $p[1].Res
+    $ok = ($null -ne $w) -and (-not $w.IsError) -and ($w.J.matched -eq $false) -and ($null -ne $g) -and (IsOk $g) -and ([string]$g.J.result.text -ceq $want1) -and ($p[1].Ms -lt 15000)
+    Case 'pipelined: wait_for 3000 ms and get_text sent together, the get_text waits behind it and is answered' $ok "wait_for matched=false; get_text '$want1' within 15000 ms" "wait_for: $(if ($null -ne $w) { Describe $w } else { 'no answer' }) [$($p[0].Ms) ms, arrival $($p[0].Arrival)] | get_text: $(if ($null -ne $g) { Describe $g } else { 'no answer' }) [$($p[1].Ms) ms, arrival $($p[1].Arrival)]"
   }
 
   Section 'get_text and set_text' {
@@ -677,6 +755,12 @@ try {
     $r = Tool 'set_checked' @{ pid = $script:TargetPid; path = $M.Check; checked = $false }
     Case 'set_checked: false' ((IsOk $r) -and ($r.J.result.checked -eq $false)) 'ok, checked=false' (Describe $r)
     ExpectText 'set_checked: false ran the handler' $M.CheckState $F.CheckOff
+    # index is for one item of a VCL TCheckListBox only: on a check box (and on every FMX control) it is refused, and the check box keeps its state.
+    $r = Tool 'set_checked' @{ pid = $script:TargetPid; path = $M.Check; checked = $true; index = 0 }
+    Case 'set_checked index on a check box: -32005' ($r.IsError -and ($r.Code -eq -32005) -and ($r.Msg -clike '*TCheckListBox*')) 'isError, code -32005, the message names TCheckListBox' (Describe $r)
+    ExpectText 'set_checked index on a check box: the state did not change' $M.CheckState $F.CheckOff
+    $r = Tool 'read_property' @{ pid = $script:TargetPid; path = $M.Check; propName = $CheckedProp; index = 0 }
+    Case 'read_property index on a check box: -32005' ($r.IsError -and ($r.Code -eq -32005) -and ($r.Msg -clike '*TCheckListBox*')) 'isError, code -32005, the message names TCheckListBox' (Describe $r)
   }
 
   Section 'set_property and read_property' {
@@ -942,26 +1026,30 @@ try {
   }
 
   Section 'modal recipe' {
-    if ($IsVcl) {
-      $r = Tool 'click' @{ pid = $script:TargetPid; path = $M.DialogButton; mode = 'message' }
-      Case 'modal recipe: click mode=message returns at once' ((IsOk $r) -and ($r.J.result.dispatchedVia -eq 'message')) 'dispatchedVia=message' "$(Describe $r) [$($r.Ms) ms]"
-    }
-    else {
-      $r = Tool 'click' @{ pid = $script:TargetPid; path = $M.DialogButton; timeoutMs = 500 }
-      ExpectCode 'modal recipe (FMX): click with timeoutMs=500' $r -32004
-    }
+    # On FMX (no BM_CLICK) and on a VCL menu item the click is queued; the dialog then opens inside CheckSynchronize, and the next commands must still be served.
+    $r = Tool 'click' @{ pid = $script:TargetPid; path = $M.DialogButton; mode = 'message' }
+    Case 'modal recipe: click mode=message returns at once' ((IsOk $r) -and ($r.J.result.dispatchedVia -eq 'message')) 'dispatchedVia=message' "$(Describe $r) [$($r.Ms) ms]"
     $d = PollDialogs $true
     $dl = @()
     if (IsOk $d) { $dl = @($d.J.result.dialogs) }
     Case 'modal recipe: dismiss_dialog with no button lists the dialog' ((IsOk $d) -and ($d.J.result.supported -eq $true) -and ($dl.Count -ge 1) -and ([string]$dl[0].caption -eq $F.DialogCaption) -and (@($dl[0].buttons).Count -ge 1)) "supported=true, 1+ dialog with caption '$($F.DialogCaption)' and buttons" (DialogSummary $d)
     $r = Tool 'dismiss_dialog' @{ pid = $script:TargetPid; button = 'cancel' }
-    # Application.MessageBox has real child Button windows, so the contract answer is via=BN_CLICKED (WM_COMMAND = dispatched blind by id).
+    # Application.MessageBox has real child Button windows, so the answer is via=BN_CLICKED (a bridge older than 3.8.0 could also answer WM_COMMAND, a blind send by id).
     Case 'modal recipe: dismiss_dialog button=cancel' ((IsOk $r) -and ($r.J.result.clicked -eq $true) -and ([string]$r.J.result.via -eq 'BN_CLICKED') -and ([string]$r.J.result.clickedCaption -eq 'Cancel')) 'clicked=true, via=BN_CLICKED, clickedCaption=Cancel' "clicked=$($r.J.result.clicked), via=$($r.J.result.via), clickedCaption=$($r.J.result.clickedCaption), reason=$($r.J.result.reason) | $(Short (Describe $r) 150)"
     $d = PollDialogs $false
     Case 'modal recipe: the dialog is gone' ((IsOk $d) -and (@($d.J.result.dialogs).Count -eq 0)) 'dialogs=[]' (DialogSummary $d)
     $r = Tool 'get_text' @{ pid = $script:TargetPid; path = $M.Counter }
     Case 'modal recipe: the form answers again' (IsOk $r) 'get_text ok' "$(Describe $r) [$($r.Ms) ms]"
     if ($M.Contains('DialogResult')) { ExpectText 'modal recipe: the dialog returned Cancel (mrCancel = 2)' $M.DialogResult 'Dialog closed with 2' }
+
+    if ($M.Contains('DialogMenuItem')) {
+      $r = Tool 'click' @{ pid = $script:TargetPid; path = $M.DialogMenuItem; mode = 'message' }
+      Case 'modal recipe: click mode=message on a TMenuItem returns at once' ((IsOk $r) -and ($r.J.result.dispatchedVia -eq 'message')) 'dispatchedVia=message' "$(Describe $r) [$($r.Ms) ms]"
+      $r = Tool 'dismiss_dialog' @{ pid = $script:TargetPid; button = 'cancel'; waitMs = 5000 }
+      Case 'modal recipe: the menu item opened the dialog, and dismiss_dialog closes it' ((IsOk $r) -and ($r.J.result.clicked -eq $true) -and ([string]$r.J.result.clickedCaption -eq 'Cancel')) 'clicked=true, clickedCaption=Cancel' "clicked=$($r.J.result.clicked), reason=$($r.J.result.reason) [$($r.Ms) ms] | $(Short (Describe $r) 150)"
+      $d = PollDialogs $false
+      Case 'modal recipe: the dialog of the menu item is gone' ((IsOk $d) -and (@($d.J.result.dialogs).Count -eq 0)) 'dialogs=[]' (DialogSummary $d)
+    }
   }
 
   Section 'blocked main thread' {
@@ -991,12 +1079,111 @@ try {
     Case 'waitMs above 10000: isError naming waitMs' ($r.IsError -and ($r.Text -clike '*waitMs*')) 'isError, the message names waitMs' (Describe $r)
     $r = Tool 'dismiss_dialog' @{ pid = $script:TargetPid; waitMs = 300 }
     Case 'waitMs with no dialog: an empty list after about the wait' ((IsOk $r) -and (@($r.J.result.dialogs).Count -eq 0) -and ($r.Ms -ge 250) -and ($r.Ms -le 3000)) 'ok, dialogs=[], after 250..3000 ms' "$(DialogSummary $r) [$($r.Ms) ms]"
-    if ($IsVcl) { $r = Tool 'click' @{ pid = $script:TargetPid; path = $M.DialogButton; mode = 'message' } }
-    else        { $r = Tool 'click' @{ pid = $script:TargetPid; path = $M.DialogButton; timeoutMs = 300 } }
+    $r = Tool 'click' @{ pid = $script:TargetPid; path = $M.DialogButton; mode = 'message' }
     $r = Tool 'dismiss_dialog' @{ pid = $script:TargetPid; button = 'cancel'; waitMs = 5000 }
     Case 'waitMs: the first dismiss_dialog after the click finds and clicks the dialog' ((IsOk $r) -and ($r.J.result.clicked -eq $true) -and ([string]$r.J.result.clickedCaption -eq 'Cancel')) 'clicked=true, clickedCaption=Cancel' "clicked=$($r.J.result.clicked), clickedCaption=$($r.J.result.clickedCaption), reason=$($r.J.result.reason) [$($r.Ms) ms] | $(Short (Describe $r) 150)"
     $d = PollDialogs $false
     Case 'waitMs: the dialog is gone' ((IsOk $d) -and (@($d.J.result.dialogs).Count -eq 0)) 'dialogs=[]' (DialogSummary $d)
+  }
+
+  # MessageDlg shows a Task Dialog: every button has control id 0, and the text sits in a DirectUIHWND (read through MSAA).
+  # Each round checks the value MessageDlg itself returned (the demo writes it into a label), never only clicked:true: a click on the wrong button also answers clicked:true.
+  if ($M.Contains('MsgDlgButton')) {
+    Section 'dismiss_dialog on a MessageDlg Task Dialog' {
+      $rounds = @( @{ Sel = 'Yes'; Want = 6 }, @{ Sel = 'No'; Want = 7 }, @{ Sel = 'Abort'; Want = 3 } )
+      foreach ($round in $rounds) {
+        $sel = $round.Sel
+        $r = Tool 'click' @{ pid = $script:TargetPid; path = $M.MsgDlgButton; mode = 'message' }
+        Case "MessageDlg ${sel}: click mode=message returns at once" ((IsOk $r) -and ($r.J.result.dispatchedVia -eq 'message')) 'dispatchedVia=message' "$(Describe $r) [$($r.Ms) ms]"
+        $d = Tool 'dismiss_dialog' @{ pid = $script:TargetPid; waitMs = 5000 }
+        $dl = @()
+        if (IsOk $d) { $dl = @($d.J.result.dialogs) }
+        $ids = @()
+        if ($dl.Count -ge 1) { $ids = @($dl[0].buttons | ForEach-Object { [int]$_.id }) }
+        $caps = @()
+        if ($dl.Count -ge 1) { $caps = @($dl[0].buttons | ForEach-Object { [string]$_.caption }) }
+        $isTask = ($dl.Count -eq 1) -and ($ids.Count -eq 3) -and (@($ids | Where-Object { $_ -ne 0 }).Count -eq 0) -and (($caps -join ',') -eq 'Yes,No,Abort')
+        Case "MessageDlg ${sel}: the dialog is a Task Dialog (3 buttons Yes,No,Abort, all with id 0)" $isTask '1 dialog, buttons Yes,No,Abort, ids 0,0,0' "$(DialogSummary $d), ids $($ids -join ',')"
+        $text = ''
+        if ($dl.Count -ge 1) { $text = [string]$dl[0].text }
+        Case "MessageDlg ${sel}: text is read from the Task Dialog" ($text -clike '*Autopilot MessageDlg fixture*') "text holds 'Autopilot MessageDlg fixture'" "'$text'"
+        if ($sel -eq 'Yes') {
+          # A selector that names more than one button is refused, and the dialog stays up.
+          $r = Tool 'dismiss_dialog' @{ pid = $script:TargetPid; button = '0' }
+          Case 'MessageDlg: button=0 is refused (every button has id 0)' ((IsOk $r) -and ($r.J.result.clicked -eq $false) -and ([string]$r.J.result.reason -eq 'button_ambiguous')) 'clicked=false, reason=button_ambiguous' "clicked=$($r.J.result.clicked), reason=$($r.J.result.reason) | $(Short (Describe $r) 150)"
+          $d2 = Tool 'dismiss_dialog' @{ pid = $script:TargetPid }
+          Case 'MessageDlg: the refused click left the dialog up' ((IsOk $d2) -and (@($d2.J.result.dialogs).Count -eq 1)) '1 dialog' (DialogSummary $d2)
+        }
+        $r = Tool 'dismiss_dialog' @{ pid = $script:TargetPid; button = $sel }
+        Case "MessageDlg ${sel}: dismiss_dialog button=$sel" ((IsOk $r) -and ($r.J.result.clicked -eq $true) -and ([int]$r.J.result.clickedId -eq 0) -and ([string]$r.J.result.clickedCaption -eq $sel) -and ([string]$r.J.result.via -eq 'BN_CLICKED')) "clicked=true, clickedId=0, clickedCaption=$sel, via=BN_CLICKED" "clicked=$($r.J.result.clicked), clickedId=$($r.J.result.clickedId), clickedCaption=$($r.J.result.clickedCaption), via=$($r.J.result.via), reason=$($r.J.result.reason) | $(Short (Describe $r) 150)"
+        $d = PollDialogs $false
+        if (-not ((IsOk $d) -and (@($d.J.result.dialogs).Count -eq 0))) {
+          # Never leave the box up: every later section would answer -32004. Abort is a button this dialog has, and the demo does nothing on it.
+          [void](Tool 'dismiss_dialog' @{ pid = $script:TargetPid; button = 'Abort' })
+          $d = PollDialogs $false
+        }
+        Case "MessageDlg ${sel}: the dialog is gone" ((IsOk $d) -and (@($d.J.result.dialogs).Count -eq 0)) 'dialogs=[]' (DialogSummary $d)
+        ExpectText "MessageDlg ${sel}: MessageDlg returned $($round.Want)" $M.MsgDlgResult "MessageDlg closed with $($round.Want)"
+      }
+    }
+  }
+
+  # The Vista Open/Save dialogs (IFileDialog) under the one-match rule: the dialog holds hidden buttons too (Help id 1038; the Save dialog an id-0 button with no caption), so 'ok' and 'cancel' work only while no hidden button shares id 1 or 2.
+  # Each round checks what the dialog returned to the app (the demo writes it into a label), never only clicked:true.
+  if ($M.Contains('SaveButton')) {
+    Section 'dismiss_dialog on the Open and Save file dialogs' {
+      $rounds = @( @{ Kind = 'Save'; Button = $M.SaveButton; Title = 'Autopilot save fixture' }, @{ Kind = 'Open'; Button = $M.OpenButton; Title = 'Autopilot open fixture' } )
+      foreach ($round in $rounds) {
+        $kind = $round.Kind
+        $r = Tool 'click' @{ pid = $script:TargetPid; path = $round.Button; mode = 'message' }
+        Case "$kind dialog: click mode=message returns at once" ((IsOk $r) -and ($r.J.result.dispatchedVia -eq 'message')) 'dispatchedVia=message' "$(Describe $r) [$($r.Ms) ms]"
+        $d = Tool 'dismiss_dialog' @{ pid = $script:TargetPid; waitMs = 5000 }
+        $dl = @()
+        if (IsOk $d) { $dl = @($d.J.result.dialogs) }
+        $ids = @()
+        if ($dl.Count -ge 1) { $ids = @($dl[0].buttons | ForEach-Object { [int]$_.id }) }
+        $ok1 = @($ids | Where-Object { $_ -eq 1 }).Count
+        $ok2 = @($ids | Where-Object { $_ -eq 2 }).Count
+        Case "$kind dialog: one dialog '$($round.Title)' with exactly one button of id 1 and one of id 2" (($dl.Count -eq 1) -and ([string]$dl[0].caption -eq $round.Title) -and ($ok1 -eq 1) -and ($ok2 -eq 1)) "1 dialog '$($round.Title)', id 1 once, id 2 once" "$(DialogSummary $d), ids $($ids -join ',')"
+        $r = Tool 'dismiss_dialog' @{ pid = $script:TargetPid; button = 'cancel' }
+        Case "$kind dialog: dismiss_dialog button=cancel clicks id 2" ((IsOk $r) -and ($r.J.result.clicked -eq $true) -and ([int]$r.J.result.clickedId -eq 2) -and ([string]$r.J.result.via -eq 'BN_CLICKED')) 'clicked=true, clickedId=2, via=BN_CLICKED' "clicked=$($r.J.result.clicked), clickedId=$($r.J.result.clickedId), clickedCaption=$($r.J.result.clickedCaption), reason=$($r.J.result.reason) | $(Short (Describe $r) 150)"
+        $d = PollDialogs $false
+        Case "$kind dialog: the dialog is gone" ((IsOk $d) -and (@($d.J.result.dialogs).Count -eq 0)) 'dialogs=[]' (DialogSummary $d)
+        ExpectExactText "$kind dialog: Execute returned FALSE" $M.MsgDlgResult "${kind}: cancelled"
+      }
+
+      # fileName: the name typed into the File name box is the FileName that Execute returns. Save takes a name that does not exist (no overwrite question), Open an existing file (the demo exe).
+      $saveName = Join-Path $env:TEMP "Autopilot-e2e-save-$($script:TargetPid).txt"
+      $rounds = @( @{ Kind = 'Save'; Button = $M.SaveButton; Sel = 'save'; Name = $saveName }, @{ Kind = 'Open'; Button = $M.OpenButton; Sel = 'ok'; Name = (Get-Item -LiteralPath $ExePath).FullName } )
+      foreach ($round in $rounds) {
+        $kind = $round.Kind
+        if (($kind -eq 'Save') -and (Test-Path -LiteralPath $round.Name)) { Case 'Save dialog fileName: the test name does not exist yet' $false 'no file' "exists: $($round.Name)"; continue }
+        $r = Tool 'click' @{ pid = $script:TargetPid; path = $round.Button; mode = 'message' }
+        Case "$kind dialog fileName: click mode=message returns at once" ((IsOk $r) -and ($r.J.result.dispatchedVia -eq 'message')) 'dispatchedVia=message' "$(Describe $r) [$($r.Ms) ms]"
+        $r = Tool 'dismiss_dialog' @{ pid = $script:TargetPid; fileName = $round.Name; button = $round.Sel; waitMs = 5000 }
+        Case "$kind dialog fileName: dismiss_dialog fileName + button=$($round.Sel)" ((IsOk $r) -and ($r.J.result.fileNameSet -eq $true) -and ($r.J.result.clicked -eq $true) -and ([int]$r.J.result.clickedId -eq 1)) 'fileNameSet=true, clicked=true, clickedId=1' "fileNameSet=$($r.J.result.fileNameSet), clicked=$($r.J.result.clicked), clickedId=$($r.J.result.clickedId), reason=$($r.J.result.reason) | $(Short (Describe $r) 150)"
+        $d = PollDialogs $false
+        if (-not ((IsOk $d) -and (@($d.J.result.dialogs).Count -eq 0))) {
+          [void](Tool 'dismiss_dialog' @{ pid = $script:TargetPid; button = 'cancel' })   # never leave the dialog up: every later section would answer -32004
+          $d = PollDialogs $false
+        }
+        Case "$kind dialog fileName: the dialog is gone" ((IsOk $d) -and (@($d.J.result.dialogs).Count -eq 0)) 'dialogs=[]' (DialogSummary $d)
+        ExpectExactText "$kind dialog fileName: Execute returned the name" $M.MsgDlgResult "${kind}: $($round.Name)"
+      }
+    }
+  }
+
+  # fileName on a dialog with no File name box: the name is refused, no button is clicked, the box stays up. The only E2E case for the FMX bridge's fileName path.
+  Section 'dismiss_dialog fileName on a message box' {
+    $r = Tool 'click' @{ pid = $script:TargetPid; path = $M.DialogButton; mode = 'message' }
+    Case 'fileName on a message box: click mode=message returns at once' ((IsOk $r) -and ($r.J.result.dispatchedVia -eq 'message')) 'dispatchedVia=message' "$(Describe $r) [$($r.Ms) ms]"
+    $r = Tool 'dismiss_dialog' @{ pid = $script:TargetPid; fileName = 'x.txt'; button = 'cancel'; waitMs = 5000 }
+    Case 'fileName on a message box: refused with edit_not_found, nothing clicked' ((IsOk $r) -and ($r.J.result.fileNameSet -eq $false) -and ($r.J.result.clicked -eq $false) -and ([string]$r.J.result.reason -eq 'edit_not_found')) 'fileNameSet=false, clicked=false, reason=edit_not_found' "fileNameSet=$($r.J.result.fileNameSet), clicked=$($r.J.result.clicked), reason=$($r.J.result.reason) | $(Short (Describe $r) 150)"
+    $d = Tool 'dismiss_dialog' @{ pid = $script:TargetPid }
+    Case 'fileName on a message box: the box is still up' ((IsOk $d) -and (@($d.J.result.dialogs).Count -eq 1)) '1 dialog' (DialogSummary $d)
+    $r = Tool 'dismiss_dialog' @{ pid = $script:TargetPid; button = 'cancel' }
+    $d = PollDialogs $false
+    Case 'fileName on a message box: cancel closes it' ((IsOk $d) -and (@($d.J.result.dialogs).Count -eq 0)) 'dialogs=[]' (DialogSummary $d)
   }
 
   Section 'busy pipe (-32098)' {

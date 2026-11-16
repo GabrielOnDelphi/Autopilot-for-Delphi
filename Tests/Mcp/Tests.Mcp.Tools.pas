@@ -34,9 +34,13 @@ type
     [Test] procedure Test_Screenshot_FailedCapture_StaysOneTextBlock;
     [Test] procedure Test_Screenshot_ForwardsPathAndMaxWidthOnlyWhenGiven;
     [Test] procedure Test_ListTree_ForwardsFormAndFormsOnlyOnlyWhenGiven;
+    [Test] procedure Test_ListTree_ForwardsPathOnlyWhenGiven;
+    [Test] procedure Test_SetCheckedAndReadProperty_ForwardIndexOnlyWhenGiven;
     [Test] procedure Test_CallMethod_ForwardsNameArgsAndTimeout;
     [Test] procedure Test_CallMethod_BadArguments_IsErrorNamingTheParameter;
     [Test] procedure Test_CallMethod_SchemaDeclaresArgsAsObject;
+    [Test] procedure Test_DismissDialog_FileName_OldBridge_IsErrorAndNoButtonSent;
+    [Test] procedure Test_DismissDialog_FileName_Refused_AnswersClickedFalse;
     [Test] procedure Test_BusyPipe_Returns32098;
     [Test] procedure Test_WaitFor_BusyPipe_Returns32098AtOnce;
   end;
@@ -625,6 +629,103 @@ begin
 end;
 
 
+/// path reaches the bridge only when it is not empty, so a call without it sends an empty args object, as before.
+procedure TMcpToolTests.Test_ListTree_ForwardsPathOnlyWhenGiven;
+var
+  Args: TJSONObject;
+begin
+  Args := SentListTreeArgs(',"path":"frmFake.pnlA"');
+  try
+    Assert.IsTrue(Args.GetValue('path') is TJSONString, 'path not forwarded: ' + Args.ToJSON);
+    Assert.AreEqual('frmFake.pnlA', Args.GetValue('path').Value, 'path');
+  finally
+    FreeAndNil(Args);
+  end;
+
+  Args := SentListTreeArgs(',"path":""');
+  try
+    Assert.AreEqual(0, Args.Count, 'an empty path must not be sent: ' + Args.ToJSON);
+  finally
+    FreeAndNil(Args);
+  end;
+end;
+
+
+/// Calls the tool ATool with AArgsJson (pid added) against a fake target that answers an empty result.
+/// Returns the args object of the request the fake target received; the caller frees it.
+function SentToolArgs(const ATool, AArgsJson: String): TJSONObject;
+var
+  Fake: TFakePipeBridge;
+  Discovery: TPrivateDiscovery;
+  Root: TJSONObject;
+  Sent: String;
+  V: TJSONValue;
+begin
+  Fake := TFakePipeBridge.Create('{"id":1,"ok":true,"result":{}}');
+  try
+    Fake.WaitUntilReady;
+    Discovery := TPrivateDiscovery.Create(Fake.PipeName);
+    try
+      Root := CallToolRoot(ATool, '{"pid":' + IntToStr(GetCurrentProcessId) + AArgsJson + '}');
+      FreeAndNil(Root);
+    finally
+      FreeAndNil(Discovery);
+    end;
+    Sent := Fake.SawRequest;
+  finally
+    FreeAndNil(Fake);
+  end;
+
+  V := TJSONObject.ParseJSONValue(Sent);
+  try
+    Assert.IsTrue(V is TJSONObject, 'the fake target received no JSON request: ' + Sent);
+    Assert.AreEqual(ATool, TJSONObject(V).GetValue('cmd').Value, 'cmd: ' + Sent);
+    Assert.IsTrue(TJSONObject(V).GetValue('args') is TJSONObject, 'args missing: ' + Sent);
+    Result := TJSONObject(TJSONObject(V).GetValue('args').Clone);
+  finally
+    FreeAndNil(V);
+  end;
+end;
+
+
+/// index reaches the bridge only when the caller gives it, and 0 is a real index, so a call without it sends the
+/// request every older server sent.
+procedure TMcpToolTests.Test_SetCheckedAndReadProperty_ForwardIndexOnlyWhenGiven;
+var
+  Args: TJSONObject;
+begin
+  Args := SentToolArgs('set_checked', ',"path":"frmFake.clb","checked":true,"index":0');
+  try
+    Assert.IsTrue(Args.GetValue('index') is TJSONNumber, 'set_checked: index 0 not forwarded as a number: ' + Args.ToJSON);
+    Assert.AreEqual(0, TJSONNumber(Args.GetValue('index')).AsInt, 'set_checked: index');
+  finally
+    FreeAndNil(Args);
+  end;
+
+  Args := SentToolArgs('set_checked', ',"path":"frmFake.chk","checked":false');
+  try
+    Assert.AreEqual('{"path":"frmFake.chk","checked":false}', Args.ToJSON, 'set_checked without index must send what older servers sent');
+  finally
+    FreeAndNil(Args);
+  end;
+
+  Args := SentToolArgs('read_property', ',"path":"frmFake.clb","propName":"Checked","index":2');
+  try
+    Assert.IsTrue(Args.GetValue('index') is TJSONNumber, 'read_property: index not forwarded as a number: ' + Args.ToJSON);
+    Assert.AreEqual(2, TJSONNumber(Args.GetValue('index')).AsInt, 'read_property: index');
+  finally
+    FreeAndNil(Args);
+  end;
+
+  Args := SentToolArgs('read_property', ',"path":"frmFake.btn","propName":"Tag"');
+  try
+    Assert.AreEqual('{"path":"frmFake.btn","propName":"Tag"}', Args.ToJSON, 'read_property without index must send what older servers sent');
+  finally
+    FreeAndNil(Args);
+  end;
+end;
+
+
 /// Calls call_method with AArgsJson (pid added) against a fake target. Returns the whole request the fake target
 /// received; the caller frees it.
 function SentCallMethodRequest(const AArgsJson: String): TJSONObject;
@@ -759,6 +860,91 @@ begin
   finally
     FreeAndNil(Root);
   end;
+end;
+
+
+/// Calls dismiss_dialog with AArgsJson (pid added) against a fake target that answers AFakeAnswer to ONE request.
+/// Returns the tool's text; ASent = the request the fake target received; AIsError = the result's isError flag.
+function DismissDialogAgainst(const AFakeAnswer, AArgsJson: String; OUT ASent: String; OUT AIsError: Boolean): String;
+var
+  Fake: TFakePipeBridge;
+  Discovery: TPrivateDiscovery;
+begin
+  Fake := TFakePipeBridge.Create(AFakeAnswer);
+  try
+    Fake.WaitUntilReady;
+    Discovery := TPrivateDiscovery.Create(Fake.PipeName);
+    try
+      Result := CallTool('dismiss_dialog', '{"pid":' + IntToStr(GetCurrentProcessId) + AArgsJson + '}', AIsError);
+    finally
+      FreeAndNil(Discovery);
+    end;
+    ASent := Fake.SawRequest;
+  finally
+    FreeAndNil(Fake);
+  end;
+end;
+
+
+/// A bridge older than 3.8.0 ignores fileName and would click Save at once with whatever the box holds. So the tool
+/// sends fileName alone first; an answer without fileNameSet is such a bridge, and the tool stops with an error
+/// before it ever sends the button.
+procedure TMcpToolTests.Test_DismissDialog_FileName_OldBridge_IsErrorAndNoButtonSent;
+const
+  OldBridgeAnswer = '{"id":1,"ok":true,"result":{"dialogs":[{"hwnd":1234,"class":"#32770","caption":"Save As","text":"",'
+                  + '"buttons":[{"id":1,"caption":"Save","enabled":true},{"id":2,"caption":"Cancel","enabled":true}]}],'
+                  + '"supported":true,"platform":"windows"}}';
+var
+  Text, Sent: String;
+  IsErr: Boolean;
+  V: TJSONValue;
+  Args: TJSONObject;
+begin
+  Text := DismissDialogAgainst(OldBridgeAnswer, ',"fileName":"C:\\x\\a.txt","button":"save"', Sent, IsErr);
+  Assert.IsTrue(IsErr, 'an answer without fileNameSet must give isError: ' + Text);
+  Assert.IsTrue(Text.Contains('3.8.0'), 'the message must name the bridge version that knows fileName: ' + Text);
+  Assert.IsTrue(Text.Contains('no button was clicked'), 'the message must say that nothing was clicked: ' + Text);
+
+  V := TJSONObject.ParseJSONValue(Sent);
+  try
+    Assert.IsTrue(V is TJSONObject, 'the fake target received no JSON request: ' + Sent);
+    Assert.AreEqual('dismiss_dialog', TJSONObject(V).GetValue('cmd').Value, 'cmd: ' + Sent);
+    Args := TJSONObject(V).GetValue('args') as TJSONObject;
+    Assert.IsNotNull(Args, 'args missing: ' + Sent);
+    Assert.AreEqual('C:\x\a.txt', Args.GetValue('fileName').Value, 'fileName not forwarded: ' + Sent);
+    Assert.IsNull(Args.GetValue('button'), 'the first call must not carry the button: ' + Sent);
+  finally
+    FreeAndNil(V);
+  end;
+end;
+
+
+/// The bridge refused the name (no File name box): the answer is passed on with clicked:false added, and no second
+/// call is made (the fake target answers only one).
+procedure TMcpToolTests.Test_DismissDialog_FileName_Refused_AnswersClickedFalse;
+const
+  RefusedAnswer = '{"id":1,"ok":true,"result":{"dialogs":[],"supported":true,"platform":"windows",'
+                + '"fileNameSet":false,"dialogHwnd":1234,"reason":"edit_not_found"}}';
+var
+  Text, Sent: String;
+  IsErr: Boolean;
+  V: TJSONValue;
+  Res: TJSONObject;
+begin
+  Text := DismissDialogAgainst(RefusedAnswer, ',"fileName":"a.txt","button":"save"', Sent, IsErr);
+  Assert.IsFalse(IsErr, 'a refused name is an answer, not an error: ' + Text);
+  V := TJSONObject.ParseJSONValue(Text);
+  try
+    Assert.IsTrue(V is TJSONObject, 'the tool text is not JSON: ' + Text);
+    Res := TJSONObject(V).GetValue('result') as TJSONObject;
+    Assert.IsNotNull(Res, 'result missing: ' + Text);
+    Assert.IsTrue(Res.GetValue('clicked') is TJSONBool, 'clicked missing: ' + Text);
+    Assert.IsFalse(TJSONBool(Res.GetValue('clicked')).AsBoolean, 'clicked must be false: ' + Text);
+    Assert.AreEqual('edit_not_found', Res.GetValue('reason').Value, 'reason: ' + Text);
+  finally
+    FreeAndNil(V);
+  end;
+  Assert.IsFalse(Sent.Contains('"button"'), 'the only request sent must not carry the button: ' + Sent);
 end;
 
 

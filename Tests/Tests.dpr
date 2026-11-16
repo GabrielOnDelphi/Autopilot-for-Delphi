@@ -52,6 +52,8 @@ USES
   Tests.Bridge.Guide          in 'Tests.Bridge.Guide.pas',
   Tests.Bridge.EventHandlers  in 'Tests.Bridge.EventHandlers.pas',
   Tests.Bridge.ListTreeFilter in 'Tests.Bridge.ListTreeFilter.pas',
+  Tests.Bridge.CheckListBox in 'Tests.Bridge.CheckListBox.pas',
+  Tests.Bridge.ClickMessage   in 'Tests.Bridge.ClickMessage.pas',
   Tests.Bridge.CallMethod     in 'Tests.Bridge.CallMethod.pas';
 
 VAR

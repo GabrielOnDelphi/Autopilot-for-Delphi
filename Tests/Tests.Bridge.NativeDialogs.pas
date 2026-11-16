@@ -1,11 +1,12 @@
 ﻿unit Tests.Bridge.NativeDialogs;
 
 {=============================================================================================================
-   2026.09
+   2026.11.15
    www.GabrielMoraru.com
 --------------------------------------------------------------------------------------------------------------
    - DUnitX tests for the native-dialog escape hatch (Autopilot.Bridge.NativeDialogs).
-   - Raises a real Win32 MessageBox on a background thread, then enumerates and dismisses it by role from the test thread — the harder cross-thread path.
+   - Raises a real Win32 MessageBox or Task Dialog on a background thread, then enumerates and dismisses it from the test thread — the harder cross-thread path.
+   - A click test checks the value the dialog itself returned, never only clicked:true: a click on the wrong button also answers clicked:true.
    - A cancel-fallback in the finally block guarantees the MessageBox is always closed, so a failing test cannot hang the suite on TThread.WaitFor.
 =============================================================================================================}
 
@@ -22,13 +23,61 @@ type
     [Test] procedure Test_DismissByRole_RoleBeatsCaptionSubstring;
     [Test] procedure Test_NoDialogUp_ClickReturnsNoDialog;
     [Test] procedure Test_TaskDialog_TextIsRead;
+
+    { A Task Dialog built like MessageDlg: the click must make the box return the id of the button the selector names. }
+    [Test]
+    [TestCase('Role no',          'no,7')]
+    [TestCase('Role yes',         'yes,6')]
+    [TestCase('Role abort',       'abort,3')]
+    [TestCase('Caption substring', 'bor,3')]
+    procedure Test_TaskDialog_MessageDlgButtons_ReturnsThatButton(const ASelector: String; AExpectedId: Integer);
+
+    { The default button is not the first one: a click that lands on "the default" or on "the first" is caught. }
+    [Test]
+    [TestCase('Role yes',   'yes,6')]
+    [TestCase('Role abort', 'abort,3')]
+    procedure Test_TaskDialog_DefaultIsNo_ReturnsThatButton(const ASelector: String; AExpectedId: Integer);
+
+    { Localized captions (as on a German Windows): a caption names the button; a role or a number cannot be tied to a button, so the click is refused and the box stays up. }
+    [Test]
+    [TestCase('Caption Nein', 'Nein,7')]
+    [TestCase('Caption Ja',   'Ja,6')]
+    procedure Test_TaskDialog_LocalizedCaption_ReturnsThatButton(const ASelector: String; AExpectedId: Integer);
+    [Test]
+    [TestCase('Role no',            'no,button_not_found')]
+    [TestCase('Number of a button', '7,button_not_found')]
+    [TestCase('Id zero',            '0,button_ambiguous')]
+    procedure Test_TaskDialog_LocalizedCaption_UnresolvableSelector_IsRefused(const ASelector, AExpectedReason: String);
+
+    { A caption substring that two buttons share ('all' in 'Yes to All' and 'No to All') is refused, never sent to the first. }
+    [Test] procedure Test_TaskDialog_SubstringOnTwoButtons_IsRefused;
+
+    { A Task Dialog with COMMON buttons (TDCBF_OK_BUTTON, TDCBF_CANCEL_BUTTON): the click must return that button. }
+    [Test]
+    [TestCase('Ok',     'ok,1')]
+    [TestCase('Cancel', 'cancel,2')]
+    procedure Test_TaskDialog_CommonButtons_ReturnsThatButton(const ASelector: String; AExpectedId: Integer);
+
+    { The classic MessageBox path (real control ids): role and number reach the right button. }
+    [Test]
+    [TestCase('Role yes',    'yes,6')]
+    [TestCase('Role cancel', 'cancel,2')]
+    [TestCase('Number 7',    '7,7')]
+    procedure Test_MessageBox_YesNoCancel_ReturnsThatButton(const ASelector: String; AExpectedId: Integer);
+
+    { A real Vista Save dialog (IFileSaveDialog): the name typed into its File name box is the name the dialog returns. }
+    [Test] procedure Test_FileSaveDialog_FileNameAndSave_ReturnsThatName;
+    [Test] procedure Test_FileSaveDialog_FileNameOnly_LeavesTheDialogUp_ThenSaveReturnsThatName;
+    { A dialog with no File name box: the name is refused, nothing is clicked, the box stays up. }
+    [Test] procedure Test_MessageBox_FileName_IsRefused_NothingClicked;
+    [Test] procedure Test_NoDialogUp_FileNameReturnsNoDialog;
   end;
 
 
 implementation
 
 uses
-  Winapi.Windows, Winapi.CommCtrl,
+  Winapi.Windows, Winapi.Messages, Winapi.CommCtrl, Winapi.ActiveX, Winapi.ShlObj,
   System.SysUtils, System.Classes, System.SyncObjs, System.JSON, System.Generics.Collections,
   Autopilot.Bridge.NativeDialogs;
 
@@ -123,6 +172,178 @@ begin
 end;
 
 
+type
+  { Owns a Task Dialog with CUSTOM buttons only, built the way Vcl.Dialogs.pas InternalDoTaskMessageDlgPosHelp builds the one of MessageDlg: CommonButtons empty, each button's nButtonID = its ModalResult (mrYes = IDYES, mrNo = IDNO, mrAbort = IDABORT), TDF_ALLOW_DIALOG_CANCELLATION, a default button.
+    NotifiedId = the id of the last TDN_BUTTON_CLICKED notification (-1 = none). Same lifetime rules as TMsgBoxThread. }
+  TTaskDlgButtonsThread = class(TThread)
+  public
+    Caption   : String;
+    Captions  : TArray<String>;
+    Ids       : TArray<Integer>;
+    DefaultId : Integer;
+    Returned  : Integer;
+    NotifiedId: Integer;
+    Done      : TEvent;
+    constructor Create(const ACaption: String; const ACaptions: array of String; const AIds: array of Integer; ADefaultId: Integer);
+    destructor Destroy; override;
+    procedure Execute; override;
+  end;
+
+
+function TaskDlgButtonsCallback(hwnd: HWND; msg: UINT; wParam: WPARAM; lParam: LPARAM; lpRefData: LONG_PTR): HResult; stdcall;
+begin
+  if msg = TDN_BUTTON_CLICKED
+  then TTaskDlgButtonsThread(lpRefData).NotifiedId := Integer(wParam);
+  Result := S_OK;
+end;
+
+
+constructor TTaskDlgButtonsThread.Create(const ACaption: String; const ACaptions: array of String; const AIds: array of Integer; ADefaultId: Integer);
+var
+  i: Integer;
+begin
+  System.Assert(Length(ACaptions) = Length(AIds), 'one id per caption');
+  Caption := ACaption;
+  SetLength(Captions, Length(ACaptions));
+  for i := 0 to High(ACaptions) do
+    Captions[i] := ACaptions[i];
+  SetLength(Ids, Length(AIds));
+  for i := 0 to High(AIds) do
+    Ids[i] := AIds[i];
+  DefaultId  := ADefaultId;
+  Returned   := 0;
+  NotifiedId := -1;
+  Done       := TEvent.Create(nil, True, False, '');
+  inherited Create(False);
+end;
+
+
+destructor TTaskDlgButtonsThread.Destroy;
+begin
+  inherited;
+  FreeAndNil(Done);
+end;
+
+
+procedure TTaskDlgButtonsThread.Execute;
+var
+  Config: TTaskDialogConfig;
+  Buttons: TArray<TTaskDialogButton>;
+  i, Btn: Integer;
+begin
+  SetLength(Buttons, Length(Ids));
+  for i := 0 to High(Ids) do
+    begin
+      Buttons[i].nButtonID     := Ids[i];
+      Buttons[i].pszButtonText := PChar(Captions[i]);
+    end;
+  FillChar(Config, SizeOf(Config), 0);
+  Config.cbSize             := SizeOf(Config);
+  Config.dwFlags            := TDF_ALLOW_DIALOG_CANCELLATION;
+  Config.dwCommonButtons    := 0;
+  Config.pszWindowTitle     := PChar(Caption);
+  Config.pszMainInstruction := 'Autopilot regression test: which button was clicked?';
+  Config.cButtons           := Length(Buttons);
+  Config.pButtons           := @Buttons[0];
+  Config.nDefaultButton     := DefaultId;
+  Config.pfCallback         := TaskDlgButtonsCallback;
+  Config.lpCallbackData     := LONG_PTR(Self);
+  Btn := 0;
+  if Succeeded(TaskDialogIndirect(Config, @Btn, nil, nil))
+  then Returned := Btn
+  else Returned := -1;
+  Done.SetEvent;
+end;
+
+
+type
+  { Owns a Vista Save dialog (IFileSaveDialog, the dialog TSaveDialog shows when the app is themed) on its own STA thread.
+    Returned = the HRESULT of Show; ResultPath = the file system path of GetResult when Show succeeded. Same lifetime rules as TMsgBoxThread. }
+  TFileSaveDlgThread = class(TThread)
+  public
+    Title     : String;
+    Returned  : HRESULT;
+    ResultPath: String;
+    Done      : TEvent;
+    constructor Create(const ATitle: String);
+    destructor Destroy; override;
+    procedure Execute; override;
+  end;
+
+
+constructor TFileSaveDlgThread.Create(const ATitle: String);
+begin
+  Title      := ATitle;
+  Returned   := E_FAIL;
+  ResultPath := '';
+  Done       := TEvent.Create(nil, True, False, '');
+  inherited Create(False);
+end;
+
+
+destructor TFileSaveDlgThread.Destroy;
+begin
+  inherited;
+  FreeAndNil(Done);
+end;
+
+
+procedure TFileSaveDlgThread.Execute;
+var
+  Hr: HRESULT;
+  Dlg: IFileSaveDialog;
+  Item: IShellItem;
+  P: LPWSTR;
+begin
+  Hr := CoInitializeEx(NIL, COINIT_APARTMENTTHREADED);
+  try
+    Dlg := NIL;
+    Item := NIL;
+    Returned := CoCreateInstance(CLSID_FileSaveDialog, NIL, CLSCTX_INPROC_SERVER, IFileSaveDialog, Dlg);
+    if Succeeded(Returned) then
+      begin
+        Dlg.SetTitle(PChar(Title));
+        Returned := Dlg.Show(0);
+        if Succeeded(Returned) and Succeeded(Dlg.GetResult(Item)) and (Item <> NIL) then
+          if Succeeded(Item.GetDisplayName(SIGDN_FILESYSPATH, P)) then
+            begin
+              ResultPath := P;
+              CoTaskMemFree(P);
+            end;
+      end;
+    Item := NIL;   // release before CoUninitialize
+    Dlg := NIL;
+  finally
+    if Succeeded(Hr)
+    then CoUninitialize;
+    Done.SetEvent;
+  end;
+end;
+
+
+{ A file name in %TEMP% that does not exist yet, so the Save dialog asks nothing about overwriting it. }
+function NewTempFileName(const ATag: String): String;
+begin
+  Result := IncludeTrailingPathDelimiter(GetEnvironmentVariable('TEMP')) + 'AP_TEST_D3_' + ATag + '_' + IntToStr(GetCurrentProcessId) + '_' + IntToStr(TThread.GetTickCount64) + '.txt';
+  System.Assert(not FileExists(Result), 'the test file name already exists: ' + Result);
+end;
+
+
+{ Closes a dialog still up without the code under test: WM_COMMAND IDCANCEL with the Cancel button's own window (Cancel is a direct child, id 2, in a MessageBox and in a Vista file dialog).
+  Frees the thread (ADone is its own event) only when the dialog is gone; otherwise leaves it parked (an untimed WaitFor in TThread.Destroy would hang the runner) and fails. }
+procedure FinishByCancel(ATh: TThread; ADone: TEvent; ADlg: NativeUInt);
+begin
+  if (ADone.WaitFor(0) <> wrSignaled) and (ADlg <> 0) then
+    begin
+      SendMessageTimeout(HWND(ADlg), WM_COMMAND, WPARAM(IDCANCEL or (BN_CLICKED shl 16)), LPARAM(GetDlgItem(HWND(ADlg), IDCANCEL)), SMTO_ABORTIFHUNG, 2000, nil);
+      ADone.WaitFor(3000);
+    end;
+  if ADone.WaitFor(0) = wrSignaled
+  then FreeAndNil(ATh)
+  else Assert.Fail('the dialog could not be dismissed; thread left parked to avoid an untimed WaitFor hang');
+end;
+
+
 function DumpEnumProc(AWnd: HWND; AParam: LPARAM): BOOL; stdcall;
 var
   Buf: array[0..255] of Char;
@@ -203,6 +424,44 @@ begin
 end;
 
 
+{ Waits up to 5 s for the dialog with this caption; 0 when it never came up or the thread already ended. }
+function WaitForDialog(const ACaption: String; ADone: TEvent): NativeUInt;
+var
+  BtnCount: Integer;
+  Deadline: UInt64;
+begin
+  Result := 0;
+  Deadline := TThread.GetTickCount64 + 5000;
+  while (Result = 0) and (TThread.GetTickCount64 < Deadline) and (ADone.WaitFor(0) <> wrSignaled) do
+    begin
+      Result := FindDialogByCaption(ACaption, BtnCount);
+      if Result = 0 then TThread.Sleep(50);
+    end;
+end;
+
+
+{ Closes a Task Dialog still up without the code under test: TDM_CLICK_BUTTON with an id the box really has (https://learn.microsoft.com/en-us/windows/win32/controls/tdm-click-button).
+  Frees the thread only when the box is gone; otherwise leaves it parked (an untimed WaitFor in TThread.Destroy would hang the runner) and fails. }
+procedure FinishTaskDlgThread(var ATh: TTaskDlgButtonsThread);
+var
+  Dlg: NativeUInt;
+  BtnCount: Integer;
+  Res: DWORD_PTR;
+begin
+  if ATh = NIL then EXIT;
+  if ATh.Done.WaitFor(0) <> wrSignaled then
+    begin
+      Dlg := FindDialogByCaption(ATh.Caption, BtnCount);
+      if Dlg <> 0
+      then SendMessageTimeout(HWND(Dlg), TDM_CLICK_BUTTON, WPARAM(ATh.Ids[0]), 0, SMTO_ABORTIFHUNG, 2000, @Res);
+      ATh.Done.WaitFor(2000);
+    end;
+  if ATh.Done.WaitFor(0) = wrSignaled
+  then FreeAndNil(ATh)
+  else Assert.Fail('the Task Dialog could not be closed; thread left parked to avoid an untimed WaitFor hang');
+end;
+
+
 procedure TNativeDialogTests.Test_EnumerateFindsMessageBox_AndDismissByRole;
 const
   UniqueCap = 'AP_TEST_DIALOG_7731';
@@ -263,8 +522,8 @@ end;
 // Selector precedence: a role keyword must beat a loose caption substring.
 // Abort/Retry/Ignore has no 'No' button, but 'Ignore' contains the substring 'no'. With the
 // substring pass ahead of the role pass, selector 'no' wrongly resolves to IDIGNORE; with role
-// ahead of substring it correctly resolves to IDNO (no IDNO control exists, so it falls through
-// to id-dispatch, MatchBtn=0, and the box stays up — exactly what we assert and then clean up).
+// ahead of substring it resolves to IDNO, finds no IDNO button and is refused, so the box stays
+// up - exactly what we assert and then clean up.
 procedure TNativeDialogTests.Test_DismissByRole_RoleBeatsCaptionSubstring;
 const
   UniqueCap = 'AP_TEST_DIALOG_ROLE_5520';
@@ -291,13 +550,11 @@ begin
     Assert.IsTrue(Dlg <> 0, 'native MessageBox was not found by EnumerateNativeDialogs');
 
     { # 'no' must resolve by role (IDNO), not by the 'Ig[no]re' substring (IDIGNORE) }
+    { This box has no No button, so the click is refused and the box stays up (the finally block below dismisses it with a real button). }
     Clicked := ClickNativeDialogButton(Junk, Dlg, 'no', ClickedId, ClickedCap, Resolved, Reason, Via);
-    Assert.IsTrue(Clicked, 'ClickNativeDialogButton returned false (' + Reason + ')');
-    Assert.AreEqual(IDNO, ClickedId, 'selector ''no'' resolved by caption substring (Ignore) instead of role IDNO');
-    // This box has NO No button, so the id was dispatched blind and the box is still up even
-    // though Clicked is TRUE (the finally block below dismisses it via a real button). That is
-    // the unverifiable WM_COMMAND-by-id path, and 'via' is the only thing that reports it.
-    Assert.AreEqual('WM_COMMAND', Via, 'expected the unverified dispatch-by-id path');
+    Assert.IsTrue(Th.Done.WaitFor(500) <> wrSignaled, 'selector ''no'' closed the box (returned ' + IntToStr(Th.Returned) + '): resolved by caption substring (Ignore) instead of role IDNO');
+    Assert.IsFalse(Clicked, 'selector ''no'' answered clicked=true on a box with no No button (clickedId ' + IntToStr(ClickedId) + ', via ' + Via + ')');
+    Assert.AreEqual('button_not_found', Reason, 'a role with no button of that id must be refused as button_not_found');
   finally
     // IDNO has no control on this box, so the resolve above left it up; dismiss it via a real
     // button (Abort). Under a regression the substring path already closed it via Ignore, so
@@ -322,16 +579,16 @@ const
   BodyText  = 'AP content text 4410';
 var
   Th: TTaskDlgThread;
-  Dlg, Resolved: NativeUInt;
-  BtnCount, ClickedId: Integer;
-  ClickedCap, Reason, Via, Text, Classes: String;
+  Dlg: NativeUInt;
+  BtnCount: Integer;
+  Text, Classes: String;
   Deadline: UInt64;
-  Junk: TArray<NativeUInt>;
+  Res: DWORD_PTR;
 begin
-  Junk := nil;
+  Dlg := 0;
   Th := TTaskDlgThread.Create(UniqueCap, MainText, BodyText);
   try
-    Dlg := 0; BtnCount := 0;
+    BtnCount := 0;
     Deadline := TThread.GetTickCount64 + 5000;
     while (Dlg = 0) and (TThread.GetTickCount64 < Deadline) and (Th.Done.WaitFor(0) <> wrSignaled) do
       begin
@@ -344,15 +601,302 @@ begin
     Assert.Contains(Text, MainText, FALSE, 'the main instruction is missing from text; descendants: ' + Classes);
     Assert.Contains(Text, BodyText, FALSE, 'the content is missing from text; descendants: ' + Classes);
   finally
+    { Closed without the code under test: TDM_CLICK_BUTTON with IDCANCEL, a button this box has. }
     if Th.Done.WaitFor(0) <> wrSignaled then
       begin
-        ClickNativeDialogButton(Junk, 0, 'cancel', ClickedId, ClickedCap, Resolved, Reason, Via);
+        if Dlg = 0
+        then Dlg := FindDialogByCaption(UniqueCap, BtnCount);
+        if Dlg <> 0
+        then SendMessageTimeout(HWND(Dlg), TDM_CLICK_BUTTON, IDCANCEL, 0, SMTO_ABORTIFHUNG, 2000, @Res);
         Th.Done.WaitFor(2000);
       end;
     if Th.Done.WaitFor(0) = wrSignaled
     then FreeAndNil(Th)
     else Assert.Fail('the Task Dialog could not be dismissed; thread left parked to avoid an untimed WaitFor hang');
   end;
+end;
+
+
+{ Shows a Task Dialog of AThread, clicks ASelector, and checks that the box closed returning AExpectedId. }
+procedure CheckTaskDialogClick(var ATh: TTaskDlgButtonsThread; const ASelector: String; AExpectedId: Integer);
+var
+  Dlg, Resolved: NativeUInt;
+  ClickedId: Integer;
+  ClickedCap, Reason, Via: String;
+  Clicked: Boolean;
+  Junk: TArray<NativeUInt>;
+begin
+  Junk := nil;
+  Dlg := WaitForDialog(ATh.Caption, ATh.Done);
+  Assert.IsTrue(Dlg <> 0, 'the Task Dialog was not found (TaskDialogIndirect returned ' + IntToStr(ATh.Returned) + ')');
+  Clicked := ClickNativeDialogButton(Junk, Dlg, ASelector, ClickedId, ClickedCap, Resolved, Reason, Via);
+  Assert.IsTrue(Clicked, 'ClickNativeDialogButton returned false (' + Reason + ') for selector ' + ASelector);
+  Assert.IsTrue(ATh.Done.WaitFor(3000) = wrSignaled, 'the Task Dialog did not close after the click on ' + ASelector + ' (via ' + Via + ')');
+  Assert.AreEqual(AExpectedId, ATh.Returned,
+    'the Task Dialog returned the wrong button for selector ' + ASelector + ': via ' + Via + ', clickedId ' + IntToStr(ClickedId) +
+    ', clickedCaption ' + ClickedCap + ', TDN_BUTTON_CLICKED id ' + IntToStr(ATh.NotifiedId));
+end;
+
+
+{ Shows a Task Dialog of AThread, clicks ASelector, and checks that the click was refused with AExpectedReason and the box is still up. }
+procedure CheckTaskDialogRefused(var ATh: TTaskDlgButtonsThread; const ASelector, AExpectedReason: String);
+var
+  Dlg, Resolved: NativeUInt;
+  ClickedId: Integer;
+  ClickedCap, Reason, Via: String;
+  Clicked: Boolean;
+  Junk: TArray<NativeUInt>;
+begin
+  Junk := nil;
+  Dlg := WaitForDialog(ATh.Caption, ATh.Done);
+  Assert.IsTrue(Dlg <> 0, 'the Task Dialog was not found (TaskDialogIndirect returned ' + IntToStr(ATh.Returned) + ')');
+  Clicked := ClickNativeDialogButton(Junk, Dlg, ASelector, ClickedId, ClickedCap, Resolved, Reason, Via);
+  Assert.IsTrue(ATh.Done.WaitFor(500) <> wrSignaled,
+    'the Task Dialog closed (returned ' + IntToStr(ATh.Returned) + ') for selector ' + ASelector + ', which names no button for sure (via ' + Via + ')');
+  Assert.IsFalse(Clicked, 'ClickNativeDialogButton answered clicked=true for selector ' + ASelector + ' (via ' + Via + ', clickedId ' + IntToStr(ClickedId) + ')');
+  Assert.AreEqual(AExpectedReason, Reason, 'wrong refusal reason for selector ' + ASelector);
+end;
+
+
+procedure TNativeDialogTests.Test_TaskDialog_MessageDlgButtons_ReturnsThatButton(const ASelector: String; AExpectedId: Integer);
+var
+  Th: TTaskDlgButtonsThread;
+begin
+  Th := TTaskDlgButtonsThread.Create('AP_TEST_X1_MSGDLG_' + ASelector, ['Yes', 'No', 'Abort'], [IDYES, IDNO, IDABORT], IDYES);
+  try
+    CheckTaskDialogClick(Th, ASelector, AExpectedId);
+  finally
+    FinishTaskDlgThread(Th);
+  end;
+end;
+
+
+procedure TNativeDialogTests.Test_TaskDialog_DefaultIsNo_ReturnsThatButton(const ASelector: String; AExpectedId: Integer);
+var
+  Th: TTaskDlgButtonsThread;
+begin
+  Th := TTaskDlgButtonsThread.Create('AP_TEST_X1_DEFNO_' + ASelector, ['Yes', 'No', 'Abort'], [IDYES, IDNO, IDABORT], IDNO);
+  try
+    CheckTaskDialogClick(Th, ASelector, AExpectedId);
+  finally
+    FinishTaskDlgThread(Th);
+  end;
+end;
+
+
+procedure TNativeDialogTests.Test_TaskDialog_LocalizedCaption_ReturnsThatButton(const ASelector: String; AExpectedId: Integer);
+var
+  Th: TTaskDlgButtonsThread;
+begin
+  Th := TTaskDlgButtonsThread.Create('AP_TEST_X1_DE_' + ASelector, ['Ja', 'Nein', 'Abbrechen'], [IDYES, IDNO, IDABORT], IDYES);
+  try
+    CheckTaskDialogClick(Th, ASelector, AExpectedId);
+  finally
+    FinishTaskDlgThread(Th);
+  end;
+end;
+
+
+procedure TNativeDialogTests.Test_TaskDialog_LocalizedCaption_UnresolvableSelector_IsRefused(const ASelector, AExpectedReason: String);
+var
+  Th: TTaskDlgButtonsThread;
+begin
+  Th := TTaskDlgButtonsThread.Create('AP_TEST_X1_DEREF_' + ASelector, ['Ja', 'Nein', 'Abbrechen'], [IDYES, IDNO, IDABORT], IDYES);
+  try
+    CheckTaskDialogRefused(Th, ASelector, AExpectedReason);
+  finally
+    FinishTaskDlgThread(Th);
+  end;
+end;
+
+
+procedure TNativeDialogTests.Test_TaskDialog_SubstringOnTwoButtons_IsRefused;
+const
+  mrNoToAll  = 13;   // System.UITypes: mrAll = mrContinue + 1 = 12, mrNoToAll = 13, mrYesToAll = 14
+  mrYesToAll = 14;
+var
+  Th: TTaskDlgButtonsThread;
+begin
+  Th := TTaskDlgButtonsThread.Create('AP_TEST_X1_TOALL', ['Yes to All', 'No to All', 'Cancel'], [mrYesToAll, mrNoToAll, IDCANCEL], mrNoToAll);
+  try
+    CheckTaskDialogRefused(Th, 'all', 'button_ambiguous');
+  finally
+    FinishTaskDlgThread(Th);
+  end;
+end;
+
+
+procedure TNativeDialogTests.Test_TaskDialog_CommonButtons_ReturnsThatButton(const ASelector: String; AExpectedId: Integer);
+var
+  Th: TTaskDlgThread;
+  Dlg, Resolved: NativeUInt;
+  BtnCount, ClickedId: Integer;
+  ClickedCap, Reason, Via, Cap: String;
+  Clicked: Boolean;
+  Junk: TArray<NativeUInt>;
+  Res: DWORD_PTR;
+begin
+  Junk := nil;
+  Cap := 'AP_TEST_X1_COMMON_' + ASelector;
+  Th := TTaskDlgThread.Create(Cap, 'Common buttons', 'OK and Cancel are TDCBF common buttons.');
+  try
+    Dlg := WaitForDialog(Cap, Th.Done);
+    Assert.IsTrue(Dlg <> 0, 'the Task Dialog was not found (TaskDialogIndirect returned ' + IntToStr(Th.Returned) + ')');
+    Clicked := ClickNativeDialogButton(Junk, Dlg, ASelector, ClickedId, ClickedCap, Resolved, Reason, Via);
+    Assert.IsTrue(Clicked, 'ClickNativeDialogButton returned false (' + Reason + ') for selector ' + ASelector);
+    Assert.IsTrue(Th.Done.WaitFor(3000) = wrSignaled, 'the Task Dialog did not close after the click on ' + ASelector);
+    Assert.AreEqual(AExpectedId, Th.Returned, 'the Task Dialog returned the wrong button for selector ' + ASelector + ' (clickedCaption ' + ClickedCap + ')');
+  finally
+    { Closed without the code under test: TDM_CLICK_BUTTON with IDCANCEL, a button this box has. }
+    if Th.Done.WaitFor(0) <> wrSignaled then
+      begin
+        Dlg := FindDialogByCaption(Cap, BtnCount);
+        if Dlg <> 0
+        then SendMessageTimeout(HWND(Dlg), TDM_CLICK_BUTTON, IDCANCEL, 0, SMTO_ABORTIFHUNG, 2000, @Res);
+        Th.Done.WaitFor(2000);
+      end;
+    if Th.Done.WaitFor(0) = wrSignaled
+    then FreeAndNil(Th)
+    else Assert.Fail('the Task Dialog could not be dismissed; thread left parked to avoid an untimed WaitFor hang');
+  end;
+end;
+
+
+procedure TNativeDialogTests.Test_MessageBox_YesNoCancel_ReturnsThatButton(const ASelector: String; AExpectedId: Integer);
+var
+  Th: TMsgBoxThread;
+  Dlg, Resolved: NativeUInt;
+  ClickedId: Integer;
+  ClickedCap, Reason, Via: String;
+  Clicked: Boolean;
+  Junk: TArray<NativeUInt>;
+begin
+  Junk := nil;
+  Dlg := 0;
+  Th := TMsgBoxThread.Create('AP_TEST_X1_MSGBOX_' + ASelector, MB_YESNOCANCEL or MB_ICONQUESTION);
+  try
+    Dlg := WaitForDialog(Th.Caption, Th.Done);
+    Assert.IsTrue(Dlg <> 0, 'native MessageBox was not found by EnumerateNativeDialogs');
+    Clicked := ClickNativeDialogButton(Junk, Dlg, ASelector, ClickedId, ClickedCap, Resolved, Reason, Via);
+    Assert.IsTrue(Clicked, 'ClickNativeDialogButton returned false (' + Reason + ')');
+    Assert.AreEqual('BN_CLICKED', Via, 'expected the button-HWND dispatch path');
+    Assert.IsTrue(Th.Done.WaitFor(3000) = wrSignaled, 'MessageBox did not close after the click');
+    Assert.AreEqual(AExpectedId, Th.Returned, 'MessageBox returned the wrong button for selector ' + ASelector);
+  finally
+    { Closed without the code under test: WM_COMMAND IDCANCEL with the Cancel button's own window, the notification a click on it sends. }
+    if (Th.Done.WaitFor(0) <> wrSignaled) and (Dlg <> 0) then
+      begin
+        SendMessageTimeout(HWND(Dlg), WM_COMMAND, WPARAM(IDCANCEL or (BN_CLICKED shl 16)), LPARAM(GetDlgItem(HWND(Dlg), IDCANCEL)), SMTO_ABORTIFHUNG, 2000, nil);
+        Th.Done.WaitFor(2000);
+      end;
+    if Th.Done.WaitFor(0) = wrSignaled
+    then FreeAndNil(Th)
+    else Assert.Fail('MessageBox could not be dismissed; thread left parked to avoid an untimed WaitFor hang');
+  end;
+end;
+
+
+procedure TNativeDialogTests.Test_FileSaveDialog_FileNameAndSave_ReturnsThatName;
+var
+  Th: TFileSaveDlgThread;
+  Dlg, Resolved: NativeUInt;
+  ClickedId: Integer;
+  ClickedCap, Reason, Via, Name: String;
+  Done, NameSet: Boolean;
+  Junk: TArray<NativeUInt>;
+begin
+  Junk := nil;
+  Dlg := 0;
+  Name := NewTempFileName('SAVE');
+  Th := TFileSaveDlgThread.Create('AP_TEST_D3_SAVE_DIALOG');
+  try
+    Dlg := WaitForDialog(Th.Title, Th.Done);
+    Assert.IsTrue(Dlg <> 0, 'the Save dialog was not found (Show returned $' + IntToHex(Th.Returned, 8) + ')');
+    Done := SetNativeDialogFileName(Junk, Dlg, Name, 'ok', NameSet, ClickedId, ClickedCap, Resolved, Reason, Via);
+    Assert.IsTrue(Done, 'SetNativeDialogFileName returned false (' + Reason + ')');
+    Assert.IsTrue(NameSet, 'fileNameSet must be TRUE');
+    Assert.AreEqual(IDOK, ClickedId, 'the click went to another button (' + ClickedCap + ')');
+    Assert.IsTrue(Dlg = Resolved, 'resolved another dialog');
+    Assert.IsTrue(Th.Done.WaitFor(3000) = wrSignaled, 'the Save dialog did not close after the click on ' + ClickedCap);
+    Assert.AreEqual(S_OK, Th.Returned, 'Show did not return S_OK: the dialog was cancelled or failed');
+    Assert.AreEqual(Name, Th.ResultPath, 'the dialog returned another file name');
+  finally
+    FinishByCancel(Th, Th.Done, Dlg);
+  end;
+end;
+
+
+procedure TNativeDialogTests.Test_FileSaveDialog_FileNameOnly_LeavesTheDialogUp_ThenSaveReturnsThatName;
+var
+  Th: TFileSaveDlgThread;
+  Dlg, Resolved: NativeUInt;
+  ClickedId: Integer;
+  ClickedCap, Reason, Via, Name: String;
+  Done, NameSet: Boolean;
+  Junk: TArray<NativeUInt>;
+begin
+  Junk := nil;
+  Dlg := 0;
+  Name := NewTempFileName('ONLY');
+  Th := TFileSaveDlgThread.Create('AP_TEST_D3_NAME_ONLY_DIALOG');
+  try
+    Dlg := WaitForDialog(Th.Title, Th.Done);
+    Assert.IsTrue(Dlg <> 0, 'the Save dialog was not found (Show returned $' + IntToHex(Th.Returned, 8) + ')');
+    Done := SetNativeDialogFileName(Junk, Dlg, Name, '', NameSet, ClickedId, ClickedCap, Resolved, Reason, Via);
+    Assert.IsTrue(Done, 'SetNativeDialogFileName returned false (' + Reason + ')');
+    Assert.IsTrue(NameSet, 'fileNameSet must be TRUE');
+    Assert.IsTrue(Dlg = Resolved, 'resolved another dialog');
+    Assert.IsTrue(Th.Done.WaitFor(500) <> wrSignaled, 'the dialog closed although no button was asked for');
+
+    { The box kept the name: the plain click returns it. }
+    Assert.IsTrue(ClickNativeDialogButton(Junk, Dlg, 'ok', ClickedId, ClickedCap, Resolved, Reason, Via), 'the click on ok failed (' + Reason + ')');
+    Assert.IsTrue(Th.Done.WaitFor(3000) = wrSignaled, 'the Save dialog did not close after the click on ' + ClickedCap);
+    Assert.AreEqual(S_OK, Th.Returned, 'Show did not return S_OK: the dialog was cancelled or failed');
+    Assert.AreEqual(Name, Th.ResultPath, 'the dialog returned another file name');
+  finally
+    FinishByCancel(Th, Th.Done, Dlg);
+  end;
+end;
+
+
+procedure TNativeDialogTests.Test_MessageBox_FileName_IsRefused_NothingClicked;
+var
+  Th: TMsgBoxThread;
+  Dlg, Resolved: NativeUInt;
+  ClickedId: Integer;
+  ClickedCap, Reason, Via: String;
+  Done, NameSet: Boolean;
+  Junk: TArray<NativeUInt>;
+begin
+  Junk := nil;
+  Dlg := 0;
+  Th := TMsgBoxThread.Create('AP_TEST_D3_MSGBOX', MB_YESNOCANCEL or MB_ICONQUESTION);
+  try
+    Dlg := WaitForDialog(Th.Caption, Th.Done);
+    Assert.IsTrue(Dlg <> 0, 'native MessageBox was not found by EnumerateNativeDialogs');
+    Done := SetNativeDialogFileName(Junk, Dlg, 'x.txt', 'yes', NameSet, ClickedId, ClickedCap, Resolved, Reason, Via);
+    Assert.IsTrue(Th.Done.WaitFor(500) <> wrSignaled, 'the box closed (returned ' + IntToStr(Th.Returned) + '): a button was clicked although the name could not be set');
+    Assert.IsFalse(Done, 'answered done for a box with no File name box');
+    Assert.IsFalse(NameSet, 'fileNameSet must be FALSE');
+    Assert.AreEqual('edit_not_found', Reason, 'wrong refusal reason');
+  finally
+    FinishByCancel(Th, Th.Done, Dlg);
+  end;
+end;
+
+
+procedure TNativeDialogTests.Test_NoDialogUp_FileNameReturnsNoDialog;
+var
+  ClickedId: Integer;
+  ClickedCap, Reason, Via: String;
+  Resolved: NativeUInt;
+  NameSet: Boolean;
+  NoExclude: TArray<NativeUInt>;
+begin
+  NoExclude := nil;
+  Assert.IsFalse(SetNativeDialogFileName(NoExclude, 0, 'x.txt', 'ok', NameSet, ClickedId, ClickedCap, Resolved, Reason, Via), 'must fail when no dialog is up');
+  Assert.IsFalse(NameSet, 'fileNameSet must be FALSE');
+  Assert.AreEqual('no_dialog', Reason, 'expected reason no_dialog');
 end;
 
 

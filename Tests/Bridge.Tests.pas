@@ -803,9 +803,9 @@ begin
 end;
 
 
-// mode=message posts BM_CLICK, which only button-class (BUTTON window class) controls
-// handle — posting it to a TEdit would report success while doing nothing. The bridge
-// must reject the class mismatch instead.
+// mode=message runs the same click as the default mode, so a component with no click path
+// (lblStatus: a TLabel with no OnClick, no action, no Click of its own) must be refused at
+// request time, never answer ok and then do nothing.
 procedure TBridgeTests.Test_Click_ModeMessageOnNonButtonReturnsUnsupported;
 var
   PipeName: String;
@@ -823,7 +823,7 @@ begin
       try
         Assert.IsTrue(Client.ConnectAndHandshake(PipeName, 2000), 'connect');
         Args := TJSONObject.Create;
-        Args.AddPair('path', 'FixtureForm.edtName');   // TEdit: TWinControl but NOT TButtonControl
+        Args.AddPair('path', 'FixtureForm.lblStatus');   // TLabel with no OnClick: no click path
         Args.AddPair('mode', 'message');
         Resp := Client.Call(231, 'click', Args);
         try
@@ -835,7 +835,7 @@ begin
         Client.Free;
       end;
     end, 5000);
-  Assert.AreEqual(ErrUnsupportedAction, Code, 'mode=message on a non-button must be unsupported_action');
+  Assert.AreEqual(ErrUnsupportedAction, Code, 'mode=message on a component with no click path must be unsupported_action');
 end;
 
 
