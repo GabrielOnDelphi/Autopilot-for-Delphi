@@ -71,6 +71,7 @@ constructor TWaitForTool.Create;
 begin
   inherited;
   FName := 'wait_for';
+  FReadOnlyHint := TRUE;   // changes nothing in the target app
   FDescription := 'Poll a control''s Text/Caption until it equals a value or the deadline passes.';
 end;
 

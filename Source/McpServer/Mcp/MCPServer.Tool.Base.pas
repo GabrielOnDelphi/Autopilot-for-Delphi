@@ -49,6 +49,9 @@ type
       TRUE: the picture was moved out of AText into AImageBase64 (no line breaks) and AMimeType, and AText holds the rest of the answer.
       FALSE: AText is untouched and goes out as one text block. }
     function ExtractImage(var AText: String; OUT AImageBase64, AMimeType: String): Boolean;
+    { TRUE: the tool changes nothing in the target app, so tools/list gives its entry the MCP ToolAnnotations field readOnlyHint = true.
+      Claude Code then runs its calls in parallel with other read-only calls (https://code.claude.com/docs/en/mcp); our server still answers them one at a time. }
+    function GetReadOnlyHint: Boolean;
 
     property Name        : String       read GetName;
     property Title       : String       read GetTitle;
@@ -64,6 +67,7 @@ type
     FName        : String;
     FTitle       : String;
     FDescription : String;
+    FReadOnlyHint: Boolean;   // set in the constructor of a tool that changes nothing
     function BuildSchema: TJSONObject; virtual; abstract;
   public
     { IMCPTool }
@@ -73,6 +77,7 @@ type
     function GetInputSchema: TJSONObject;
     function Execute(const AArguments: TJSONObject): String; virtual; abstract;
     function ExtractImage(var AText: String; OUT AImageBase64, AMimeType: String): Boolean; virtual;
+    function GetReadOnlyHint: Boolean;
   end;
 
   { Generic base used by every tool except call_method.
@@ -83,6 +88,7 @@ type
     FName        : String;
     FTitle       : String;
     FDescription : String;
+    FReadOnlyHint: Boolean;   // set in the constructor of a tool that changes nothing
     function ExecuteWithParams(const AParams: T): String; virtual; abstract;
   public
     constructor Create; virtual;
@@ -94,6 +100,7 @@ type
     function GetInputSchema: TJSONObject;
     function Execute(const AArguments: TJSONObject): String;
     function ExtractImage(var AText: String; OUT AImageBase64, AMimeType: String): Boolean; virtual;
+    function GetReadOnlyHint: Boolean;
   end;
 
 
@@ -135,6 +142,11 @@ begin
   AImageBase64 := '';
   AMimeType    := '';
   Result       := FALSE;
+end;
+
+function TMCPToolBase.GetReadOnlyHint: Boolean;
+begin
+  Result := FReadOnlyHint;
 end;
 
 
@@ -186,6 +198,11 @@ begin
   AImageBase64 := '';
   AMimeType    := '';
   Result       := FALSE;
+end;
+
+function TMCPToolBase<T>.GetReadOnlyHint: Boolean;
+begin
+  Result := FReadOnlyHint;
 end;
 
 

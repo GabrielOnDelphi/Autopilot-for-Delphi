@@ -60,6 +60,7 @@ constructor TAttachTool.Create;
 begin
   inherited;
   FName := 'attach';
+  FReadOnlyHint := TRUE;   // changes nothing in the target app
   FDescription := 'List active Autopilot targets, or verify a specific PID is reachable. ' + 'The answer always carries "setup": the steps to link the bridge into a Delphi app.';
 end;
 

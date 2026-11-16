@@ -24,13 +24,21 @@ type
   private
     FPath    : String;
     FPropName: String;
+    FIndex   : Integer;
     FPid     : Integer;
   public
+    { The serializer leaves an absent optional Integer at the value it had after construction, and 0 is a valid index. }
+    procedure AfterConstruction; override;
+
     [SchemaDescription('Control path from list_tree: "Form", "Form.Leaf", "Form.A.B.C" or "@TButton#N".')]
     property Path: String read FPath write FPath;
 
     [SchemaDescription('Published property name, case-sensitive ("Tag", "Caption", "ItemIndex"). One ' + 'nesting level via "Outer.Inner" when Outer is a class property ("Font.Size", ' + '"Lines.Text"). Unknown name -> error.data.availableProperties: name, kind, ' + 'currentValue; kind="class" entries can be the Outer.')]
     property PropName: String read FPropName write FPropName;
+
+    [Optional]
+    [SchemaDescription('VCL TCheckListBox only, with propName "Checked": the 0-based item to read (the order of Items.Text). Omit for any other read.')]
+    property Index: Integer read FIndex write FIndex;
 
     [Optional]
     [SchemaDescription('Target PID. Needed only when several targets run.')]
@@ -51,10 +59,22 @@ uses
   MCPServer.Registration;
 
 
+const
+  IndexAbsent = Low(Integer);   // no index given: the request carries no "index", byte-identical to before
+
+
+procedure TReadPropertyParams.AfterConstruction;
+begin
+  inherited;
+  FIndex := IndexAbsent;
+end;
+
+
 constructor TReadPropertyTool.Create;
 begin
   inherited;
   FName := 'read_property';
+  FReadOnlyHint := TRUE;   // changes nothing in the target app
   FDescription := 'Read a published property of a control via RTTI. The returned "value" is in the ' + 'format set_property accepts (TColor "clName"/"#RRGGBB", TAlphaColor ' + '"claName"/"#AARRGGBB", enum identifier, set "[a,b]", bool "true"/"false"). ' + 'Works on disabled controls. Use it to read live values instead of adding ' + 'debug output to the target. An event ("OnClick", "OnExecute") gives kind ' + '"event", value "TClass.Method" and "unit": the handler in the source.';
 end;
 
@@ -66,6 +86,8 @@ begin
   Args := TJSONObject.Create;
   Args.AddPair('path',     Params.Path);
   Args.AddPair('propName', Params.PropName);
+  if Params.Index <> IndexAbsent
+  then Args.AddPair('index', TJSONNumber.Create(Params.Index));
   Result := RunCommandOnTarget(Cardinal(Params.Pid), BuildRequest(1, 'read_property', Args));
 end;
 

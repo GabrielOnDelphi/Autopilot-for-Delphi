@@ -66,6 +66,7 @@ constructor TScreenshotTool.Create;
 begin
   inherited;
   FName := 'screenshot';
+  FReadOnlyHint := TRUE;   // changes nothing in the target app
   FDescription := 'Capture a form, or one control of it, as a PNG image.';
 end;
 

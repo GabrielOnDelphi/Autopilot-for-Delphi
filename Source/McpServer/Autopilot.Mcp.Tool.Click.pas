@@ -10,7 +10,7 @@
    - '*.Name' wildcards the form.
      Optional count parameter; scales timeoutMs proportionally.
    - Optional timeoutMs parameter overrides the bridge's main-thread wait (short value + dismiss_dialog = the modal-dialog recipe).
-   - Optional mode parameter: 'message' posts BM_CLICK asynchronously (VCL button-class controls only) — presses a modal-opening button without blocking; FMX targets reject it with -32005.
+   - Optional mode parameter: 'message' answers before the click runs (VCL and FMX, every class with a click path) - presses a control that opens a modal dialog without blocking.
    - Runs in Autopilot.Mcp.exe (Windows PC-side MCP server); target may be any platform.
 =============================================================================================================}
 
@@ -42,7 +42,7 @@ type
     property Count: Integer read FCount write FCount;
 
     [Optional]
-    [SchemaDescription('Omit or "auto" for the normal Click/OnClick. "message" (VCL only, button-class ' + 'controls): posts BM_CLICK and returns before the click runs. Use it for a button ' + 'that opens a modal dialog, then call dismiss_dialog. FMX rejects it with -32005.')]
+    [SchemaDescription('Omit or "auto" for the normal Click/OnClick. "message": returns before the click ' + 'runs. Use it for a control (button, menu item, toolbar button) that opens a modal ' + 'dialog, then call dismiss_dialog.')]
     property Mode: String read FMode write FMode;
 
     [Optional]

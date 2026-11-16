@@ -48,6 +48,7 @@ constructor TGetTextTool.Create;
 begin
   inherited;
   FName := 'get_text';
+  FReadOnlyHint := TRUE;   // changes nothing in the target app
   FDescription := 'Read the Text/Caption of a control.';
 end;
 

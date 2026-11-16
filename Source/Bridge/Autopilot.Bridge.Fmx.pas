@@ -1,7 +1,7 @@
 ﻿unit Autopilot.Bridge.Fmx;
 
 {=============================================================================================================
-   2026.11.14
+   2026.11.15
    www.GabrielMoraru.com
 --------------------------------------------------------------------------------------------------------------
    - Public bridge interface for FMX target projects (cross-platform: Windows pipe + POSIX AF_UNIX socket)
@@ -1314,10 +1314,31 @@ begin
 end;
 
 
+{ The path filter of list_tree (see the VCL twin): TRUE when AComp is ARoot or reaches it through a chain of TComponent.Owner and TFmxObject.Parent links, in any mix. }
+function LiesUnder(AComp, ARoot: TComponent; ASeen: TList): Boolean;
+begin
+  if AComp = NIL then EXIT(FALSE);
+  if AComp = ARoot then EXIT(TRUE);
+  if ASeen.IndexOf(AComp) >= 0 then EXIT(FALSE);
+  ASeen.Add(AComp);
+  Result := LiesUnder(AComp.Owner, ARoot, ASeen);
+  if not Result and (AComp is TFmxObject)
+  then Result := LiesUnder(TFmxObject(AComp).Parent, ARoot, ASeen);
+end;
+
+
+function KeptByPathFilter(AComp, ARoot: TComponent; ASeen: TList): Boolean;
+begin
+  if ARoot = NIL then EXIT(TRUE);
+  ASeen.Clear;
+  Result := LiesUnder(AComp, ARoot, ASeen);
+end;
+
+
 { Command handlers ------------------------------------------------------ }
 
 procedure WalkComponents(AFormName, AParentPath: String; AParent: TComponent;
-                         AItems: TJSONArray; AVisited: TList);
+                         AItems: TJSONArray; AVisited: TList; ARoot: TComponent; ASeen: TList);
 var
   j: Integer;
   Child: TComponent;
@@ -1331,11 +1352,14 @@ begin
       if AVisited.IndexOf(Child) >= 0 then Continue;
       AVisited.Add(Child);
       ChildPath := AParentPath + '.' + LeafNameFor(Child);
-      Node := BuildComponentNode(AFormName, ChildPath, Child);
-      AItems.AddElement(Node);   // AItems owns Node from here, so a raise below cannot leak it
-      AddReparentedField(Node, Child, AParent);
+      if KeptByPathFilter(Child, ARoot, ASeen) then
+        begin
+          Node := BuildComponentNode(AFormName, ChildPath, Child);
+          AItems.AddElement(Node);   // AItems owns Node from here, so a raise below cannot leak it
+          AddReparentedField(Node, Child, AParent);
+        end;
       if Child.ComponentCount > 0
-      then WalkComponents(AFormName, ChildPath, Child, AItems, AVisited);
+      then WalkComponents(AFormName, ChildPath, Child, AItems, AVisited, ARoot, ASeen);
     end;
 end;
 
@@ -1352,22 +1376,24 @@ begin
 end;
 
 
-// The optional args form and formsOnly: see the VCL twin.
+// The optional args form, formsOnly and path: see the VCL twin.
 function HandleListTree(const AReq: TBridgeRequest): TBridgeResponse;
 var
+  PathRoot: TComponent;
+  Seen: TList;
   Items: TJSONArray;
   Wrap, FormNode: TJSONObject;
   Visited: TList;
   i: Integer;
   Form: TCommonCustomForm;
   Guide, GuideError: String;
-  FormFilter, ArgError: String;
+  FormFilter, PathFilter, ArgError: String;
   FormsOnly: Boolean;
 begin
   Assert(TThread.CurrentThread.ThreadID = MainThreadID, 'HandleListTree must run on the main thread');
   Result := Default(TBridgeResponse);
   Result.Id := AReq.Id;
-  if not TryParseListTreeArgs(AReq.Args, FormFilter, FormsOnly, ArgError) then
+  if not TryParseListTreeArgs(AReq.Args, FormFilter, FormsOnly, PathFilter, ArgError) then
     begin
       Result.Ok := FALSE;
       Result.ErrorCode := ErrInvalidRequest;
@@ -1381,7 +1407,15 @@ begin
       Result.ErrorMessage := ArgError;
       EXIT;
     end;
+  PathRoot := NIL;
+  if PathFilter <> '' then
+    begin
+      PathRoot := ResolvePathOrFail(PathFilter, Result);
+      if PathRoot = NIL then EXIT;
+    end;
   Result.Ok := TRUE;
+  Seen := TList.Create;
+  try
   Items := TJSONArray.Create;
   try
     // Per-form Visited (the VCL twin explains why).
@@ -1394,16 +1428,19 @@ begin
           { Emit the form as its own node first, then recurse owned components (including frames).
             Its Caption read may raise on an unrealized form; TryGetTextProperty logs that and the node simply lacks a `text` field. }
           Visited.Add(Form);
-          FormNode := BuildComponentNode(Form.Name, Form.Name, Form);
-          Items.AddElement(FormNode);
-          AddReparentedField(FormNode, Form, NIL);
-          if TryGetFormGuide(Form, Guide, GuideError)
-          then FormNode.AddPair('guide', Guide)
-          else
-            if GuideError <> ''
-            then FormNode.AddPair('guideError', GuideError);
+          if KeptByPathFilter(Form, PathRoot, Seen) then
+            begin
+              FormNode := BuildComponentNode(Form.Name, Form.Name, Form);
+              Items.AddElement(FormNode);
+              AddReparentedField(FormNode, Form, NIL);
+              if TryGetFormGuide(Form, Guide, GuideError)
+              then FormNode.AddPair('guide', Guide)
+              else
+                if GuideError <> ''
+                then FormNode.AddPair('guideError', GuideError);
+            end;
           if not FormsOnly
-          then WalkComponents(Form.Name, Form.Name, Form, Items, Visited);
+          then WalkComponents(Form.Name, Form.Name, Form, Items, Visited, PathRoot, Seen);
         finally
           FreeAndNil(Visited);
         end;
@@ -1415,6 +1452,9 @@ begin
   except
     FreeAndNil(Items);
     raise;
+  end;
+  finally
+    FreeAndNil(Seen);
   end;
 end;
 
@@ -1458,20 +1498,114 @@ begin
 end;
 
 
+{ The route of the default click on AComp.
+  A control bound to an action: TControl.Click (FMX.Controls.pas) runs ActionLink.Execute, i.e. TCustomAction.Execute, with the action as Sender (AUseControlClick = TRUE).
+  Calling the OnClick that TControl.ActionChange copied from OnExecute skips that, and an action without OnExecute leaves OnClick NIL, so the click would fail.
+  FMX has no other protected Click trick on a generic TControl base: everything else needs an OnClick (TNotifyEvent), read through RTTI (ANotify).
+  FALSE with AError when AComp has no route. }
+function TryResolveClickRoute(AComp: TComponent; OUT AUseControlClick: Boolean; OUT ANotify: TNotifyEvent; OUT AError: String): Boolean;
+var
+  Ctx: TRttiContext;
+  RT: TRttiType;
+  OnClickProp: TRttiProperty;
+  RawValue: TValue;
+begin
+  ANotify := NIL;
+  AError  := '';
+  AUseControlClick := (AComp is TControl) and (TFmxControlAccess(AComp).ActionLink <> NIL);
+  if AUseControlClick then EXIT(TRUE);
+  Result := FALSE;
+  Ctx := TRttiContext.Create;
+  try
+    RT := Ctx.GetType(AComp.ClassType);
+    if RT = NIL then
+      begin
+        AError := AComp.ClassName + ' has no RTTI';
+        EXIT;
+      end;
+    OnClickProp := RT.GetProperty('OnClick');
+    if (OnClickProp = NIL) or not OnClickProp.IsReadable then
+      begin
+        AError := AComp.ClassName + ' has no OnClick';
+        EXIT;
+      end;
+    RawValue := OnClickProp.GetValue(AComp);
+    if not RawValue.IsEmpty and (RawValue.Kind = tkMethod)
+    then TMethod(ANotify) := PMethod(RawValue.GetReferenceToRawData)^;
+    if not Assigned(ANotify) then
+      begin
+        AError := AComp.ClassName + '.OnClick is unset';
+        EXIT;
+      end;
+    Result := TRUE;
+  finally
+    Ctx.Free;
+  end;
+end;
+
+
+{ click mode=message: the default click, queued through TThread.ForceQueue, so it runs on the main thread AFTER this command's answer and a control whose OnClick opens a modal dialog does not block the dispatcher into -32004 (pair with dismiss_dialog).
+  The path, Enabled and the click route are resolved again when it runs: the control may be gone, disabled or changed by then; it is then skipped with a log line.
+  The VCL twin explains why the app keeps answering while the click sits inside a modal loop, and the limit of a command queued behind the click. }
+procedure QueueDeferredClick(const APath: String);
+var
+  Path: String;
+begin
+  Path := APath;
+  TThread.ForceQueue(NIL,
+    procedure
+    var
+      Resp: TBridgeResponse;
+      Comp: TComponent;
+      Enabled, UseControlClick: Boolean;
+      Notify: TNotifyEvent;
+      Err: String;
+    begin
+      if GWorker = NIL then EXIT;   // the bridge stopped meanwhile
+      Resp := Default(TBridgeResponse);
+      Comp := ResolvePathOrFail(Path, Resp);
+      if Comp = NIL then
+        begin
+          BridgeLogWarn('bridge', 'click mode=message: ' + Path + ' is gone, the queued click is skipped');
+          EXIT;
+        end;
+      if TryGetEnabled(Comp, Enabled) and not Enabled then
+        begin
+          BridgeLogWarn('bridge', 'click mode=message: ' + Path + ' was disabled meanwhile, the queued click is skipped');
+          EXIT;
+        end;
+      if not TryResolveClickRoute(Comp, UseControlClick, Notify, Err) then
+        begin
+          BridgeLogWarn('bridge', 'click mode=message: ' + Err + ' now, the queued click on ' + Path + ' is skipped');
+          EXIT;
+        end;
+      try
+        if UseControlClick
+        then TFmxControlAccess(Comp).Click
+        else Notify(Comp);
+      except
+        on E: Exception do
+          begin
+            { The answer said "queued" long ago, so the log is the only place the caller can see this.
+              Re-raised: CheckSynchronize gives it to ApplicationHandleException, as FMX does with an exception in a real click. }
+            BridgeLogWarn('bridge', 'click mode=message: the queued click on ' + Path + ' raised ' + E.ClassName + ': ' + E.Message);
+            raise;
+          end;
+      end;
+    end);
+end;
+
+
 function HandleClick(const AReq: TBridgeRequest): TBridgeResponse;
 const
   MaxClickCount = 1000;
 var
   PathVal, CountVal, ModeVal: TJSONValue;
-  Path: String;
+  Path, Err: String;
   Comp: TComponent;
   Enabled: Boolean;
   Wrap: TJSONObject;
-  Ctx: TRttiContext;
-  RT: TRttiType;
-  OnClickProp: TRttiProperty;
   Notify: TNotifyEvent;
-  RawValue: TValue;
   RequestedCount, ClicksDone: Integer;
   StoppedReason, Mode, DispatchedVia: String;
   UseControlClick: Boolean;
@@ -1519,9 +1653,10 @@ begin
         end;
     end;
 
-  { mode=message is VCL-on-Windows only: it posts BM_CLICK to the control's HWND, and an FMX control has no per-control window handle to post to (FMX paints its own controls).
-    Rejected explicitly, because silently falling back to the synchronous OnClick path would defeat the caller's no-block intent.
-    Validated strictly, like the VCL twin. }
+  { mode=message: the default click, queued to run after the answer (QueueDeferredClick).
+    An FMX control has no window handle of its own, so there is no BM_CLICK to post, as the VCL twin does for a button.
+    Validated strictly, like the VCL twin: a typo'd mode silently falling back to the synchronous path would defeat the caller's no-block intent. }
+  Mode := '';
   ModeVal := AReq.Args.GetValue('mode');
   if ModeVal <> NIL then
     begin
@@ -1532,13 +1667,9 @@ begin
           exit;
         end;
       Mode := LowerCase(Trim(TJSONString(ModeVal).Value));
-      if Mode = 'message' then
-        begin
-          Result.Ok := FALSE; Result.ErrorCode := ErrUnsupportedAction;
-          Result.ErrorMessage := 'click mode=message is VCL-on-Windows only (FMX controls have no window ' + 'handle); omit mode to use the OnClick dispatch';
-          exit;
-        end;
-      if (Mode <> '') and (Mode <> 'auto') then
+      if Mode = 'auto'
+      then Mode := '';
+      if (Mode <> '') and (Mode <> 'message') then
         begin
           Result.Ok := FALSE; Result.ErrorCode := ErrInvalidRequest;
           Result.ErrorMessage := 'click args.mode must be "auto" or "message" (got "' + TJSONString(ModeVal).Value + '")';
@@ -1555,50 +1686,19 @@ begin
       exit;
     end;
 
-  { A control bound to an action: TControl.Click (FMX.Controls.pas) runs ActionLink.Execute, i.e. TCustomAction.Execute, with the action as Sender.
-    Calling the OnClick that TControl.ActionChange copied from OnExecute skips that, and an action without OnExecute leaves OnClick NIL, so the click would fail. }
-  UseControlClick := (Comp is TControl) and (TFmxControlAccess(Comp).ActionLink <> NIL);
-  if UseControlClick
-  then DispatchedVia := 'click'
-  else
+  { Resolved at request time in both modes, so a component with no click route answers -32005 now, instead of "queued" and then nothing. }
+  if not TryResolveClickRoute(Comp, UseControlClick, Notify, Err) then
     begin
-      { FMX has no other protected Click trick on a generic TControl base.
-        Most clickable controls expose OnClick (TNotifyEvent) via RTTI; it is read and invoked. }
-      DispatchedVia := 'onclick';
-      Ctx := TRttiContext.Create;
-      try
-        RT := Ctx.GetType(Comp.ClassType);
-        if RT = NIL then
-          begin
-            Result.Ok := FALSE; Result.ErrorCode := ErrUnsupportedAction;
-            Result.ErrorMessage := Comp.ClassName + ' has no RTTI';
-            exit;
-          end;
-        OnClickProp := RT.GetProperty('OnClick');
-        if (OnClickProp = NIL) or not OnClickProp.IsReadable then
-          begin
-            Result.Ok := FALSE; Result.ErrorCode := ErrUnsupportedAction;
-            Result.ErrorMessage := Comp.ClassName + ' has no OnClick';
-            exit;
-          end;
-        RawValue := OnClickProp.GetValue(Comp);
-        if RawValue.IsEmpty or (RawValue.Kind <> tkMethod) then
-          begin
-            Result.Ok := FALSE; Result.ErrorCode := ErrUnsupportedAction;
-            Result.ErrorMessage := Comp.ClassName + '.OnClick is unset';
-            exit;
-          end;
-        TMethod(Notify) := PMethod(RawValue.GetReferenceToRawData)^;
-        if not Assigned(Notify) then
-          begin
-            Result.Ok := FALSE; Result.ErrorCode := ErrUnsupportedAction;
-            Result.ErrorMessage := Comp.ClassName + '.OnClick is unset';
-            exit;
-          end;
-      finally
-        Ctx.Free;
-      end;
+      Result.Ok := FALSE; Result.ErrorCode := ErrUnsupportedAction;
+      Result.ErrorMessage := Err;
+      exit;
     end;
+  if Mode = 'message'
+  then DispatchedVia := 'message'
+  else
+    if UseControlClick
+    then DispatchedVia := 'click'
+    else DispatchedVia := 'onclick';
 
   { An OnClick may free the control, or the form that owns it: Watch learns of the free, and the loop stops with stoppedReason='freed' before Comp is read again (the VCL twin explains more).
     On an action-bound control the FMX RTL itself still reads the freed control once: TControl.Click reads Action in its finally (FMX.Controls.pas).
@@ -1618,9 +1718,12 @@ begin
             Break;
           end;
         try
-          if UseControlClick
-          then TFmxControlAccess(Comp).Click
-          else Notify(Comp);
+          if Mode = 'message'
+          then QueueDeferredClick(Path)
+          else
+            if UseControlClick
+            then TFmxControlAccess(Comp).Click
+            else Notify(Comp);
           Inc(ClicksDone);
         except
           on E: Exception do
@@ -1784,6 +1887,12 @@ begin
     begin
       Result.Ok := FALSE; Result.ErrorCode := ErrInvalidRequest;
       Result.ErrorMessage := 'set_checked requires args.path and args.checked';
+      exit;
+    end;
+  if AReq.Args.GetValue('index') <> NIL then
+    begin
+      Result.Ok := FALSE; Result.ErrorCode := ErrUnsupportedAction;
+      Result.ErrorMessage := 'set_checked args.index works only on a VCL TCheckListBox; the FMX bridge has none';
       exit;
     end;
   PathVal := AReq.Args.GetValue('path');
@@ -2437,6 +2546,12 @@ begin
       Result.ErrorMessage := 'read_property requires args.path and args.propName';
       exit;
     end;
+  if AReq.Args.GetValue('index') <> NIL then
+    begin
+      Result.Ok := FALSE; Result.ErrorCode := ErrUnsupportedAction;
+      Result.ErrorMessage := 'read_property args.index works only on a VCL TCheckListBox; the FMX bridge has none';
+      exit;
+    end;
   PathVal := AReq.Args.GetValue('path');
   NameVal := AReq.Args.GetValue('propName');
   if not (PathVal is TJSONString) or not (NameVal is TJSONString) then
@@ -2503,14 +2618,12 @@ end;
   No exclude list is needed: FMX renders its controls itself, so an FMX form HWND has no child 'Button' windows, is not class '#32770', and never matches the dialog filter. }
 function HandleDismissDialog(const AReq: TBridgeRequest): TBridgeResponse;
 var
-  ButtonVal, HwndVal: TJSONValue;
-  Selector, PlatformName: String;
-  HasButton, Clicked: Boolean;
-  TargetDlg, ResolvedDlg: NativeUInt;
+  ButtonVal, HwndVal, FileNameVal: TJSONValue;
+  Selector, FileName, PlatformName: String;
+  HasButton: Boolean;
+  TargetDlg: NativeUInt;
   Exclude: TArray<NativeUInt>;
   Wrap: TJSONObject;
-  ClickedId: Integer;
-  ClickedCap, Reason, Via: String;
   HwndInt: Int64;
 begin
   Assert(TThread.CurrentThread.ThreadID = MainThreadID, 'HandleDismissDialog must run on the main thread');
@@ -2518,6 +2631,7 @@ begin
   Result.Id := AReq.Id;
 
   Selector := '';
+  FileName := '';
   HasButton := FALSE;
   TargetDlg := 0;
   if AReq.Args <> NIL then
@@ -2527,6 +2641,18 @@ begin
         begin
           Selector := TJSONString(ButtonVal).Value;
           HasButton := Trim(Selector) <> '';
+        end;
+      FileNameVal := AReq.Args.GetValue('fileName');
+      if FileNameVal <> NIL then
+        begin
+          // A wrong type is refused, never ignored: an ignored name would let the button be clicked with whatever the box holds.
+          if not (FileNameVal is TJSONString) then
+            begin
+              Result.Ok := FALSE; Result.ErrorCode := ErrInvalidRequest;
+              Result.ErrorMessage := 'dismiss_dialog args.fileName must be a string';
+              exit;
+            end;
+          FileName := TJSONString(FileNameVal).Value;
         end;
       HwndVal := AReq.Args.GetValue('hwnd');
       if HwndVal <> NIL then
@@ -2542,6 +2668,8 @@ begin
         end;
     end;
 
+  if not HasButton
+  then Selector := '';
   Exclude := NIL;   // FMX forms never match the dialog filter (see the comment above HandleDismissDialog)
 
   {$IFDEF MSWINDOWS} PlatformName := 'windows';
@@ -2553,20 +2681,7 @@ begin
     Wrap.AddPair('dialogs', EnumerateNativeDialogs(Exclude));   // empty off Windows
     Wrap.AddPair('supported', TJSONBool.Create(NativeDialogsSupported));
     Wrap.AddPair('platform', PlatformName);
-    if HasButton then
-      begin
-        Clicked := ClickNativeDialogButton(Exclude, TargetDlg, Selector, ClickedId, ClickedCap, ResolvedDlg, Reason, Via);
-        Wrap.AddPair('clicked', TJSONBool.Create(Clicked));
-        if Clicked
-        then
-          begin
-            Wrap.AddPair('clickedId', TJSONNumber.Create(ClickedId));
-            Wrap.AddPair('clickedCaption', ClickedCap);
-            Wrap.AddPair('dialogHwnd', TJSONNumber.Create(Int64(ResolvedDlg)));
-            Wrap.AddPair('via', Via);
-          end
-        else Wrap.AddPair('reason', Reason);
-      end;
+    AddDismissDialogFields(Wrap, Exclude, TargetDlg, Selector, FileName);
     Result.Ok := TRUE;
     Result.ResultJson := Wrap;
     Wrap := NIL;

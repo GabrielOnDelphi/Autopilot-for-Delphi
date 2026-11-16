@@ -1,7 +1,7 @@
 ﻿unit Autopilot.Bridge.Vcl;
 
 {=============================================================================================================
-   2026.11.14
+   2026.11.15
    www.GabrielMoraru.com
 --------------------------------------------------------------------------------------------------------------
    Public bridge interface for VCL target projects (Windows only)
@@ -14,7 +14,7 @@
    - list_tree: a form with a published string property AutopilotGuide gets its text as the field guide of the form's node
    - list_tree: optional filters form (one form's nodes) and formsOnly (only the form nodes), for a large app such as the Delphi IDE
    - screenshot: a whole form, or one control cropped out of it (path), optionally scaled down (maxWidth); a minimized form keeps its labels and other controls without a window
-   - TColor and TAlphaColor coercion, one-level dotted propName, parent-inheritance auto-flip (VCL-only), opt-in click mode='message' (click queued to run after the answer, button-class controls)
+   - TColor and TAlphaColor coercion, one-level dotted propName, parent-inheritance auto-flip (VCL-only), opt-in click mode='message' (the click runs after the answer, on every class that has a click path)
    - How Autopilot works and how to use it with an AI: the book "Delphi in All Its Glory" Part 5, "AI-Assisted Development for Delphi", chapter "We Need a Hero - Enter Autopilot for Delphi".
      https://GabrielMoraru.com/the-delphi-in-all-its-glory-book-5-ai-assisted-development-for-delphi/
 =============================================================================================================}
@@ -52,7 +52,7 @@ uses
   Winapi.Windows, Winapi.Messages,
   System.SysUtils, System.SyncObjs, System.JSON, System.Rtti, System.TypInfo,
   System.NetEncoding, System.UITypes, System.UIConsts,
-  Vcl.Forms, Vcl.Controls, Vcl.StdCtrls, Vcl.ExtCtrls, Vcl.Graphics, Vcl.Imaging.PngImage,
+  Vcl.Forms, Vcl.Controls, Vcl.StdCtrls, Vcl.ExtCtrls, Vcl.Graphics, Vcl.Imaging.PngImage, Vcl.Menus, Vcl.CheckLst,
   Autopilot.Bridge.Core, Autopilot.Bridge.Log, Autopilot.Bridge.NamedPipe, Autopilot.Bridge.NativeDialogs, Autopilot.Bridge.Worker, Autopilot.Bridge.Commands;
 {$ELSE}
 uses
@@ -1796,13 +1796,41 @@ begin
 end;
 
 
+{ The path filter of list_tree.
+  TRUE when AComp is ARoot or reaches it through a chain of owners and visual parents, in any mix: TComponent.Owner, TControl.Parent, and for a TMenuItem its parent item and its menu.
+  A control owned by the form but shown inside a panel lies under that panel, so the filter shrinks a form whose controls are all owned flat by the form.
+  ASeen holds the components this query already tried, so each is walked once and a cycle cannot loop. }
+function LiesUnder(AComp, ARoot: TComponent; ASeen: TList): Boolean;
+begin
+  if AComp = NIL then EXIT(FALSE);
+  if AComp = ARoot then EXIT(TRUE);
+  if ASeen.IndexOf(AComp) >= 0 then EXIT(FALSE);
+  ASeen.Add(AComp);
+  Result := LiesUnder(AComp.Owner, ARoot, ASeen);
+  if not Result and (AComp is TControl)
+  then Result := LiesUnder(TControl(AComp).Parent, ARoot, ASeen);
+  if not Result and (AComp is TMenuItem)
+  then Result := LiesUnder(TMenuItem(AComp).Parent, ARoot, ASeen) or LiesUnder(TMenuItem(AComp).GetParentMenu, ARoot, ASeen);
+end;
+
+
+{ TRUE when list_tree lists AComp: always without a path filter (ARoot = NIL), else only when AComp lies under ARoot. }
+function KeptByPathFilter(AComp, ARoot: TComponent; ASeen: TList): Boolean;
+begin
+  if ARoot = NIL then EXIT(TRUE);
+  ASeen.Clear;
+  Result := LiesUnder(AComp, ARoot, ASeen);
+end;
+
+
 { Command handlers — invoked on the main thread ------------------------ }
 
 { Recurse a component tree, emitting one JSON node per component.
   AParentPath is the dotted path of AParent (the container).
-  AVisited prevents cycles (defensive — a TComponent.FOwner chain should never cycle, but we walk arbitrary containers). }
+  AVisited prevents cycles (defensive — a TComponent.FOwner chain should never cycle, but we walk arbitrary containers).
+  ARoot is the path filter (NIL = none): the walk still visits every component, so each node and its path are the same as without the filter, but only the nodes under ARoot are emitted. }
 procedure WalkComponents(AFormName, AParentPath: String; AParent: TComponent;
-                         AItems: TJSONArray; AVisited: TList);
+                         AItems: TJSONArray; AVisited: TList; ARoot: TComponent; ASeen: TList);
 var
   j: Integer;
   Child: TComponent;
@@ -1816,12 +1844,15 @@ begin
       if AVisited.IndexOf(Child) >= 0 then Continue;
       AVisited.Add(Child);
       ChildPath := AParentPath + '.' + LeafNameFor(Child);
-      Node := BuildComponentNode(AFormName, ChildPath, Child);
-      AItems.AddElement(Node);   // AItems owns Node from here, so a raise below cannot leak it
-      AddReparentedField(Node, Child, AParent);
+      if KeptByPathFilter(Child, ARoot, ASeen) then
+        begin
+          Node := BuildComponentNode(AFormName, ChildPath, Child);
+          AItems.AddElement(Node);   // AItems owns Node from here, so a raise below cannot leak it
+          AddReparentedField(Node, Child, AParent);
+        end;
       // Recurse into containers (frames, panels with owned children, nested data modules).
       if Child.ComponentCount > 0
-      then WalkComponents(AFormName, ChildPath, Child, AItems, AVisited);
+      then WalkComponents(AFormName, ChildPath, Child, AItems, AVisited, ARoot, ASeen);
     end;
 end;
 
@@ -1838,25 +1869,27 @@ begin
 end;
 
 
-{ Optional args: form (only the nodes of the forms with that name, case-insensitive) and formsOnly (only the form nodes).
-  Both together give the form node of that form only.
+{ Optional args: form (only the nodes of the forms with that name, case-insensitive), formsOnly (only the form nodes) and path (only the node at that path and what lies under it, LiesUnder).
+  The filters combine: a node is listed only when every filter given keeps it.
   Without them the answer is the whole tree, as it always was. }
 function HandleListTree(const AReq: TBridgeRequest): TBridgeResponse;
 var
+  PathRoot: TComponent;
+  Seen: TList;
   Items: TJSONArray;
   Wrap, FormNode: TJSONObject;
   Visited: TList;
   i: Integer;
   Form: TCustomForm;
   Guide, GuideError: String;
-  FormFilter, ArgError: String;
+  FormFilter, PathFilter, ArgError: String;
   FormsOnly: Boolean;
 begin
   Assert(GetCurrentThreadId = MainThreadID, 'HandleListTree must run on the main thread');
   Result := Default(TBridgeResponse);
   Result.Id := AReq.Id;
 
-  if not TryParseListTreeArgs(AReq.Args, FormFilter, FormsOnly, ArgError) then
+  if not TryParseListTreeArgs(AReq.Args, FormFilter, FormsOnly, PathFilter, ArgError) then
     begin
       Result.Ok := FALSE;
       Result.ErrorCode := ErrInvalidRequest;
@@ -1871,8 +1904,17 @@ begin
       Result.ErrorMessage := ArgError;
       EXIT;
     end;
+  // The path filter resolves like the path of every other command: -32001 or -32002, before any JSON is built.
+  PathRoot := NIL;
+  if PathFilter <> '' then
+    begin
+      PathRoot := ResolvePathOrFail(PathFilter, Result);
+      if PathRoot = NIL then EXIT;
+    end;
   Result.Ok := TRUE;
 
+  Seen := TList.Create;
+  try
   Items := TJSONArray.Create;
   try
     { Each form gets its own Visited set so a component reachable from two forms doesn't get truncated from the second tree.
@@ -1888,16 +1930,19 @@ begin
             Its Caption read may AV on an unrealized form — TryGetTextProperty swallows that and the node simply lacks a `text` field.
             Then recurse owned components (including frames). }
           Visited.Add(Form);
-          FormNode := BuildComponentNode(Form.Name, Form.Name, Form);
-          Items.AddElement(FormNode);
-          AddReparentedField(FormNode, Form, NIL);   // a form embedded in another form's panel
-          if TryGetFormGuide(Form, Guide, GuideError)
-          then FormNode.AddPair('guide', Guide)
-          else
-            if GuideError <> ''
-            then FormNode.AddPair('guideError', GuideError);
+          if KeptByPathFilter(Form, PathRoot, Seen) then
+            begin
+              FormNode := BuildComponentNode(Form.Name, Form.Name, Form);
+              Items.AddElement(FormNode);
+              AddReparentedField(FormNode, Form, NIL);   // a form embedded in another form's panel
+              if TryGetFormGuide(Form, Guide, GuideError)
+              then FormNode.AddPair('guide', Guide)
+              else
+                if GuideError <> ''
+                then FormNode.AddPair('guideError', GuideError);
+            end;
           if not FormsOnly
-          then WalkComponents(Form.Name, Form.Name, Form, Items, Visited);
+          then WalkComponents(Form.Name, Form.Name, Form, Items, Visited, PathRoot, Seen);
         finally
           FreeAndNil(Visited);
         end;
@@ -1911,6 +1956,9 @@ begin
       The worker's outer try/except still converts this to an error response over the wire. }
     FreeAndNil(Items);
     raise;
+  end;
+  finally
+    FreeAndNil(Seen);
   end;
 end;
 
@@ -1961,12 +2009,84 @@ begin
 end;
 
 
-{ click mode=message: the click runs on the main thread AFTER this command's answer, so a button whose OnClick opens a modal dialog does not block the dispatcher into -32004 (pair with dismiss_dialog).
-  It used to post BM_CLICK.
-  Measured (Test_Click_ModeMessageOnMinimizedForm): a BM_CLICK posted to a button whose form is minimized does not reach OnClick when the button does not hold the focus - the E2E demo started with SW_SHOWMINNOACTIVE, and any customer app sitting minimized.
+{ click mode=message: the click runs on the main thread AFTER this command's answer, so a control whose OnClick opens a modal dialog does not block the dispatcher into -32004 (pair with dismiss_dialog).
+  HandleClick posts BM_CLICK to a button-class control on a form that is not minimized, and calls this routine for every other case: every other class (TMenuItem, TToolButton, TSpeedButton, TLabel, ...), and a button on a minimized form.
+  The queued click is the default click, run later. The app keeps answering while it sits inside ShowModal: CheckSynchronize takes its list and sets SyncList to NIL before it runs it, so the next command goes into a new list, which the modal loop serves (System.Classes.pas, CheckSynchronize; Vcl.Forms.pas, TApplication.WndProc on WM_NULL and TApplication.Idle).
+  Known limit: a command queued in the SAME list behind the click starts only after the dialog closes (the for loop of CheckSynchronize), and answers -32004 "has not started yet" meanwhile.
+  Inferred, not measured, for a button: a BM_CLICK posted to a button whose form is minimized does not reach OnClick when the button does not hold the focus - the E2E demo started with SW_SHOWMINNOACTIVE, and any customer app sitting minimized.
+  Test_Click_ModeMessageOnMinimizedForm cannot show it, because on a minimized form DispatchOneClick calls this routine and posts no BM_CLICK; it proves that the queued click runs once.
   It does reach OnClick when the button already holds the focus of its thread (Footguns.md, section "Mouse messages posted or sent to a VCL control"), so the outcome depends on the focus; ForceQueue does not.
   So for a minimized form the click is queued through TThread.ForceQueue instead (it runs at the app's next CheckSynchronize, which the VCL main loop does on the WM_NULL that WakeMainThread posts).
   The path is resolved again when it runs, because the control may be gone by then; a control that vanished or was disabled meanwhile is skipped with a log line. }
+type
+  { The route of the default click, in the order ResolveClickRoute tries them (the protected-Click trick is the one TUIAutomationCustomControlProvider.DoInvoke uses in Vcl.UIACtrlProvider.pas):
+      crButton       - TButton.Click (public)
+      crWinControl   - TWinControlClass(Ctrl).Click, the protected-Click trick
+      crControlClick - TControlAccess(Ctrl).Click, a non-windowed control bound to an action
+      crNotify       - OnClick(Self) through RTTI }
+  TClickRoute = (crNone, crButton, crWinControl, crControlClick, crNotify);
+
+
+{ The route the default click takes on AComp; crNone when AComp has none (no Click of its own, no action, no OnClick).
+  ANotify is set only for crNotify. }
+function ResolveClickRoute(AComp: TComponent; OUT ANotify: TNotifyEvent): TClickRoute;
+var
+  Ctx: TRttiContext;
+  RT: TRttiType;
+  OnClickProp: TRttiProperty;
+  RawValue: TValue;
+begin
+  ANotify := NIL;
+  if AComp is TButton     then EXIT(crButton);
+  if AComp is TWinControl then EXIT(crWinControl);
+  { A TGraphicControl bound to an action (TSpeedButton, TToolButton): TControl.Click (Vcl.Controls.pas) runs ActionLink.Execute, i.e. TCustomAction.Execute - Update, AutoCheck, TActionList.OnExecute, the targets of a standard action, and OnExecute with the action as Sender.
+    Calling the OnClick that TControl.ActionChange copied from OnExecute skips all of that, and an action without OnExecute (TFileExit, TEditCopy) leaves OnClick NIL, so the click would fail with unsupported_action. }
+  if (AComp is TControl) and (TControlAccess(AComp).ActionLink <> NIL)
+  then EXIT(crControlClick);
+  { OnClick through RTTI, read from AComp.ClassType, so any component with that property qualifies (TLabel, TImage, TMenuItem, TToolButton).
+    TValue.AsType<TNotifyEvent> stumbles in some Delphi versions because of generic type inference (TNotifyEvent is a specific method-pointer alias, RTTI gives back a generic "procedure of object").
+    So the raw method is read, and reinterpreted as TNotifyEvent: both layouts are (Code, Data: Pointer). }
+  Result := crNone;
+  Ctx := TRttiContext.Create;
+  try
+    RT := Ctx.GetType(AComp.ClassType);
+    if RT = NIL then EXIT;
+    OnClickProp := RT.GetProperty('OnClick');
+    if (OnClickProp = NIL) or not OnClickProp.IsReadable then EXIT;
+    RawValue := OnClickProp.GetValue(AComp);
+    if RawValue.IsEmpty or (RawValue.Kind <> tkMethod) then EXIT;
+    TMethod(ANotify) := PMethod(RawValue.GetReferenceToRawData)^;
+    if Assigned(ANotify)
+    then Result := crNotify;
+  finally
+    Ctx.Free;
+  end;
+end;
+
+
+{ 'click' or 'onclick': the dispatchedVia of the default click. }
+function ClickRouteVia(ARoute: TClickRoute): String;
+begin
+  if ARoute = crNotify
+  then Result := 'onclick'
+  else Result := 'click';
+end;
+
+
+{ Runs one default click on AComp through ARoute, as ResolveClickRoute found it. }
+procedure RunClickRoute(AComp: TComponent; ARoute: TClickRoute; const ANotify: TNotifyEvent);
+begin
+  case ARoute of
+    crButton      : TButton(AComp).Click;
+    crWinControl  : TWinControlClass(AComp).Click;
+    crControlClick: TControlAccess(AComp).Click;
+    crNotify      : ANotify(AComp);
+  else
+    raise EArgumentException.Create('RunClickRoute:' + AComp.ClassName + ' has no click route');
+  end;
+end;
+
+
 procedure QueueDeferredClick(const APath: String);
 var
   Path: String;
@@ -1978,11 +2098,13 @@ begin
       Resp: TBridgeResponse;
       Comp: TComponent;
       Enabled: Boolean;
+      Route: TClickRoute;
+      Notify: TNotifyEvent;
     begin
       if GWorker = NIL then EXIT;   // the bridge stopped meanwhile
       Resp := Default(TBridgeResponse);
       Comp := ResolvePathOrFail(Path, Resp);
-      if not (Comp is TButtonControl) then
+      if Comp = NIL then
         begin
           BridgeLogWarn('bridge', 'click mode=message: ' + Path + ' is gone, the queued click is skipped');
           EXIT;
@@ -1992,12 +2114,31 @@ begin
           BridgeLogWarn('bridge', 'click mode=message: ' + Path + ' was disabled meanwhile, the queued click is skipped');
           EXIT;
         end;
-      { A push button (TButton, TBitBtn): TCustomButton.Click, as the default dispatch.
-        A check box or radio button toggles only through BN_CLICKED (TCustomCheckBox.Toggle), so it keeps the BM_CLICK, sent synchronously now.
-        Not measured on a minimized form. }
-      if Comp is TCustomButton
-      then TCustomButton(Comp).Click
-      else TWinControl(Comp).Perform(BM_CLICK, 0, 0);
+      try
+        { A check box or radio button toggles only through BN_CLICKED (TCustomCheckBox.Toggle), so it keeps the BM_CLICK, sent synchronously now.
+          Not measured on a minimized form.
+          Every other class runs the default click, resolved again here because the app may have changed OnClick or the action meanwhile. }
+        if (Comp is TButtonControl) and not (Comp is TCustomButton)
+        then TWinControl(Comp).Perform(BM_CLICK, 0, 0)
+        else
+          begin
+            Route := ResolveClickRoute(Comp, Notify);
+            if Route = crNone then
+              begin
+                BridgeLogWarn('bridge', 'click mode=message: ' + Path + ' has no click path any more, the queued click is skipped');
+                EXIT;
+              end;
+            RunClickRoute(Comp, Route, Notify);
+          end;
+      except
+        on E: Exception do
+          begin
+            { The answer said "queued" long ago, so the log is the only place the caller can see this.
+              Re-raised: CheckSynchronize gives it to ApplicationHandleException, as the VCL does with an exception in a real click. }
+            BridgeLogWarn('bridge', 'click mode=message: the queued click on ' + Path + ' raised ' + E.ClassName + ': ' + E.Message);
+            raise;
+          end;
+      end;
     end);
 end;
 
@@ -2012,95 +2153,27 @@ var
   Enabled: Boolean;
   Wrap: TJSONObject;
   DispatchedVia, StoppedReason, Mode: String;
-  Ctx: TRttiContext;
-  RT: TRttiType;
-  OnClickProp: TRttiProperty;
+  Route: TClickRoute;
   Notify: TNotifyEvent;
-  HasNotify, UseControlClick: Boolean;
-  RawValue: TValue;
   RequestedCount, ClicksDone: Integer;
   Watch: TFreeWatch;
 
-  { Resolves the dispatch path once.
-    Returns FALSE if the control supports no known click path.
-    On success sets DispatchedVia ('click' or 'onclick') and, for the 'onclick' path, Notify. }
-  function ResolveDispatchPath: Boolean;
-  begin
-    HasNotify := FALSE;
-    UseControlClick := FALSE;
-    { Preference order (the protected-Click trick is the one TUIAutomationCustomControlProvider.DoInvoke uses in Vcl.UIACtrlProvider.pas):
-        1. TButton.Click (public, fires WM_COMMAND semantics)
-        2. TWinControlClass(Ctrl).Click — protected-Click trick
-        3. TControlAccess(Ctrl).Click — a non-windowed control bound to an action
-        4. OnClick(Self) via RTTI }
-    if Comp is TButton then
-      begin
-        DispatchedVia := 'click';
-        exit(TRUE);
-      end;
-    if Comp is TWinControl then
-      begin
-        DispatchedVia := 'click';
-        exit(TRUE);
-      end;
-    { A TGraphicControl bound to an action (TSpeedButton, TToolButton): TControl.Click (Vcl.Controls.pas) runs ActionLink.Execute, i.e. TCustomAction.Execute - Update, AutoCheck, TActionList.OnExecute, the targets of a standard action, and OnExecute with the action as Sender.
-      Calling the OnClick that TControl.ActionChange copied from OnExecute skips all of that, and an action without OnExecute (TFileExit, TEditCopy) leaves OnClick NIL, so the click would fail with unsupported_action. }
-    if (Comp is TControl) and (TControlAccess(Comp).ActionLink <> NIL) then
-      begin
-        DispatchedVia := 'click';
-        UseControlClick := TRUE;
-        exit(TRUE);
-      end;
-    { Resolve OnClick once via RTTI.
-      TValue.AsType<TNotifyEvent> stumbles in some Delphi versions because of generic type inference (TNotifyEvent is a specific method-pointer alias, RTTI gives back a generic "procedure of object").
-      Use TMethod re-assembly: read the raw method, then build a TMethod and reinterpret as TNotifyEvent. }
-    Ctx := TRttiContext.Create;
-    try
-      RT := Ctx.GetType(Comp.ClassType);
-      if RT = NIL then exit(FALSE);
-      OnClickProp := RT.GetProperty('OnClick');
-      if (OnClickProp = NIL) or not OnClickProp.IsReadable then exit(FALSE);
-      RawValue := OnClickProp.GetValue(Comp);
-      if RawValue.IsEmpty or (RawValue.Kind <> tkMethod) then exit(FALSE);
-      // TValue wraps a method-pointer as a TMethod record. Both layouts are {Code, Data: Pointer}.
-      TMethod(Notify) := PMethod(RawValue.GetReferenceToRawData)^;
-      if not Assigned(Notify) then exit(FALSE);
-      DispatchedVia := 'onclick';
-      HasNotify := TRUE;
-      Result := TRUE;
-    finally
-      Ctx.Free;
-    end;
-  end;
-
-  { Dispatch one click using the resolved path.
-    Assumes ResolveDispatchPath returned TRUE (or DispatchedVia='message', which needs no resolve). }
+  { Dispatch one click on the route ResolveClickRoute found (Route <> crNone). }
   procedure DispatchOneClick;
   begin
-    if DispatchedVia = 'message'
+    if Mode = 'message'
     then
-      begin
-        { A posted BM_CLICK can be lost when the button's top-level window is minimized (see QueueDeferredClick); there the click is queued instead.
-          Otherwise the BM_CLICK post stays: the BUTTON class proc turns it into WM_LBUTTONDOWN+UP plus BN_CLICKED (learn.microsoft.com, BM_CLICK).
-          A failed post (e.g. full message queue) raises EOSError, which the caller's loop reports as stoppedReason. }
-        if IsIconic(GetAncestor(TButtonControl(Comp).Handle, GA_ROOT))
-        then QueueDeferredClick(Path)
-        else
+      { A button-class control on a form that is not minimized: the BM_CLICK post stays; the BUTTON class proc turns it into WM_LBUTTONDOWN+UP plus BN_CLICKED (learn.microsoft.com, BM_CLICK).
+        A posted BM_CLICK can be lost when the button's top-level window is minimized (see QueueDeferredClick), and every other class has no BUTTON window: there the click is queued.
+        A failed post (e.g. full message queue) raises EOSError, which the caller's loop reports as stoppedReason. }
+      if (Comp is TButtonControl) and not IsIconic(GetAncestor(TButtonControl(Comp).Handle, GA_ROOT))
+      then
+        begin
           if not PostMessage(TButtonControl(Comp).Handle, BM_CLICK, 0, 0)
           then RaiseLastOSError;
-      end
-    else
-      if Comp is TButton
-      then TButton(Comp).Click
-      else
-        if Comp is TWinControl
-        then TWinControlClass(Comp).Click
-        else
-          if UseControlClick
-          then TControlAccess(Comp).Click
-          else
-            if HasNotify
-            then Notify(Comp);
+        end
+      else QueueDeferredClick(Path)
+    else RunClickRoute(Comp, Route, Notify);
   end;
 
 begin
@@ -2108,7 +2181,6 @@ begin
   Result := Default(TBridgeResponse);
   Result.Id := AReq.Id;
   DispatchedVia := '';
-  UseControlClick := FALSE;
   StoppedReason := '';
   ClicksDone := 0;
 
@@ -2197,27 +2269,19 @@ begin
       exit;
     end;
 
-  if Mode = 'message'
-  then
+  { Resolved at request time in both modes, so a component with no click path answers -32005 now, instead of "queued" and then nothing.
+    The queued click of mode=message resolves the route again when it runs. }
+  Route := ResolveClickRoute(Comp, Notify);
+  if Route = crNone then
     begin
-      { mode=message is limited to button-class controls (QueueDeferredClick). Rejected loudly elsewhere, never silently ignored. }
-      if not (Comp is TButtonControl) then
-        begin
-          Result.Ok := FALSE;
-          Result.ErrorCode := ErrUnsupportedAction;
-          Result.ErrorMessage := Comp.ClassName + ' cannot take mode=message: it is only for ' + 'button-class controls (TButton/TBitBtn/TCheckBox/TRadioButton). ' + 'Omit mode for the default dispatch.';
-          exit;
-        end;
-      DispatchedVia := 'message';
-    end
-  else
-    if not ResolveDispatchPath then
-      begin
-        Result.Ok := FALSE;
-        Result.ErrorCode := ErrUnsupportedAction;
-        Result.ErrorMessage := Comp.ClassName + ' has no Click method and no OnClick handler';
-        exit;
-      end;
+      Result.Ok := FALSE;
+      Result.ErrorCode := ErrUnsupportedAction;
+      Result.ErrorMessage := Comp.ClassName + ' has no Click method and no OnClick handler';
+      exit;
+    end;
+  if Mode = 'message'
+  then DispatchedVia := 'message'
+  else DispatchedVia := ClickRouteVia(Route);
 
   { Re-check Enabled each iteration: a previous OnClick may have disabled the control.
     We honor the single-click promise (don't act on disabled) on every iteration, then return a partial success with stoppedReason='disabled' so the caller can tell.
@@ -2455,8 +2519,131 @@ begin
 end;
 
 
+type
+  TCheckListBoxAccess = class(TCheckListBox);   // reaches the protected ClickCheck
+
+
+{ The checks that set_checked and read_property with args.index share.
+  TRUE when AComp is a TCheckListBox and AIndex names one of its items; FALSE with AResp set to the error otherwise. }
+function TryGetCheckListItem(AComp: TComponent; const ACmd: String; AIndex: Integer; var AResp: TBridgeResponse; OUT ABox: TCheckListBox): Boolean;
+begin
+  ABox := NIL;
+  AResp.Ok := FALSE;
+  if not (AComp is TCheckListBox) then
+    begin
+      AResp.ErrorCode := ErrUnsupportedAction;
+      AResp.ErrorMessage := ACmd + ' args.index works only on a TCheckListBox; ' + AComp.Name + ' is a ' + AComp.ClassName;
+      EXIT(FALSE);
+    end;
+  ABox := TCheckListBox(AComp);
+  if (AIndex < 0) or (AIndex >= ABox.Items.Count) then
+    begin
+      AResp.ErrorCode := ErrInvalidRequest;
+      AResp.ErrorMessage := ACmd + ' args.index ' + IntToStr(AIndex) + ' is out of range: ' + AComp.Name + ' has ' + IntToStr(ABox.Items.Count) + ' items (index 0 to ' + IntToStr(ABox.Items.Count - 1) + ')';
+      EXIT(FALSE);
+    end;
+  AResp.Ok := TRUE;
+  Result := TRUE;
+end;
+
+
+{ set_checked with args.index: checks or unchecks one item of a TCheckListBox.
+  Writing State[i] fires no event (Vcl.CheckLst.pas, TCustomCheckListBox.SetState), so on a real change the bridge then calls the protected ClickCheck, as ToggleClickCheck does after a mouse click: OnClickCheck runs once.
+  The same state again changes nothing and fires nothing (changed: false).
+  An OnClickCheck that frees the list box: ok with freed: true, as for a plain set_checked. }
+procedure SetCheckListItem(AComp: TComponent; const APath: String; AIndex: Integer; AChecked: Boolean; var AResp: TBridgeResponse);
+var
+  Box: TCheckListBox;
+  NewState: TCheckBoxState;
+  ItemText: String;
+  Changed, Freed: Boolean;
+  Watch: TFreeWatch;
+  Wrap: TJSONObject;
+begin
+  if not TryGetCheckListItem(AComp, 'set_checked', AIndex, AResp, Box) then EXIT;
+  if Box.Header[AIndex] then
+    begin
+      AResp.Ok := FALSE;
+      AResp.ErrorCode := ErrUnsupportedAction;
+      AResp.ErrorMessage := 'item ' + IntToStr(AIndex) + ' of ' + Box.Name + ' is a header, which has no check box';
+      EXIT;
+    end;
+  if not Box.ItemEnabled[AIndex] then
+    begin
+      AResp.Ok := FALSE;
+      AResp.ErrorCode := ErrControlDisabled;
+      AResp.ErrorMessage := 'item ' + IntToStr(AIndex) + ' of ' + Box.Name + ' is disabled';
+      EXIT;
+    end;
+
+  ItemText := Box.Items[AIndex];
+  if AChecked
+  then NewState := cbChecked
+  else NewState := cbUnchecked;
+  Changed := Box.State[AIndex] <> NewState;
+  Freed := FALSE;
+  if Changed then
+    begin
+      Watch := TFreeWatch.Create(Box);
+      try
+        Box.State[AIndex] := NewState;
+        TCheckListBoxAccess(Box).ClickCheck;
+        Freed := Watch.Freed;
+      finally
+        FreeAndNil(Watch);   // its destructor unlinks it from Box when Box is still alive
+      end;
+    end;
+
+  Wrap := TJSONObject.Create;
+  Wrap.AddPair('path', APath);
+  Wrap.AddPair('index', TJSONNumber.Create(AIndex));
+  Wrap.AddPair('item', ItemText);
+  Wrap.AddPair('checked', TJSONBool.Create(AChecked));
+  Wrap.AddPair('changed', TJSONBool.Create(Changed));
+  Wrap.AddPair('dataBound', TJSONBool.Create(FALSE));
+  if Freed
+  then Wrap.AddPair('freed', TJSONBool.Create(TRUE));
+  AResp.Ok := TRUE;
+  AResp.ResultJson := Wrap;
+end;
+
+
+{ read_property with args.index: only propName Checked (any case), read from one item of a TCheckListBox.
+  A grayed item reads false, as TCheckListBox.Checked[i] gives it. }
+procedure ReadCheckListItem(AComp: TComponent; const APath, APropName: String; AIndex: Integer; var AResp: TBridgeResponse);
+var
+  Box: TCheckListBox;
+  Wrap: TJSONObject;
+begin
+  if not SameText(APropName, 'Checked') then
+    begin
+      AResp.Ok := FALSE;
+      AResp.ErrorCode := ErrUnsupportedAction;
+      AResp.ErrorMessage := 'read_property args.index works only with propName Checked; got ' + APropName;
+      EXIT;
+    end;
+  if not TryGetCheckListItem(AComp, 'read_property', AIndex, AResp, Box) then EXIT;
+
+  Wrap := TJSONObject.Create;
+  Wrap.AddPair('path', APath);
+  Wrap.AddPair('propName', 'Checked');
+  Wrap.AddPair('index', TJSONNumber.Create(AIndex));
+  if Box.Checked[AIndex]
+  then Wrap.AddPair('value', 'true')
+  else Wrap.AddPair('value', 'false');
+  Wrap.AddPair('kind', 'boolean');
+  Wrap.AddPair('item', Box.Items[AIndex]);
+  Wrap.AddPair('itemCount', TJSONNumber.Create(Box.Items.Count));
+  AResp.Ok := TRUE;
+  AResp.ResultJson := Wrap;
+end;
+
+
 function HandleSetChecked(const AReq: TBridgeRequest): TBridgeResponse;
 var
+  HasIndex: Boolean;
+  Index: Integer;
+  ArgError: String;
   PathVal, CheckedVal: TJSONValue;
   Path: String;
   Checked: Boolean;
@@ -2497,6 +2684,13 @@ begin
       Result.ErrorMessage := 'set_checked requires args.checked (boolean)';
       exit;
     end;
+  if not TryParseItemIndexArg(AReq.Args, 'set_checked', HasIndex, Index, ArgError) then
+    begin
+      Result.Ok := FALSE;
+      Result.ErrorCode := ErrInvalidRequest;
+      Result.ErrorMessage := ArgError;
+      exit;
+    end;
   Path := TJSONString(PathVal).Value;
   Checked := TJSONBool(CheckedVal).AsBoolean;
 
@@ -2507,6 +2701,11 @@ begin
       Result.Ok := FALSE;
       Result.ErrorCode := ErrControlDisabled;
       Result.ErrorMessage := Comp.Name + ' is disabled';
+      exit;
+    end;
+  if HasIndex then
+    begin
+      SetCheckListItem(Comp, Path, Index, Checked, Result);
       exit;
     end;
 
@@ -3366,6 +3565,8 @@ end;
 
 function HandleReadProperty(const AReq: TBridgeRequest): TBridgeResponse;
 var
+  HasIndex: Boolean;
+  Index: Integer;
   PathVal, NameVal: TJSONValue;
   Path, PropName: String;
   Comp: TComponent;
@@ -3401,12 +3602,24 @@ begin
       Result.ErrorMessage := 'read_property requires args.propName (string)';
       exit;
     end;
+  if not TryParseItemIndexArg(AReq.Args, 'read_property', HasIndex, Index, ErrMsg) then
+    begin
+      Result.Ok := FALSE;
+      Result.ErrorCode := ErrInvalidRequest;
+      Result.ErrorMessage := ErrMsg;
+      exit;
+    end;
   Path := TJSONString(PathVal).Value;
   PropName := TJSONString(NameVal).Value;
 
   Comp := ResolvePathOrFail(Path, Result);
   if Comp = NIL then exit;
   { No Enabled check — reading a disabled control is exactly the scenario a debug-channel user needs (e.g. "why is btnSave disabled? what's its Tag?"). }
+  if HasIndex then
+    begin
+      ReadCheckListItem(Comp, Path, PropName, Index, Result);
+      exit;
+    end;
 
   if not TryReadGenericProperty(Comp, PropName, Value, Kind, HandlerUnit, ErrCode, ErrMsg, FailedInstance) then
     begin
@@ -3466,14 +3679,12 @@ end;
   With no 'button' arg it just lists the dialogs currently up (discovery); with 'button' it dispatches that button to dismiss one. }
 function HandleDismissDialog(const AReq: TBridgeRequest): TBridgeResponse;
 var
-  ButtonVal, HwndVal: TJSONValue;
-  Selector: String;
-  HasButton, Clicked: Boolean;
-  TargetDlg, ResolvedDlg: NativeUInt;
+  ButtonVal, HwndVal, FileNameVal: TJSONValue;
+  Selector, FileName: String;
+  HasButton: Boolean;
+  TargetDlg: NativeUInt;
   Exclude: TArray<NativeUInt>;
   Wrap: TJSONObject;
-  ClickedId: Integer;
-  ClickedCap, Reason, Via: String;
   HwndInt: Int64;
 begin
   Assert(GetCurrentThreadId = MainThreadID, 'HandleDismissDialog must run on the main thread');
@@ -3481,6 +3692,7 @@ begin
   Result.Id := AReq.Id;
 
   Selector := '';
+  FileName := '';
   HasButton := FALSE;
   TargetDlg := 0;
   if AReq.Args <> NIL then
@@ -3490,6 +3702,18 @@ begin
         begin
           Selector := TJSONString(ButtonVal).Value;
           HasButton := Trim(Selector) <> '';
+        end;
+      FileNameVal := AReq.Args.GetValue('fileName');
+      if FileNameVal <> NIL then
+        begin
+          { A wrong type is refused, never ignored: an ignored name would let the button be clicked with whatever the box holds. }
+          if not (FileNameVal is TJSONString) then
+            begin
+              Result.Ok := FALSE; Result.ErrorCode := ErrInvalidRequest;
+              Result.ErrorMessage := 'dismiss_dialog args.fileName must be a string';
+              exit;
+            end;
+          FileName := TJSONString(FileNameVal).Value;
         end;
       HwndVal := AReq.Args.GetValue('hwnd');
       if HwndVal <> NIL then
@@ -3505,26 +3729,15 @@ begin
         end;
     end;
 
+  if not HasButton
+  then Selector := '';
   Exclude := BuildVclDialogExclude;
   Wrap := TJSONObject.Create;
   try
     Wrap.AddPair('dialogs', EnumerateNativeDialogs(Exclude));   // pre-click snapshot
     Wrap.AddPair('supported', TJSONBool.Create(NativeDialogsSupported));
     Wrap.AddPair('platform', 'windows');
-    if HasButton then
-      begin
-        Clicked := ClickNativeDialogButton(Exclude, TargetDlg, Selector, ClickedId, ClickedCap, ResolvedDlg, Reason, Via);
-        Wrap.AddPair('clicked', TJSONBool.Create(Clicked));
-        if Clicked
-        then
-          begin
-            Wrap.AddPair('clickedId', TJSONNumber.Create(ClickedId));
-            Wrap.AddPair('clickedCaption', ClickedCap);
-            Wrap.AddPair('dialogHwnd', TJSONNumber.Create(Int64(ResolvedDlg)));
-            Wrap.AddPair('via', Via);
-          end
-        else Wrap.AddPair('reason', Reason);
-      end;
+    AddDismissDialogFields(Wrap, Exclude, TargetDlg, Selector, FileName);
     Result.Ok := TRUE;
     Result.ResultJson := Wrap;
     Wrap := NIL;   // ownership moved to Result

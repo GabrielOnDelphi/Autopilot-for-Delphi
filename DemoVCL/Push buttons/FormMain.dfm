@@ -2,7 +2,7 @@ object frmMain: TfrmMain
   Left = 0
   Top = 0
   Caption = 'Autopilot for Delphi - VCL demo'
-  ClientHeight = 558
+  ClientHeight = 610
   ClientWidth = 467
   Color = clBtnFace
   Font.Charset = DEFAULT_CHARSET
@@ -2248,10 +2248,56 @@ object frmMain: TfrmMain
     TabOrder = 6
     OnClick = btnDelayedClick
   end
+  object lblDialogResult: TLabel
+    Left = 8
+    Top = 542
+    Width = 5
+    Height = 15
+    Hint =
+      'Test fixture: btnMsgDlg, btnOpenFile and btnSaveFile write the ' +
+      'result of their dialog here'
+    Caption = '-'
+  end
+  object btnMsgDlg: TButton
+    Left = 8
+    Top = 506
+    Width = 140
+    Height = 30
+    Hint =
+      'Test fixture: opens MessageDlg with Yes, No and Abort (a Task Di' +
+      'alog) and writes the button it returned to lblDialogResult'
+    Caption = 'MessageDlg'
+    TabOrder = 9
+    OnClick = btnMsgDlgClick
+  end
+  object btnOpenFile: TButton
+    Left = 156
+    Top = 506
+    Width = 140
+    Height = 30
+    Hint =
+      'Test fixture: opens an Open file dialog and writes the chosen fi' +
+      'le name to lblDialogResult (opens no file)'
+    Caption = 'Open file dialog'
+    TabOrder = 10
+    OnClick = btnOpenFileClick
+  end
+  object btnSaveFile: TButton
+    Left = 304
+    Top = 506
+    Width = 152
+    Height = 30
+    Hint =
+      'Test fixture: opens a Save file dialog and writes the chosen fil' +
+      'e name to lblDialogResult (writes no file)'
+    Caption = 'Save file dialog'
+    TabOrder = 11
+    OnClick = btnSaveFileClick
+  end
   object lblBook: TLinkLabel
     AlignWithMargins = True
     Left = 3
-    Top = 536
+    Top = 588
     Width = 461
     Height = 19
     Hint = 
@@ -2269,7 +2315,7 @@ object frmMain: TfrmMain
   object lblWebsite: TLinkLabel
     AlignWithMargins = True
     Left = 3
-    Top = 511
+    Top = 563
     Width = 461
     Height = 19
     Hint = 'Open the Autopilot for Delphi home page in the browser'
@@ -2297,11 +2343,30 @@ object frmMain: TfrmMain
       end
     end
   end
+  object pmDialog: TPopupMenu
+    Left = 448
+    Top = 140
+    object mnuPopupDialog: TMenuItem
+      Caption = 'Open the native dialog'
+      Hint = 'Test fixture: a popup menu item that opens the same native dialog as btnDialog'
+      OnClick = btnDialogClick
+    end
+  end
   object tmrDelayed: TTimer
     Enabled = False
     OnTimer = tmrDelayedTimer
     Left = 384
     Top = 438
+  end
+  object dlgOpen: TOpenDialog
+    Title = 'Autopilot open fixture'
+    Left = 384
+    Top = 476
+  end
+  object dlgSave: TSaveDialog
+    Title = 'Autopilot save fixture'
+    Left = 416
+    Top = 476
   end
   object actlFixture: TActionList
     Left = 352

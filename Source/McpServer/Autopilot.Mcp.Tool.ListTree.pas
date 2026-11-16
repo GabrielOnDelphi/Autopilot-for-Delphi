@@ -25,6 +25,7 @@ type
     FPid      : Integer;
     FForm     : String;
     FFormsOnly: Boolean;
+    FPath     : String;
   public
     [Optional]
     [SchemaDescription('Target PID. Needed only when several targets run.')]
@@ -37,6 +38,10 @@ type
     [Optional]
     [SchemaDescription('true = only the form nodes: learn the form names cheaply first.')]
     property FormsOnly: Boolean read FFormsOnly write FFormsOnly;
+
+    [Optional]
+    [SchemaDescription('Only this control and what lies under it (owned by it, or shown inside it). Same path forms as the other tools; paths in the answer stay as in the full tree.')]
+    property Path: String read FPath write FPath;
   end;
 
   TListTreeTool = class(TMCPToolBase<TListTreeParams>)
@@ -57,7 +62,8 @@ constructor TListTreeTool.Create;
 begin
   inherited;
   FName := 'list_tree';
-  FDescription := 'List every form and component in the target app, as a flat array at result.components ' + '(form, name, path, class; optional text, hint, enabled, visible, synthetic). ' + 'Path forms for the other tools: "Form" (the form), "Form.Leaf" (breadth-first search of ' + 'what Form owns, shallowest match wins), "Form.A.B.C" (each segment owned by the previous). ' + 'A path the owner tree cannot resolve is tried again through the visual parents. ' + 'Unnamed components appear as "@TButton#N" (N = current index in the owner; it shifts when ' + 'an earlier sibling is freed); use anchored paths for them. ' + 'Large app: formsOnly first, then form.';
+  FReadOnlyHint := TRUE;   // changes nothing in the target app
+  FDescription := 'List every form and component in the target app, as a flat array at result.components ' + '(form, name, path, class; optional text, hint, enabled, visible, synthetic). ' + 'Path forms for the other tools: "Form" (the form), "Form.Leaf" (breadth-first search of ' + 'what Form owns, shallowest match wins), "Form.A.B.C" (each segment owned by the previous). ' + 'A path the owner tree cannot resolve is tried again through the visual parents. ' + 'Unnamed components appear as "@TButton#N" (N = current index in the owner; it shifts when ' + 'an earlier sibling is freed); use anchored paths for them. ' + 'Large app: formsOnly first, then form, then path for one panel or frame.';
 end;
 
 
@@ -67,13 +73,15 @@ var
 begin
   // Forwarded only when given, so a call without them is the request every older server sent: an empty args object.
   Args := NIL;
-  if (Params.Form <> '') or Params.FormsOnly then
+  if (Params.Form <> '') or Params.FormsOnly or (Params.Path <> '') then
     begin
       Args := TJSONObject.Create;
       if Params.Form <> ''
       then Args.AddPair('form', Params.Form);
       if Params.FormsOnly
       then Args.AddPair('formsOnly', TJSONBool.Create(TRUE));
+      if Params.Path <> ''
+      then Args.AddPair('path', Params.Path);
     end;
   Result := RunCommandOnTarget(Cardinal(Params.Pid), BuildRequest(1, 'list_tree', Args));
 end;

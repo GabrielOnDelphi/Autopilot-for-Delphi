@@ -7,6 +7,7 @@
    - Native Win32 dialog escape hatch: reaches MessageBox / Task Dialog / common dialogs with no TComponent
    - EnumerateNativeDialogs: lists this process's visible non-VCL top-level dialog windows as JSON (a Task Dialog's text through MSAA)
    - ClickNativeDialogButton: dispatches a button by role keyword, caption, or control id
+   - SetNativeDialogFileName: fills the File name box of an Open/Save dialog, then (optionally) clicks a button
    - Interface is stdlib-only (System.JSON + NativeUInt); the body is MSWINDOWS-only
 =============================================================================================================}
 
@@ -25,14 +26,30 @@ function NativeDialogsSupported: Boolean;
 function EnumerateNativeDialogs(const AExclude: array of NativeUInt): TJSONArray;
 
 { Find a native dialog (ATargetDlg=0 -> the topmost one) and click the button picked by ASelector.
-  ASelector accepts a role keyword ('ok'/'cancel'/'yes'/'no'/'retry'/'abort'/'ignore'/'close'/'tryagain'/'continue'/'help'), a caption (exact then substring, case-insensitive, '&' accelerator stripped), or a numeric control id.
-  Returns TRUE and sets AClickedId / AClickedCaption / AResolvedDlg on a dispatched click.
-  On FALSE, AReason is 'no_dialog' (nothing matched), 'button_not_found', 'button_disabled', or 'send_failed' (the button was found but SendMessageTimeout did not complete).
-  AVia names the dispatch path actually used: 'BN_CLICKED' (we hold the button's own HWND - the button provably exists - and send the dialog the notification that button sends on a click) or 'WM_COMMAND' (dispatched by control id to a dialog whose button is not enumerable as a child window, e.g. a Task Dialog).
-  The WM_COMMAND path is UNVERIFIABLE: a dialog that has no such command silently ignores the message and the send still completes, so TRUE there means "sent", not "landed" — re-list the dialogs to confirm. }
+  ASelector accepts a caption (exact, case-insensitive, '&' accelerator stripped), a role keyword ('ok'/'cancel'/'yes'/'no'/'retry'/'abort'/'ignore'/'close'/'tryagain'/'continue'/'help', matched by the button's control id), a caption substring, or a numeric control id.
+  The selector must name exactly ONE child Button window: nothing is ever sent by id alone.
+  Returns TRUE and sets AClickedId / AClickedCaption / AResolvedDlg on a dispatched click. AClickedId is 0 for a Task Dialog button (it has no control id).
+  On FALSE, AReason is 'no_dialog' (nothing matched), 'button_not_found', 'button_ambiguous' (two or more buttons match: id 0 on a Task Dialog, a shared caption substring), 'button_disabled', or 'send_failed' (the button was found but SendMessageTimeout did not complete).
+  AVia is always 'BN_CLICKED': the button's own click notification, sent to the button's parent window. A bridge older than 3.8.0 could also answer 'WM_COMMAND' (a blind send by id). }
 function ClickNativeDialogButton(const AExclude: array of NativeUInt; ATargetDlg: NativeUInt;
   const ASelector: String; OUT AClickedId: Integer; OUT AClickedCaption: String;
   OUT AResolvedDlg: NativeUInt; OUT AReason: String; OUT AVia: String): Boolean;
+
+{ Fill the "File name" box of a native file dialog (ATargetDlg=0 -> the topmost dialog) and, when ASelector is not empty, click the button it names (the rules of ClickNativeDialogButton).
+  The box is the dialog's one VISIBLE Edit window: a Vista Open/Save dialog also holds a hidden Edit (the address bar), and the box has a different control id in the Open and the Save dialog, so it is never picked by id.
+  The edit and the button are both resolved before anything is written, so a refusal changes nothing; then the text is set, read back, and only when it reads back exactly AFileName is the button clicked.
+  AFileNameSet is TRUE when the box holds AFileName. Returns TRUE when everything asked for was done (the name set, and the click when ASelector is not empty).
+  On FALSE, AReason is one of the reasons of ClickNativeDialogButton, or 'edit_not_found' (no visible Edit), 'edit_ambiguous' (two or more), 'edit_disabled', 'filename_not_set' (the box reads back another text, e.g. a name longer than the box accepts). }
+function SetNativeDialogFileName(const AExclude: array of NativeUInt; ATargetDlg: NativeUInt;
+  const AFileName, ASelector: String; OUT AFileNameSet: Boolean; OUT AClickedId: Integer; OUT AClickedCaption: String;
+  OUT AResolvedDlg: NativeUInt; OUT AReason: String; OUT AVia: String): Boolean;
+
+{ The dismiss_dialog answer fields that follow the list, shared by the VCL and the FMX bridge.
+  ASelector = '' and AFileName = '': nothing is added (the call only lists).
+  ASelector: clicked, and on success clickedId, clickedCaption, dialogHwnd, via; on failure reason.
+  AFileName: fileNameSet and dialogHwnd too (the MCP tool sends the button in a second call to that dialog); with ASelector the click runs only after the name reads back. }
+procedure AddDismissDialogFields(AWrap: TJSONObject; const AExclude: array of NativeUInt; ATargetDlg: NativeUInt;
+  const ASelector, AFileName: String);
 
 
 implementation
@@ -97,6 +114,7 @@ type
   TChildCtx = record
     Buttons: TList<HWND>;
     Statics: TList<HWND>;
+    Edits  : TList<HWND>;   // NIL = not wanted; else the VISIBLE Edit windows only
   end;
   PChildCtx = ^TChildCtx;
 
@@ -118,17 +136,22 @@ begin
   then Ctx.Buttons.Add(AWnd)
   else
     if SameText(Cls, 'Static')
-    then Ctx.Statics.Add(AWnd);
+    then Ctx.Statics.Add(AWnd)
+    else
+      if (Ctx.Edits <> NIL) and SameText(Cls, 'Edit') and IsWindowVisible(AWnd)
+      then Ctx.Edits.Add(AWnd);
   Result := TRUE;
 end;
 
 
-procedure CollectChildren(ADlg: HWND; AButtons, AStatics: TList<HWND>);
+{ EnumChildWindows walks every descendant, not only the direct children: a Vista file dialog nests its File name Edit 3 levels deep. }
+procedure CollectChildren(ADlg: HWND; AButtons, AStatics: TList<HWND>; AEdits: TList<HWND> = NIL);
 var
   Ctx: TChildCtx;
 begin
   Ctx.Buttons := AButtons;
   Ctx.Statics := AStatics;
+  Ctx.Edits   := AEdits;
   EnumChildWindows(ADlg, @ChildEnumProc, LPARAM(@Ctx));
 end;
 
@@ -363,89 +386,107 @@ begin
 end;
 
 
-{ Resolve ASelector against the dialog's buttons.
-  On success ABtn is the matching button HWND (0 when matched by id/role but the button is not separately enumerable, e.g. a Task Dialog — the caller can still dispatch WM_COMMAND by id) and AId its id. }
-function ResolveButton(const AButtons: TList<HWND>; const ASelector: String;
-  OUT ABtn: HWND; OUT AId: Integer; OUT ACap: String): Boolean;
+type
+  TButtonMatch = (bmById, bmByExactCaption, bmBySubstring);
+
+
+{ TRUE when button B matches ASelector in the way AKind names. }
+function ButtonMatches(B: HWND; AKind: TButtonMatch; const ASelector: String; AId: Integer): Boolean;
 var
-  i, NumId, RoleId: Integer;
-  Sel, Cap: String;
-  B: HWND;
+  Cap: String;
 begin
-  ABtn := 0; AId := 0; ACap := ''; Result := FALSE;
+  case AKind of
+    bmById          : Result := GetDlgCtrlID(B) = AId;
+    bmByExactCaption: Result := SameText(StripAmp(WindowTextOf(B)), ASelector);
+  else
+    Cap := StripAmp(WindowTextOf(B));
+    Result := (Cap <> '') and ContainsText(Cap, ASelector);
+  end;
+end;
+
+
+{ Picks the one button that matches. Exactly one match: TRUE with ABtn. None: FALSE, AReason 'button_not_found'. Two or more: FALSE, AReason 'button_ambiguous' - the first match is never taken, because it may be the wrong one ('all' in 'Yes to All' and 'No to All'; id 0 on every Task Dialog button). }
+function PickOneButton(const AButtons: TList<HWND>; AKind: TButtonMatch; const ASelector: String; AId: Integer;
+  OUT ABtn: HWND; OUT AReason: String): Boolean;
+var
+  i, Count: Integer;
+begin
+  ABtn := 0;
+  Count := 0;
+  for i := 0 to AButtons.Count - 1 do
+    if ButtonMatches(AButtons[i], AKind, ASelector, AId) then
+      begin
+        Inc(Count);
+        if Count = 1
+        then ABtn := AButtons[i];
+      end;
+  case Count of
+    0: AReason := 'button_not_found';
+    1: AReason := '';
+  else
+    AReason := 'button_ambiguous';
+    ABtn := 0;
+  end;
+  Result := Count = 1;
+end;
+
+
+{ Resolve ASelector to ONE button window of the dialog.
+  On success ABtn is that button's HWND (never 0), AId its control id (0 on a Task Dialog button) and ACap its caption.
+  A selector that names no button window, or more than one, is refused with AReason 'button_not_found' / 'button_ambiguous': a refused click is safe, a click on a guessed button can destroy data.
+  So nothing is ever dispatched by id alone. Measured on a Task Dialog: WM_COMMAND with an id no button has is ignored, but TDM_CLICK_BUTTON with such an id closes the box and returns that id. }
+function ResolveButton(const AButtons: TList<HWND>; const ASelector: String;
+  OUT ABtn: HWND; OUT AId: Integer; OUT ACap: String; OUT AReason: String): Boolean;
+var
+  NumId, RoleId: Integer;
+  Sel: String;
+begin
+  ABtn := 0; AId := 0; ACap := ''; AReason := 'button_not_found'; Result := FALSE;
   Sel := Trim(ASelector);
-  if Sel = '' then exit;
+  if Sel = '' then EXIT;
 
-  { # By numeric id }
-  if TryStrToInt(Sel, NumId) then
+  if TryStrToInt(Sel, NumId)
+  then
+    { # By numeric id }
+    Result := PickOneButton(AButtons, bmById, Sel, NumId, ABtn, AReason)
+  else
     begin
-      for i := 0 to AButtons.Count - 1 do
-        if GetDlgCtrlID(AButtons[i]) = NumId then
-          begin
-            ABtn := AButtons[i]; AId := NumId; ACap := StripAmp(WindowTextOf(ABtn));
-            exit(TRUE);
-          end;
-      AId := NumId; exit(TRUE);   // not enumerable as a child Button; dispatch by id
-    end;
-
-  { # By caption — exact }
-  for i := 0 to AButtons.Count - 1 do
-    begin
-      B := AButtons[i]; Cap := StripAmp(WindowTextOf(B));
-      if SameText(Cap, Sel) then
+      { # By caption - exact }
+      Result := PickOneButton(AButtons, bmByExactCaption, Sel, 0, ABtn, AReason);
+      if not Result and (AReason = 'button_not_found') then
         begin
-          ABtn := B; AId := GetDlgCtrlID(B); ACap := Cap; exit(TRUE);
+          { # By role keyword }
+          { Ahead of the substring pass: a role word ('ok'/'no'/...) is a deliberate intent and must beat a loose caption substring (e.g. 'no' inside 'Ignore').
+            Also reaches a localized MessageBox button: 'ok' -> IDOK works even when the caption reads 'Aceptar'.
+            A role with no button of that id is refused, never passed on to the substring pass. }
+          RoleId := RoleToId(Sel);
+          if RoleId <> 0
+          then Result := PickOneButton(AButtons, bmById, Sel, RoleId, ABtn, AReason)
+          else
+            { # By caption - substring (loosest, last) }
+            Result := PickOneButton(AButtons, bmBySubstring, Sel, 0, ABtn, AReason);
         end;
     end;
 
-  { # By role keyword }
-  { Ahead of the substring pass: a role word ('ok'/'no'/...) is a deliberate intent and must beat a loose caption substring (e.g. 'no' inside 'Ignore').
-    Also reaches a localized common button — 'ok' -> IDOK works even when the caption reads 'Aceptar'. }
-  RoleId := RoleToId(Sel);
-  if RoleId <> 0 then
+  if Result then
     begin
-      for i := 0 to AButtons.Count - 1 do
-        if GetDlgCtrlID(AButtons[i]) = RoleId then
-          begin
-            ABtn := AButtons[i]; AId := RoleId; ACap := StripAmp(WindowTextOf(ABtn));
-            exit(TRUE);
-          end;
-      AId := RoleId; exit(TRUE);   // common button without a separate HWND; dispatch by id
-    end;
-
-  { # By caption — substring (loosest, last) }
-  for i := 0 to AButtons.Count - 1 do
-    begin
-      B := AButtons[i]; Cap := StripAmp(WindowTextOf(B));
-      if (Cap <> '') and ContainsText(Cap, Sel) then
-        begin
-          ABtn := B; AId := GetDlgCtrlID(B); ACap := Cap; exit(TRUE);
-        end;
+      AId  := GetDlgCtrlID(ABtn);
+      ACap := StripAmp(WindowTextOf(ABtn));
     end;
 end;
 
 
 { Public: click ------------------------------------------------------------- }
 
-function ClickNativeDialogButton(const AExclude: array of NativeUInt; ATargetDlg: NativeUInt;
-  const ASelector: String; OUT AClickedId: Integer; OUT AClickedCaption: String;
-  OUT AResolvedDlg: NativeUInt; OUT AReason: String; OUT AVia: String): Boolean;
+{ The topmost native dialog of this process (ATargetDlg=0), or the one whose handle is ATargetDlg; 0 when none is up. }
+function FindNativeDialog(const AExclude: array of NativeUInt; ATargetDlg: NativeUInt): HWND;
 var
   Ctx: TTopCtx;
   i: Integer;
-  W, Dlg, MatchBtn: HWND;
+  W: HWND;
   Buttons, Statics: TList<HWND>;
-  MatchId: Integer;
-  MatchCap: String;
-  Res: DWORD_PTR;
-  Sent: LRESULT;
-  WParam: Winapi.Windows.WPARAM;
 begin
-  Result := FALSE;
-  AClickedId := 0; AClickedCaption := ''; AResolvedDlg := 0; AReason := ''; AVia := '';
-
-  { # Pick the dialog }
-  Dlg := 0;
+  Result := 0;
   Ctx.Pid := GetCurrentProcessId;
   Ctx.List := TList<HWND>.Create;
   try
@@ -459,11 +500,8 @@ begin
         try
           CollectChildren(W, Buttons, Statics);
           if not LooksLikeDialog(W, Buttons.Count) then Continue;
-          if (ATargetDlg = 0) or (HWND(ATargetDlg) = W) then
-            begin
-              Dlg := W;
-              Break;
-            end;
+          if (ATargetDlg = 0) or (HWND(ATargetDlg) = W)
+          then EXIT(W);
         finally
           FreeAndNil(Buttons);
           FreeAndNil(Statics);
@@ -472,7 +510,57 @@ begin
   finally
     FreeAndNil(Ctx.List);
   end;
+end;
 
+
+{ Sends the button's own click notification; FALSE with AReason 'send_failed' when it could not be delivered. }
+function SendButtonClick(ABtn: HWND; AId: Integer; OUT AReason: String): Boolean;
+var
+  Parent: HWND;
+  Res: DWORD_PTR;
+  Sent: LRESULT;
+  WParam: Winapi.Windows.WPARAM;
+begin
+  AReason := '';
+  { The button's own click notification, sent where the button itself sends it: to its PARENT window ("The parent window of the button receives this notification code through the WM_COMMAND message", https://learn.microsoft.com/en-us/windows/win32/controls/bn-clicked), with its own id and its HWND in lParam.
+    On a MessageBox the parent is the dialog. On a Task Dialog (Delphi's MessageDlg) it is NOT: each button sits in a CtrlNotifySink window inside a DirectUIHWND, with control id 0.
+    Measured: WM_COMMAND id 0 sent to the Task Dialog itself makes it return its DEFAULT button (button 'No' gave Yes); sent to the CtrlNotifySink it returns the button clicked.
+    Not BM_CLICK: "If the button is in a dialog box and the dialog box is not active, the BM_CLICK message might fail" (https://learn.microsoft.com/en-us/windows/win32/controls/bm-click), and activating the dialog would steal the focus.
+    Seen failing: a MessageBox shown during start-up of a LightSaber app (DnaBaser5, Win64) ignored BM_CLICK; WM_COMMAND with its id closed it.
+    Same-thread send (the dialog lives on the main thread, where this runs), so the window proc runs synchronously; SMTO_ABORTIFHUNG guards the rare cross-thread dialog. }
+  Parent := GetParent(ABtn);
+  if Parent = 0 then
+    begin
+      AReason := 'send_failed';
+      EXIT(FALSE);
+    end;
+  Res := 0;
+  WParam := Winapi.Windows.WPARAM((AId and $FFFF) or (BN_CLICKED shl 16));
+  Sent := SendMessageTimeout(Parent, WM_COMMAND, WParam, LPARAM(ABtn), SMTO_ABORTIFHUNG, 4000, @Res);
+
+  { A zero return means the send never completed: the window died between our enumeration and the send, or a dialog owned by a non-main thread was hung and SMTO_ABORTIFHUNG bailed out.
+    Only the cross-thread case can actually trip it (for a same-thread window the proc is called directly and the timeout is ignored), but answering clicked:true for a click the OS says never landed would send the driver on to its next step against a dialog that is still up.
+    Res itself is NOT a success signal. }
+  Result := Sent <> 0;
+  if not Result
+  then AReason := 'send_failed';
+end;
+
+
+function ClickNativeDialogButton(const AExclude: array of NativeUInt; ATargetDlg: NativeUInt;
+  const ASelector: String; OUT AClickedId: Integer; OUT AClickedCaption: String;
+  OUT AResolvedDlg: NativeUInt; OUT AReason: String; OUT AVia: String): Boolean;
+var
+  Dlg, MatchBtn: HWND;
+  Buttons, Statics: TList<HWND>;
+  MatchId: Integer;
+  MatchCap: String;
+begin
+  Result := FALSE;
+  AClickedId := 0; AClickedCaption := ''; AResolvedDlg := 0; AReason := ''; AVia := '';
+
+  { # Pick the dialog }
+  Dlg := FindNativeDialog(AExclude, ATargetDlg);
   if Dlg = 0 then
     begin
       AReason := 'no_dialog';
@@ -485,51 +573,17 @@ begin
   Statics := TList<HWND>.Create;
   try
     CollectChildren(Dlg, Buttons, Statics);
-    if not ResolveButton(Buttons, ASelector, MatchBtn, MatchId, MatchCap) then
+    if not ResolveButton(Buttons, ASelector, MatchBtn, MatchId, MatchCap, AReason) then EXIT;
+
+    { A real mouse click does nothing on a disabled button, so neither do we. }
+    if not IsWindowEnabled(MatchBtn) then
       begin
-        AReason := 'button_not_found';
-        exit;
+        AReason := 'button_disabled';
+        EXIT;
       end;
 
-    { Same-thread send (the dialog lives on the main thread, where this runs), so the window proc is invoked synchronously: the WM_COMMAND reaches the dialog, which calls EndDialog and unwinds its modal loop.
-      SMTO_ABORTIFHUNG guards the rare cross-thread dialog.
-      BN_CLICKED when we have the button HWND; WM_COMMAND-by-id when we only resolved a standard id (Task Dialog common button with no enumerable child). }
-    Res := 0;
-    if MatchBtn <> 0
-    then
-      begin
-        { A real mouse click does nothing on a disabled button, so neither do we. }
-        if not IsWindowEnabled(MatchBtn) then
-          begin
-            AReason := 'button_disabled';
-            exit;
-          end;
-
-        { Not BM_CLICK: "If the button is in a dialog box and the dialog box is not active, the BM_CLICK message might fail" (https://learn.microsoft.com/en-us/windows/win32/controls/bm-click).
-          Activating the dialog would steal the focus, so we send the dialog the BN_CLICKED notification the button itself sends its parent on a click, with the button's HWND in lParam.
-          Seen failing: a MessageBox shown during start-up of a LightSaber app (DnaBaser5, Win64) ignored BM_CLICK; WM_COMMAND with its id closed it. }
-        AVia := 'BN_CLICKED';
-        WParam := Winapi.Windows.WPARAM((MatchId and $FFFF) or (BN_CLICKED shl 16));
-        Sent := SendMessageTimeout(Dlg, WM_COMMAND, WParam, LPARAM(MatchBtn), SMTO_ABORTIFHUNG, 4000, @Res);
-      end
-    else
-      begin
-        { Unverifiable path, reported as such through AVia.
-          A dialog with no command for this id just ignores the message and the send still completes, so nothing in the return values can tell "dismissed" from "ignored".
-          The dialog's own reply is not a signal either: DefDlgProc's return for an unhandled WM_COMMAND is not contractual (the DialogProc TRUE/FALSE convention is documented for dialog procedures YOU write, and the docs state the return is ignored for several messages), and we have not measured what MessageBoxW / the Task Dialog actually return - so it is not used. }
-        AVia := 'WM_COMMAND';
-        WParam := Winapi.Windows.WPARAM((MatchId and $FFFF) or (BN_CLICKED shl 16));
-        Sent := SendMessageTimeout(Dlg, WM_COMMAND, WParam, 0, SMTO_ABORTIFHUNG, 4000, @Res);
-      end;
-
-    { A zero return means the send never completed: the window died between our enumeration and the send, or a dialog owned by a non-main thread was hung and SMTO_ABORTIFHUNG bailed out.
-      Only the cross-thread case can actually trip it (for a same-thread window the proc is called directly and the timeout is ignored), but answering clicked:true for a click the OS says never landed would send the driver on to its next step against a dialog that is still up.
-      Res itself is NOT a success signal. }
-    if Sent = 0 then
-      begin
-        AReason := 'send_failed';
-        exit;
-      end;
+    AVia := 'BN_CLICKED';
+    if not SendButtonClick(MatchBtn, MatchId, AReason) then EXIT;
 
     AClickedId := MatchId;
     AClickedCaption := MatchCap;
@@ -537,6 +591,93 @@ begin
   finally
     FreeAndNil(Buttons);
     FreeAndNil(Statics);
+  end;
+end;
+
+
+{ Public: file name --------------------------------------------------------- }
+
+function SetNativeDialogFileName(const AExclude: array of NativeUInt; ATargetDlg: NativeUInt;
+  const AFileName, ASelector: String; OUT AFileNameSet: Boolean; OUT AClickedId: Integer; OUT AClickedCaption: String;
+  OUT AResolvedDlg: NativeUInt; OUT AReason: String; OUT AVia: String): Boolean;
+var
+  Dlg, Edit, MatchBtn: HWND;
+  Buttons, Statics, Edits: TList<HWND>;
+  MatchId: Integer;
+  MatchCap: String;
+  Res: DWORD_PTR;
+  Clicking: Boolean;
+begin
+  Result := FALSE;
+  AFileNameSet := FALSE; AClickedId := 0; AClickedCaption := ''; AResolvedDlg := 0; AReason := ''; AVia := '';
+  Clicking := Trim(ASelector) <> '';
+  MatchBtn := 0;
+  MatchId := 0;
+
+  Dlg := FindNativeDialog(AExclude, ATargetDlg);
+  if Dlg = 0 then
+    begin
+      AReason := 'no_dialog';
+      EXIT;
+    end;
+  AResolvedDlg := NativeUInt(Dlg);
+
+  Buttons := TList<HWND>.Create;
+  Statics := TList<HWND>.Create;
+  Edits   := TList<HWND>.Create;
+  try
+    CollectChildren(Dlg, Buttons, Statics, Edits);
+
+    { # Resolve the box and the button before anything is written: a refusal changes nothing }
+    case Edits.Count of
+      0: AReason := 'edit_not_found';
+      1: AReason := '';
+    else
+      AReason := 'edit_ambiguous';
+    end;
+    if AReason <> '' then EXIT;
+    Edit := Edits[0];
+    if not IsWindowEnabled(Edit) then
+      begin
+        AReason := 'edit_disabled';
+        EXIT;
+      end;
+    if Clicking then
+      begin
+        if not ResolveButton(Buttons, ASelector, MatchBtn, MatchId, MatchCap, AReason) then EXIT;
+        if not IsWindowEnabled(MatchBtn) then
+          begin
+            AReason := 'button_disabled';
+            EXIT;
+          end;
+      end;
+
+    { # Write the name and read it back }
+    { WM_SETTEXT through SendMessageTimeout for the reason WindowTextOf gives. Measured on the Vista Open and Save dialogs of TOpenDialog/TSaveDialog: the text set this way is the FileName the dialog returns after its Open/Save button is clicked. }
+    Res := 0;
+    if SendMessageTimeout(Edit, WM_SETTEXT, 0, LPARAM(PChar(AFileName)), SMTO_ABORTIFHUNG, 4000, @Res) = 0 then
+      begin
+        AReason := 'send_failed';
+        EXIT;
+      end;
+    AFileNameSet := WindowTextOf(Edit) = AFileName;
+    if not AFileNameSet then
+      begin
+        AReason := 'filename_not_set';
+        EXIT;
+      end;
+    if not Clicking then EXIT(TRUE);
+
+    { # Click }
+    AVia := 'BN_CLICKED';
+    if not SendButtonClick(MatchBtn, MatchId, AReason) then EXIT;
+    AClickedId := MatchId;
+    AClickedCaption := MatchCap;
+    Result := TRUE;
+  finally
+    FreeAndNil(Buttons);
+    FreeAndNil(Statics);
+    FreeAndNil(Edits);
   end;
 end;
 
@@ -561,7 +702,57 @@ begin
   Result := FALSE;
 end;
 
+function SetNativeDialogFileName(const AExclude: array of NativeUInt; ATargetDlg: NativeUInt;
+  const AFileName, ASelector: String; OUT AFileNameSet: Boolean; OUT AClickedId: Integer; OUT AClickedCaption: String;
+  OUT AResolvedDlg: NativeUInt; OUT AReason: String; OUT AVia: String): Boolean;
+begin
+  AFileNameSet := FALSE; AClickedId := 0; AClickedCaption := ''; AResolvedDlg := 0; AVia := '';
+  AReason := 'unsupported_platform';
+  Result := FALSE;
+end;
+
 {$ENDIF}
+
+
+{ Shared by the VCL and the FMX bridge ----------------------------------------- }
+
+procedure AddDismissDialogFields(AWrap: TJSONObject; const AExclude: array of NativeUInt; ATargetDlg: NativeUInt;
+  const ASelector, AFileName: String);
+var
+  Done, NameSet, Clicking: Boolean;
+  ClickedId: Integer;
+  ClickedCap, Reason, Via: String;
+  ResolvedDlg: NativeUInt;
+begin
+  Clicking := ASelector <> '';
+  if AFileName <> ''
+  then
+    begin
+      Done := SetNativeDialogFileName(AExclude, ATargetDlg, AFileName, ASelector, NameSet, ClickedId, ClickedCap, ResolvedDlg, Reason, Via);
+      AWrap.AddPair('fileNameSet', TJSONBool.Create(NameSet));
+    end
+  else
+    if Clicking
+    then Done := ClickNativeDialogButton(AExclude, ATargetDlg, ASelector, ClickedId, ClickedCap, ResolvedDlg, Reason, Via)
+    else EXIT;
+
+  if Clicking
+  then AWrap.AddPair('clicked', TJSONBool.Create(Done));
+  if Done and Clicking then
+    begin
+      AWrap.AddPair('clickedId', TJSONNumber.Create(ClickedId));
+      AWrap.AddPair('clickedCaption', ClickedCap);
+    end;
+  { The MCP tool sends the button in a second call to this same dialog, so a fileName answer names the dialog even without a click. }
+  if ResolvedDlg <> 0
+  then
+    if Done or (AFileName <> '')
+    then AWrap.AddPair('dialogHwnd', TJSONNumber.Create(Int64(ResolvedDlg)));
+  if Done and Clicking
+  then AWrap.AddPair('via', Via);
+  if not Done
+  then AWrap.AddPair('reason', Reason);
+end;
 
 
 end.

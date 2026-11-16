@@ -135,8 +135,15 @@ type
 
   { Reads the optional arguments of the list_tree command, shared by the VCL and FMX bridges.
     AForm: args.form ('' when absent or empty = every form). AFormsOnly: args.formsOnly (FALSE when absent).
-    FALSE, with AError set, for a form that is not a string or a formsOnly that is not a JSON Boolean: the caller answers ErrInvalidRequest. }
-  function TryParseListTreeArgs(AArgs: TJSONObject; OUT AForm: String; OUT AFormsOnly: Boolean; OUT AError: String): Boolean;
+    APath: args.path ('' when absent or empty = no subtree filter).
+    FALSE, with AError set, for a form or path that is not a string or a formsOnly that is not a JSON Boolean: the caller answers ErrInvalidRequest. }
+  function TryParseListTreeArgs(AArgs: TJSONObject; OUT AForm: String; OUT AFormsOnly: Boolean; OUT APath: String; OUT AError: String): Boolean;
+
+  { Reads the optional args.index of set_checked and read_property (one item of a VCL TCheckListBox), shared by the VCL and FMX bridges.
+    AHasIndex is FALSE when the argument is absent.
+    FALSE, with AError set, for an index that is not a whole number in the Integer range: the caller answers ErrInvalidRequest.
+    The range of the item list is checked by the caller, which knows the item count. }
+  function TryParseItemIndexArg(AArgs: TJSONObject; const ACmd: String; OUT AHasIndex: Boolean; OUT AIndex: Integer; OUT AError: String): Boolean;
 
   { Checks the form filter of list_tree against the names of the forms that exist (AFormNames, empty names included).
     TRUE when AForm is '' or matches a name case-insensitively.
@@ -334,12 +341,13 @@ begin
 end;
 
 
-function TryParseListTreeArgs(AArgs: TJSONObject; OUT AForm: String; OUT AFormsOnly: Boolean; OUT AError: String): Boolean;
+function TryParseListTreeArgs(AArgs: TJSONObject; OUT AForm: String; OUT AFormsOnly: Boolean; OUT APath: String; OUT AError: String): Boolean;
 var
   V: TJSONValue;
 begin
   AForm := '';
   AFormsOnly := FALSE;
+  APath := '';
   AError := '';
   if AArgs = NIL then EXIT(TRUE);
 
@@ -364,6 +372,39 @@ begin
         end;
       AFormsOnly := TJSONBool(V).AsBoolean;
     end;
+
+  V := AArgs.GetValue('path');
+  if V <> NIL then
+    begin
+      if not (V is TJSONString) or (V is TJSONNumber) then   // up to Delphi 12 TJSONNumber descends from TJSONString
+        begin
+          AError := 'list_tree args.path must be a string (got ' + V.ToJSON + ')';
+          EXIT(FALSE);
+        end;
+      APath := TJSONString(V).Value;
+    end;
+  Result := TRUE;
+end;
+
+
+function TryParseItemIndexArg(AArgs: TJSONObject; const ACmd: String; OUT AHasIndex: Boolean; OUT AIndex: Integer; OUT AError: String): Boolean;
+var
+  V: TJSONValue;
+  N: Int64;
+begin
+  AHasIndex := FALSE;
+  AIndex := -1;
+  AError := '';
+  if AArgs = NIL then EXIT(TRUE);
+  V := AArgs.GetValue('index');
+  if V = NIL then EXIT(TRUE);
+  if not TryJsonInt64(V, N) or (N < Low(Integer)) or (N > High(Integer)) then
+    begin
+      AError := ACmd + ' args.index must be a whole number (got ' + V.ToJSON + ')';
+      EXIT(FALSE);
+    end;
+  AHasIndex := TRUE;
+  AIndex := Integer(N);
   Result := TRUE;
 end;
 

@@ -242,7 +242,7 @@ begin
 end;
 
 
-// Build the tools/list result: {tools:[ {name,description,inputSchema}, ... ]}.
+// Build the tools/list result: {tools:[ {name,description,inputSchema[,annotations]}, ... ]}.
 function BuildToolListResult: TJSONObject;
 var
   ToolsArr: TJSONArray;
@@ -250,6 +250,7 @@ var
   Name    : String;
   Tool    : IMCPTool;
   Entry   : TJSONObject;
+  Annotations: TJSONObject;
 begin
   ToolsArr := TJSONArray.Create;
   Result   := TJSONObject.Create;
@@ -266,6 +267,14 @@ begin
       Entry.AddPair('description', Tool.Description);
       // Tool.InputSchema returns a fresh TJSONObject — we own it now.
       Entry.AddPair('inputSchema', Tool.InputSchema);
+      { MCP ToolAnnotations, a sibling of inputSchema.
+        Sent whatever protocol revision the client negotiated: a client that does not know the field ignores it. }
+      if Tool.GetReadOnlyHint then
+        begin
+          Annotations := TJSONObject.Create;
+          Annotations.AddPair('readOnlyHint', TJSONBool.Create(TRUE));
+          Entry.AddPair('annotations', Annotations);
+        end;
       ToolsArr.AddElement(Entry);
     end;
 end;

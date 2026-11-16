@@ -1,14 +1,16 @@
 ﻿unit FormMain;
 
 {=============================================================================================================
-   2026.11.04
+   2026.11.15
    www.GabrielMoraru.com
 --------------------------------------------------------------------------------------------------------------
    - VCL demo form for the Autopilot bridge.
    - One form with four controls (btnIncrement, lblIncrement, edtName, lblNameEcho) to exercise list_tree, click, and get_text end-to-end.
    - Test fixtures for "Tests\E2E tests\Test-AllTools.ps1": an action bound to a TButton and a TSpeedButton
      (actFixture -> lblActionResult), a check box (chkFixture -> lblCheckState), a label placed on a panel
-     (pnlFixture.lblInPanel) for the path rule, and a button whose label changes one second later (btnDelayed -> tmrDelayed -> lblDelayed) for wait_for.
+     (pnlFixture.lblInPanel) for the path rule, a button whose label changes one second later (btnDelayed -> tmrDelayed -> lblDelayed) for wait_for,
+     a popup menu item that opens the native dialog (pmDialog.mnuPopupDialog, never shown) for click mode='message' on a TMenuItem,
+     a MessageDlg (btnMsgDlg, a Task Dialog) and an Open and a Save file dialog (btnOpenFile, btnSaveFile), whose results go to lblDialogResult, for dismiss_dialog.
    - AutopilotGuide (AUTOPILOT builds only): the guide text that list_tree shows on the frmMain node.
    - registerAutopilotCommands (called by the constructor): two app commands for the MCP tool call_method (demo.setName, demo.increment).
 =============================================================================================================}
@@ -17,7 +19,7 @@ interface
 
 uses
   Winapi.Windows, Winapi.Messages,
-  System.SysUtils, System.Variants, System.Classes, System.Actions,
+  System.SysUtils, System.Variants, System.Classes, System.Actions, System.UITypes,
   Vcl.Graphics, Vcl.Controls, Vcl.Forms, Vcl.Dialogs, Vcl.StdCtrls, Vcl.ExtCtrls, Vcl.Buttons, Vcl.ActnList, Vcl.Imaging.jpeg, Vcl.Menus;
 
 type
@@ -50,7 +52,18 @@ type
     mnuHelp        : TMenuItem;
     mnuCheckUpdates: TMenuItem;
     mnuAbout       : TMenuItem;
+    pmDialog       : TPopupMenu;
+    mnuPopupDialog : TMenuItem;
+    lblDialogResult: TLabel;
+    btnMsgDlg      : TButton;
+    btnOpenFile    : TButton;
+    btnSaveFile    : TButton;
+    dlgOpen        : TOpenDialog;
+    dlgSave        : TSaveDialog;
     procedure actFixtureExecute    (Sender: TObject);
+    procedure btnMsgDlgClick       (Sender: TObject);
+    procedure btnOpenFileClick     (Sender: TObject);
+    procedure btnSaveFileClick     (Sender: TObject);
     procedure actSaveExecute       (Sender: TObject);
     procedure btnDelayedClick      (Sender: TObject);
     procedure btnDialogClick       (Sender: TObject);
@@ -188,6 +201,34 @@ begin
                          'The main thread waits inside this box until you close it. That is how a Windows message box works; Autopilot does not cause it.' + sLineBreak + sLineBreak +
                          'An AI can close it with the Autopilot tool dismiss_dialog.',
                          'Native Dialog', MB_YESNOCANCEL or MB_ICONWARNING);
+end;
+
+
+{ MessageDlg shows a Task Dialog (Vcl.Dialogs.pas, MessageDlgPosHelp): its buttons have no control id, unlike those of Application.MessageBox.
+  The returned TModalResult goes to lblDialogResult, so a test can check which button the app really got: mrYes = 6, mrNo = 7, mrAbort = 3. }
+procedure TfrmMain.btnMsgDlgClick(Sender: TObject);
+var
+  Answer: Integer;
+begin
+  Answer := MessageDlg('Autopilot MessageDlg fixture: which button closes this dialog?', mtConfirmation, [mbYes, mbNo, mbAbort], 0);
+  lblDialogResult.Caption := 'MessageDlg closed with ' + IntToStr(Answer);
+end;
+
+
+// The file dialogs only report the name the user chose: the demo opens and writes no file.
+procedure TfrmMain.btnOpenFileClick(Sender: TObject);
+begin
+  if dlgOpen.Execute
+  then lblDialogResult.Caption := 'Open: ' + dlgOpen.FileName
+  else lblDialogResult.Caption := 'Open: cancelled';
+end;
+
+
+procedure TfrmMain.btnSaveFileClick(Sender: TObject);
+begin
+  if dlgSave.Execute
+  then lblDialogResult.Caption := 'Save: ' + dlgSave.FileName
+  else lblDialogResult.Caption := 'Save: cancelled';
 end;
 
 

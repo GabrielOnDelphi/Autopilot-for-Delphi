@@ -23,7 +23,7 @@ Default timeouts are the bridge's: 5000 ms for commands that run event handlers,
 | `procedure Close(TimeoutMs = 5000)` | Posts `WM_CLOSE`, waits for the end (`OnCloseQuery`/`OnClose` run). Still running after the timeout: kills the app and raises `ETargetNotResponding`, naming any open dialog box. |
 | destructor (`FreeAndNil`) | Never raises. Kills an app that `Start` started and that still runs - call `Close` first. |
 | `function Click(Path; Count = 1; TimeoutMs = 0): Integer` | Returns `clicksDispatched`: less than `Count` when the control became disabled or was freed. |
-| `procedure ClickAsync(Path)` | `click` with `mode='message'`: returns before the click runs. VCL button-class controls only (FMX: -32005). |
+| `procedure ClickAsync(Path)` | `click` with `mode='message'`: returns before the click runs. Every control that can be clicked, VCL and FMX (a bridge older than 3.8.0: VCL button-class controls only). |
 | `SetText(Path, Text)`, `GetText(Path): String`, `SetChecked(Path, Checked)` | `set_text`, `get_text`, `set_checked`. |
 | `ReadProperty(Path, PropName): String`, `SetProperty(Path, PropName, Value)` | `read_property`, `set_property`; values as text, in the tools' formats. |
 | `function ExecuteAction(Path): Boolean` | FALSE when the action has no `OnExecute`. |

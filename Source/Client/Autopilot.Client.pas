@@ -133,8 +133,8 @@ type
       A short TimeoutMs + the -32004 it gives + DismissDialog is the modal-dialog recipe for FMX. }
     function  Click(const Path: String; Count: Integer = 1; TimeoutMs: Cardinal = 0): Integer;
     { click mode='message': returns before the click runs.
-      For a VCL button-class control (TButton, TBitBtn, TCheckBox, TRadioButton) whose OnClick opens a modal dialog; then call DismissDialog.
-      FMX answers -32005. }
+      For a control whose OnClick opens a modal dialog (a button, a menu item, a toolbar button; VCL and FMX); then call DismissDialog.
+      A bridge older than 3.8.0 answers -32005 on FMX and on a VCL control that is not a button. }
     procedure ClickAsync(const Path: String);
     procedure SetText(const Path, Text: String);
     function  GetText(const Path: String): String;
@@ -1398,7 +1398,7 @@ begin
     try
       Clicked := JsonBool(R, 'clicked');
       Via     := JsonStr(R, 'via');
-      Reason  := JsonStr(R, 'reason');   // when not clicked: 'no_dialog', 'button_not_found', 'button_disabled' or 'send_failed'
+      Reason  := JsonStr(R, 'reason');   // when not clicked: 'no_dialog', 'button_not_found', 'button_ambiguous', 'button_disabled' or 'send_failed'
       TryJsonInt64(R.GetValue('dialogHwnd'), DialogHwnd);   // 0 when absent
     finally
       FreeAndNil(R);
@@ -1410,7 +1410,8 @@ begin
   until FALSE;
   if not SameText(Via, 'WM_COMMAND') then EXIT(TRUE);   // BN_CLICKED (or BM_CLICK from an older bridge): sent for the button's own window
 
-  { A blind WM_COMMAND by id answers "clicked" even on a dialog that has no such command.
+  { Only a bridge older than 3.8.0 answers WM_COMMAND.
+    A blind WM_COMMAND by id answers "clicked" even on a dialog that has no such command.
     The dialog leaves the list only once it really closed: watch the list. }
   Deadline := GetTickCount64 + DialogGoneTimeoutMs;
   repeat
