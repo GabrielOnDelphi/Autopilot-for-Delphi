@@ -7,6 +7,10 @@
 The tool names appear in your tool list as `mcp__autopilot__<name>`.
 Every tool takes an optional `pid`, needed only when several Delphi targets run; with one target the tools attach to it on their own.
 
+Six tools change nothing in the target app: `attach`, `list_tree`, `get_text`, `read_property`, `wait_for` and `screenshot`.
+Since MCP server 3.8.0 their `tools/list` entries carry the MCP annotation `"readOnlyHint": true`, so a host may send several of their calls at once.
+The server still answers them one at a time, in the order they arrive: a call sent together with a `wait_for` is answered only after that `wait_for` ends.
+
 ### `attach`
 
 `attach(pid?)`
@@ -25,7 +29,7 @@ When `count` is 0 the answer also carries `hint`: the next step (start the app, 
 
 ### `list_tree`
 
-`list_tree(pid?, form?, formsOnly?)`
+`list_tree(pid?, form?, formsOnly?, path?)`
 
 Lists all forms and their components, as an array at `result.components`.
 
@@ -38,11 +42,17 @@ The bridge filters, so the rest of the tree never leaves the application.
   An empty string means no filter.
 - `formsOnly` (Boolean, default false) - only the form nodes, so you learn the form names cheaply first.
 - Both together: only the form node of that form (useful to read its `guide`).
+- `path` (string) - only the control at this path and every component that lies under it: owned by it, or shown inside it (its child controls at any depth, through any mix of owners and visual parents; for a menu, its items).
+  It takes the path forms below; an unknown path answers `-32001`, an ambiguous one `-32002`.
+  Each node is the same as in the whole tree, `path` field included, so a control owned by the form but shown on the panel keeps its path `Form.Control`.
+  The path of a form gives what `form` gives for it. An empty string means no filter.
+  Needs bridge 3.8.0 or later: an older bridge ignores it and returns the whole tree (or the `form` / `formsOnly` answer).
+- The filters combine: a node is listed only when every filter given keeps it, so `path` with `formsOnly` lists nothing unless `path` names a form.
 - A `form` given as a number is read as its text.
   A `formsOnly` that is not `true` or `false` answers an `isError: true` result whose text names the argument.
 - Without the filters the answer is the whole tree.
 - On a large application call `formsOnly` first, then `form` for the form you need.
-  One form can still be big: the main window of the Delphi IDE alone is about 200 KB.
+  One form can still be big: the main window of the Delphi IDE alone is about 200 KB; then `path` lists one panel or frame of it.
 - The filters need an Autopilot bridge of version 3.8.0 or later: a bridge of version 3.7.0 and before ignores them and returns the whole tree.
   A filtered answer whose nodes belong to more than one form, or a `formsOnly` answer that holds a dotted `path`, comes from such a bridge.
 
@@ -132,13 +142,18 @@ Other controls fall back to `OnClick(Self)`: VCL non-windowed controls like `TLa
 - `timeoutMs` - the bridge's main-thread wait for this call, in milliseconds: by default 5000 + (count-1)*100.
   A short value is the fallback for a click that opens a modal dialog (section `dismiss_dialog`).
 - `mode` - omit it, or pass `'auto'`, for the normal click above.
-  `'message'` (VCL on Windows only) posts `BM_CLICK` to the control and returns at once; the click runs when the app next pumps messages, AFTER the answer.
-  On a minimized form, where a posted `BM_CLICK` can be lost, the click is queued to the main thread instead; it still runs after the answer.
-  Only button-class controls (`TButton`/`TBitBtn`/`TCheckBox`/`TRadioButton`) handle `BM_CLICK`: any other class, and every FMX target, answers `-32005`.
-  **Main use: a button whose `OnClick` opens a modal dialog** (section `dismiss_dialog`).
+  `'message'` returns at once; the click runs AFTER the answer. It works on every control the normal click works on, VCL and FMX.
+  - A VCL button-class control (`TButton`/`TBitBtn`/`TCheckBox`/`TRadioButton`) gets a posted `BM_CLICK`, which runs when the app next pumps messages.
+    The posted `BM_CLICK` also fires the button's `OnMouseDown` and `OnMouseUp`, as a mouse click does: Windows turns it into a mouse-down and a mouse-up (https://learn.microsoft.com/en-us/windows/win32/controls/bm-click).
+  - Every other class (`TMenuItem` of a main or popup menu, `TToolButton`, `TSpeedButton`, `TLabel`, ...), every FMX control, and a button on a minimized form (where a posted `BM_CLICK` can be lost): the normal click is queued to the main thread and runs at the app's next idle moment. No mouse event fires.
+  - The control is looked up again when the queued click runs: a control freed or disabled meanwhile is skipped, and so is the second of `count=2` when the first click freed the control. Only the bridge log shows a skipped click, or an exception in the queued `OnClick`.
+  - A component with no click path (no `Click` of its own, no action, no `OnClick`; a `TTimer`) answers `-32005` at once.
+  - Known limit: a command that the app picks up in the same batch as the queued click (sent within a few milliseconds of it, by a script) starts only after the dialog closes, and answers `-32004` "has not started yet" meanwhile. An AI's next call arrives later and is served while the dialog is open.
+  - Measured on Windows (VCL and FMX). Not measured on Android.
+  **Main use: a control whose `OnClick` opens a modal dialog** (section `dismiss_dialog`).
 
 Answer: `{dispatchedVia: 'click' | 'onclick' | 'message', clicksDispatched: N, stoppedReason?: 'disabled' | 'freed' | 'exception:<ClassName>'}`.
-`'click'` = the control's `Click` method ran, `'onclick'` = the `OnClick` handler was called directly, `'message'` = a `BM_CLICK` was posted (async).
+`'click'` = the control's `Click` method ran, `'onclick'` = the `OnClick` handler was called directly, `'message'` = the click was posted or queued and runs after the answer.
 `'exception:<ClassName>'` = the event handler raised (`AI-INSTRUCTIONS.md`, section "What this bridge deliberately does NOT do").
 With `mode='message'` + `count`, all posted clicks run after the answer, so the `Enabled` re-check between them cannot see their effects.
 
@@ -204,6 +219,13 @@ The state is read again afterwards: a second `BM_CLICK` covers the `AllowGrayed`
 `BM_CLICK` moves the focus to the checkbox as a real click does, so the control focused before gets its `OnExit`.
 
 An `OnClick`/`OnChange` that frees the control: `ok` with `freed: true`, as for `set_text`; the state is then not read again.
+
+**One item of a VCL `TCheckListBox`: `set_checked(path, checked, index)`** (bridge 3.8.0 or later).
+`index` is 0-based, in the order of `Items` (read them with `read_property(path, propName='Items.Text')`).
+The item is checked or unchecked and `OnClickCheck` fires once, as for a mouse click; when the item already has that state nothing changes and nothing fires (`changed: false`).
+The answer adds `index`, `item` (the item's text) and `changed`.
+Errors: an index outside the items answers `-32600` and names the item count; a header item answers `-32005`; a disabled item (`ItemEnabled` false) answers `-32003`; `index` on any other control, and on every FMX control, answers `-32005`.
+An older bridge ignores `index` and tries the `Checked` of the list box itself, which does not exist, so the call fails and no item changes.
 
 ### `set_property`
 
@@ -274,6 +296,10 @@ An event carries `currentValue` (its handler text) only when a handler is assign
 
 **Class-typed leaves** (`Font`, `Brush`, `Lines`, `Fill`) cannot be read directly: the answer is `unsupported_action`, with a hint to use a dotted `propName` (`Font.Size`, `Lines.Text`, `Fill.Color`).
 
+**One item of a VCL `TCheckListBox`: `read_property(path, propName='Checked', index)`** (bridge 3.8.0 or later) → `{value: 'true', kind: 'boolean', index: 1, item: 'Beta', itemCount: 4}`.
+A grayed item reads `false`.
+`index` works only with `propName` `Checked` and only on a `TCheckListBox`: anything else answers `-32005`; an index outside the items answers `-32600` and names the item count.
+
 **`read_property` or `get_text`?** `get_text` reads back `Text` / `Caption` / `Lines.Text` and picks the right property for each control class; `read_property` reads everything else and needs the exact property name.
 
 ### `wait_for`
@@ -328,7 +354,7 @@ Answer: `{enabled, platform:'android'|'windows', applied}`; `applied:true` means
 
 ### `dismiss_dialog`
 
-`dismiss_dialog(button?, hwnd?, waitMs?, pid?)`
+`dismiss_dialog(button?, fileName?, hwnd?, waitMs?, pid?)`
 
 Lists and dismisses the native OS dialogs that the component tools cannot see.
 `Application.MessageBox`, a default `ShowMessage`/`MessageDlg` (a Vista Task Dialog) and the common file dialogs are raw Win32 windows with no `TComponent`, so `list_tree`/`click` answer `-32001 not_found` for them; this tool reaches them through Win32.
@@ -337,23 +363,30 @@ Lists and dismisses the native OS dialogs that the component tools cannot see.
   Answer: `{dialogs:[{hwnd, class, caption, text, buttons:[{id, caption, enabled}]}], supported, platform}`.
   `text` is the message of the dialog; for a Task Dialog (a default `ShowMessage`/`MessageDlg`) it holds the main instruction and the content, read through Windows accessibility (bridge 3.8.0 or later; an older bridge gives an empty `text` there).
 - **With `button`:** dismisses one dialog.
-  `button` is a role (`ok`/`cancel`/`yes`/`no`/`retry`/`abort`/`ignore`/`close`/`help`/`tryagain`/`continue`), a button caption (exact, then substring, case-insensitive), or a numeric control id.
+  `button` is a button caption (exact, case-insensitive), a role (`ok`/`cancel`/`yes`/`no`/`retry`/`abort`/`ignore`/`close`/`help`/`tryagain`/`continue`, matched by the button's control id), a caption substring, or a numeric control id.
+  It must name exactly one button of the dialog: the bridge never clicks a button it guessed.
   `hwnd` picks one dialog when several are stacked; omit it for the topmost.
   The answer adds `{clicked, clickedId, clickedCaption, dialogHwnd, via, reason?}`.
-  When `clicked:false`, `reason` is `no_dialog`, `button_not_found`, `button_disabled` or `send_failed` (button found, but the OS reported the click was not delivered).
-- **Check `via` before you trust `clicked:true`.** `via:'BN_CLICKED'`: the button's own window was found, and the dialog got the same notification that a real click on that button sends.
+  When `clicked:false`, `reason` is `no_dialog`, `button_not_found` (no button matches, or a role that no button of the dialog has), `button_ambiguous` (two or more buttons match: pick the button by its full caption), `button_disabled` or `send_failed` (button found, but the OS reported the click was not delivered).
+- **On a Task Dialog (a default `ShowMessage`/`MessageDlg`) every button lists `id: 0`.** Pick a button by its caption.
+  A role works there only when it is also the caption (`no` on an English `No` button); on a translated dialog (`Nein`) a role answers `button_not_found`, and `0` answers `button_ambiguous` when the dialog has two or more buttons.
+- `via` is `BN_CLICKED`: the button's own click notification, sent to the button's parent window, the same message a real click on that button sends.
   It works also when the dialog is not the active window, and the bridge never activates the dialog.
-  `via:'WM_COMMAND'`: the button is not a separate window (a Task Dialog common button, or a role or id that the dialog does not have), so the command was sent **by id, blind**: a dialog with no such command ignores it, and the send still reports success.
-  After a `WM_COMMAND` dismiss, call `dismiss_dialog` again with no `button`: an empty `dialogs` array is the only proof that the dialog is gone.
+  A bridge older than 3.8.0 can also answer `via:'WM_COMMAND'` (sent by id, blind) and may click the WRONG button of a Task Dialog (its default button): call `dismiss_dialog` again with no `button` to see whether the dialog is gone, and do not answer a destructive Yes/No Task Dialog with such a bridge.
 - **`waitMs`** (0..10000, default 0): right after the click that opens the dialog, the dialog may not be up yet, so the first call can list nothing or answer `reason: no_dialog`.
   With `waitMs` the MCP server asks again every 50 ms until a dialog is there, then answers (or clicks); when the time runs out, the last answer comes back as it is.
   Pass e.g. `waitMs=2000` on the first `dismiss_dialog` after such a click.
   The wait happens in the MCP server, so an older bridge works with it too.
+- **`fileName`** (bridge 3.8.0 or later): the text for the "File name" box of an Open or Save dialog, typed before `button` is clicked.
+  A full path is safest. Example: `click(path='frmMain.btnSave', mode='message')`, then `dismiss_dialog(fileName='C:\Data\out.csv', button='save', waitMs=2000)`.
+  The box is the dialog's one visible text box; the button is clicked only when the box reads back exactly `fileName`. Without `button` only the box is filled.
+  The answer adds `fileNameSet` (TRUE when the box holds the name) and `dialogHwnd`. When the name is refused, nothing is clicked: `fileNameSet:false`, `clicked:false` (with a `button`), and `reason` is `no_dialog`, `edit_not_found` (the dialog has no visible text box, e.g. a message box), `edit_ambiguous` (two or more), `edit_disabled`, `filename_not_set` (the box holds another text, e.g. a name longer than it accepts), `send_failed`, or one of the button reasons above.
+  Against a bridge older than 3.8.0 the tool answers `isError` and clicks nothing: such a bridge ignores `fileName`, and Save would be clicked with whatever the box holds.
 
 **A modal dialog blocks the main thread.** A `click` on a control whose `OnClick` opens a modal dialog never returns: the main thread enters the dialog's modal loop.
 Two recipes:
 
-- **Preferred (VCL button-class controls):** `click(path, mode='message')` returns before the dialog opens; then `dismiss_dialog(button=..., waitMs=2000)`: no error, no timeout spent.
+- **Preferred (any control, VCL and FMX):** `click(path, mode='message')` returns before the dialog opens; then `dismiss_dialog(button=..., waitMs=2000)`: no error, no timeout spent.
 - **Fallback (FMX targets, or controls that are not buttons):** pass a short `timeoutMs` (e.g. 500) to the `click`, expect `-32004 main_thread_blocked`, then call `dismiss_dialog(button=..., waitMs=2000)`.
 
 **The `-32004` here is not a failure.** Its message says which case it is, and `error.data.started` carries the same as a Boolean:
