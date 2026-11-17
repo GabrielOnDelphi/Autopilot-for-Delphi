@@ -139,6 +139,14 @@ type
     FALSE, with AError set, for a form or path that is not a string or a formsOnly that is not a JSON Boolean: the caller answers ErrInvalidRequest. }
   function TryParseListTreeArgs(AArgs: TJSONObject; OUT AForm: String; OUT AFormsOnly: Boolean; OUT APath: String; OUT AError: String): Boolean;
 
+  { Reads the optional args.x and args.y of list_tree: a point in the client area of the form named by args.form (AForm, as TryParseListTreeArgs read it), in the pixels of an unscaled, uncropped screenshot of that form.
+    AHasPoint is FALSE when both are absent.
+    FALSE, with AError set, when only one of them is given, when one is not a whole number in the Integer range, or when AForm is empty: the caller answers ErrInvalidRequest. }
+  function TryParseListTreePointArgs(AArgs: TJSONObject; const AForm: String; OUT AHasPoint: Boolean; OUT AX, AY: Integer; OUT AError: String): Boolean;
+
+  { The text of the ErrNotFound answer of list_tree for a point outside the client area (AWidth x AHeight) of the form AFormName. }
+  function ListTreePointOutsideText(const AFormName: String; AX, AY, AWidth, AHeight: Integer): String;
+
   { Reads the optional args.index of set_checked and read_property (one item of a VCL TCheckListBox), shared by the VCL and FMX bridges.
     AHasIndex is FALSE when the argument is absent.
     FALSE, with AError set, for an index that is not a whole number in the Integer range: the caller answers ErrInvalidRequest.
@@ -384,6 +392,54 @@ begin
       APath := TJSONString(V).Value;
     end;
   Result := TRUE;
+end;
+
+
+function TryParseListTreePointArgs(AArgs: TJSONObject; const AForm: String; OUT AHasPoint: Boolean; OUT AX, AY: Integer; OUT AError: String): Boolean;
+var
+  VX, VY: TJSONValue;
+  N: Int64;
+begin
+  AHasPoint := FALSE;
+  AX := 0;
+  AY := 0;
+  AError := '';
+  if AArgs = NIL then EXIT(TRUE);
+  VX := AArgs.GetValue('x');
+  VY := AArgs.GetValue('y');
+  if (VX = NIL) and (VY = NIL) then EXIT(TRUE);
+
+  if (VX = NIL) or (VY = NIL) then
+    begin
+      AError := 'list_tree args.x and args.y must be given together';
+      EXIT(FALSE);
+    end;
+  if not TryJsonInt64(VX, N) or (N < Low(Integer)) or (N > High(Integer)) then
+    begin
+      AError := 'list_tree args.x must be a whole number (got ' + VX.ToJSON + ')';
+      EXIT(FALSE);
+    end;
+  AX := Integer(N);
+  if not TryJsonInt64(VY, N) or (N < Low(Integer)) or (N > High(Integer)) then
+    begin
+      AError := 'list_tree args.y must be a whole number (got ' + VY.ToJSON + ')';
+      EXIT(FALSE);
+    end;
+  AY := Integer(N);
+  if AForm = '' then
+    begin
+      AError := 'list_tree args.x and args.y need args.form: the point is in the client area of that form';
+      EXIT(FALSE);
+    end;
+  AHasPoint := TRUE;
+  Result := TRUE;
+end;
+
+
+function ListTreePointOutsideText(const AFormName: String; AX, AY, AWidth, AHeight: Integer): String;
+begin
+  Result := 'list_tree: the point x=' + IntToStr(AX) + ', y=' + IntToStr(AY) + ' lies outside the client area of ' + AFormName
+          + ' (' + IntToStr(AWidth) + ' x ' + IntToStr(AHeight) + ': x from 0 to ' + IntToStr(AWidth - 1) + ', y from 0 to ' + IntToStr(AHeight - 1) + ')';
 end;
 
 

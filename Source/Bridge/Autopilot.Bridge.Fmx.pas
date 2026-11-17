@@ -1,7 +1,7 @@
 ﻿unit Autopilot.Bridge.Fmx;
 
 {=============================================================================================================
-   2026.11.15
+   2026.11.17
    www.GabrielMoraru.com
 --------------------------------------------------------------------------------------------------------------
    - Public bridge interface for FMX target projects (cross-platform: Windows pipe + POSIX AF_UNIX socket)
@@ -10,6 +10,7 @@
    - screenshot: a whole form, or one control cropped out of it (path), optionally scaled down (maxWidth)
    - list_tree: a form with a published string property AutopilotGuide gets its text as the field guide of the form's node
    - list_tree: optional filters form (one form's nodes) and formsOnly (only the form nodes), as in the VCL twin
+   - list_tree: optional x, y with form: the control at that pixel of the form's screenshot (one pixel = one dp)
    - Paths resolve through the Owner tree first, then through the visual parent tree (re-parented controls)
    - TAlphaColor coercion only (no TColor - FMX uses TAlphaColor throughout); keep-screen-on on Android
    - How Autopilot works and how to use it with an AI: the book "Delphi in All Its Glory" Part 5, "AI-Assisted Development for Delphi", chapter "We Need a Hero - Enter Autopilot for Delphi".
@@ -1376,7 +1377,156 @@ begin
 end;
 
 
-// The optional args form, formsOnly and path: see the VCL twin.
+// Mirror of the VCL twin's BuildFormNode: the form node with 'parent' and 'guide' or 'guideError'. The caller owns the result.
+function BuildFormNode(AForm: TCommonCustomForm): TJSONObject;
+var
+  Guide, GuideError: String;
+begin
+  Result := BuildComponentNode(AForm.Name, AForm.Name, AForm);
+  try
+    AddReparentedField(Result, AForm, NIL);
+    if TryGetFormGuide(AForm, Guide, GuideError)
+    then Result.AddPair('guide', Guide)
+    else
+      if GuideError <> ''
+      then Result.AddPair('guideError', GuideError);
+  except
+    FreeAndNil(Result);
+    raise;
+  end;
+end;
+
+
+{ # list_tree x, y: the control at a point (see the VCL twin) }
+
+// Mirror of the VCL twin: TRUE when the path list_tree gives AComp leads back to AComp.
+function PathLeadsBackTo(AComp: TComponent): Boolean;
+var
+  Path: String;
+  Matches: TList;
+begin
+  Path := OwnerPathFor(AComp);
+  if Path = '' then EXIT(FALSE);
+  Matches := TList.Create;
+  try
+    Result := FindComponentByPath(Path, Matches) = AComp;
+  finally
+    FreeAndNil(Matches);
+  end;
+end;
+
+
+{ The topmost visible control in AParent's visual subtree whose rectangle holds APt (form client coordinates), NIL when none.
+  The shape of TControl.ObjectAtPoint (FMX.Controls.pas): the children from the last (painted on top) to the first, a child is entered even when the point lies outside it unless that child clips its children, and a hit inside a child wins over the child itself.
+  Not ObjectAtPoint itself: it skips a disabled control (ShouldTestMouseHits) and a control with HitTest = FALSE (CheckHitTest), and a TLabel has HitTest = FALSE by default; it also enters style trees, which this walk skips (IsStyleTree). }
+function ControlAtPointIn(AParent: TFmxObject; const APt: TPointF; ADepth: Integer): TControl;
+var
+  i: Integer;
+  Child: TFmxObject;
+  C: TControl;
+  Local: TPointF;
+  Inside: Boolean;
+begin
+  Result := NIL;
+  if ADepth > MaxVisualDepth then EXIT;
+  for i := AParent.ChildrenCount - 1 downto 0 do
+    begin
+      Child := AParent.Children[i];
+      if IsStyleTree(Child) or not (Child is TControl) then Continue;
+      C := TControl(Child);
+      if not C.Visible then Continue;
+      Local := C.AbsoluteToLocal(APt);
+      Inside := (Local.X >= 0) and (Local.X < C.Width) and (Local.Y >= 0) and (Local.Y < C.Height);
+      if C.ClipChildren and not Inside then Continue;
+      Result := ControlAtPointIn(C, APt, ADepth + 1);
+      if Result <> NIL then EXIT;
+      if Inside then EXIT(C);
+    end;
+end;
+
+
+{ The control of AForm at the pixel AX, AY (its middle, so a pixel on a control's edge belongs to it), then climbed through Parent until list_tree lists it at a path that leads back to it.
+  An internal content object (Stored = FALSE, as TTabItemContent) climbs too: the AI gets the TTabItem. At the latest the answer is AForm. }
+function ControlAtPoint(AForm: TCommonCustomForm; AX, AY: Integer): TFmxObject;
+var
+  Hit: TFmxObject;
+begin
+  Assert(TThread.CurrentThread.ThreadID = MainThreadID, 'ControlAtPoint: FMX touched off the main thread');
+  Hit := ControlAtPointIn(AForm, PointF(AX + 0.5, AY + 0.5), 0);
+  if Hit = NIL then EXIT(AForm);
+  while (Hit <> AForm) and (Hit.Parent <> NIL) and (not Hit.Stored or not PathLeadsBackTo(Hit)) do
+    Hit := Hit.Parent;
+  Result := Hit;
+end;
+
+
+// Mirror of the VCL twin's HandleListTreeAt.
+function HandleListTreeAt(const AReq: TBridgeRequest; const AFormName: String; AFormsOnly: Boolean; APathRoot: TComponent; AX, AY: Integer): TBridgeResponse;
+var
+  Form: TCommonCustomForm;
+  Hit: TFmxObject;
+  Path: String;
+  Node, Wrap: TJSONObject;
+  Items: TJSONArray;
+  Seen: TList;
+  Kept: Boolean;
+  i, W, H: Integer;
+begin
+  Assert(TThread.CurrentThread.ThreadID = MainThreadID, 'HandleListTreeAt must run on the main thread');
+  Result := Default(TBridgeResponse);
+  Result.Id := AReq.Id;
+  Form := NIL;
+  for i := 0 to Screen.FormCount - 1 do
+    if SameText(Screen.Forms[i].Name, AFormName) then
+      begin
+        Form := Screen.Forms[i];
+        Break;
+      end;
+  Assert(Form <> NIL, 'HandleListTreeAt: CheckListTreeFormFilter let an unknown form through');
+  W := Round(Form.ClientWidth);
+  H := Round(Form.ClientHeight);
+  if (AX < 0) or (AY < 0) or (AX >= W) or (AY >= H) then
+    begin
+      Result.Ok := FALSE;
+      Result.ErrorCode := ErrNotFound;
+      Result.ErrorMessage := ListTreePointOutsideText(Form.Name, AX, AY, W, H);
+      EXIT;
+    end;
+
+  Hit := ControlAtPoint(Form, AX, AY);
+  Seen := TList.Create;
+  try
+    Kept := ((not AFormsOnly) or (Hit is TCommonCustomForm)) and KeptByPathFilter(Hit, APathRoot, Seen);
+  finally
+    FreeAndNil(Seen);
+  end;
+
+  Wrap := TJSONObject.Create;
+  try
+    Items := TJSONArray.Create;
+    Wrap.AddPair('components', Items);   // Wrap owns Items from here
+    if Kept then
+      if Hit is TCommonCustomForm
+      then Items.AddElement(BuildFormNode(TCommonCustomForm(Hit)))
+      else
+        begin
+          Path := OwnerPathFor(Hit);
+          Node := BuildComponentNode(Copy(Path, 1, Pos('.', Path) - 1), Path, Hit);
+          Items.AddElement(Node);   // Items owns Node from here
+          AddReparentedField(Node, Hit, Hit.Owner);
+        end;
+    Wrap.AddPair('x', TJSONNumber.Create(AX));
+    Wrap.AddPair('y', TJSONNumber.Create(AY));
+  except
+    FreeAndNil(Wrap);
+    raise;
+  end;
+  Result.Ok := TRUE;
+  Result.ResultJson := Wrap;
+end;
+
+
+// The optional args form, formsOnly, path, and x, y: see the VCL twin.
 function HandleListTree(const AReq: TBridgeRequest): TBridgeResponse;
 var
   PathRoot: TComponent;
@@ -1386,14 +1536,15 @@ var
   Visited: TList;
   i: Integer;
   Form: TCommonCustomForm;
-  Guide, GuideError: String;
   FormFilter, PathFilter, ArgError: String;
-  FormsOnly: Boolean;
+  FormsOnly, HasPoint: Boolean;
+  X, Y: Integer;
 begin
   Assert(TThread.CurrentThread.ThreadID = MainThreadID, 'HandleListTree must run on the main thread');
   Result := Default(TBridgeResponse);
   Result.Id := AReq.Id;
-  if not TryParseListTreeArgs(AReq.Args, FormFilter, FormsOnly, PathFilter, ArgError) then
+  if not TryParseListTreeArgs(AReq.Args, FormFilter, FormsOnly, PathFilter, ArgError)
+  or not TryParseListTreePointArgs(AReq.Args, FormFilter, HasPoint, X, Y, ArgError) then
     begin
       Result.Ok := FALSE;
       Result.ErrorCode := ErrInvalidRequest;
@@ -1413,6 +1564,7 @@ begin
       PathRoot := ResolvePathOrFail(PathFilter, Result);
       if PathRoot = NIL then EXIT;
     end;
+  if HasPoint then EXIT(HandleListTreeAt(AReq, FormFilter, FormsOnly, PathRoot, X, Y));
   Result.Ok := TRUE;
   Seen := TList.Create;
   try
@@ -1430,14 +1582,8 @@ begin
           Visited.Add(Form);
           if KeptByPathFilter(Form, PathRoot, Seen) then
             begin
-              FormNode := BuildComponentNode(Form.Name, Form.Name, Form);
+              FormNode := BuildFormNode(Form);
               Items.AddElement(FormNode);
-              AddReparentedField(FormNode, Form, NIL);
-              if TryGetFormGuide(Form, Guide, GuideError)
-              then FormNode.AddPair('guide', Guide)
-              else
-                if GuideError <> ''
-                then FormNode.AddPair('guideError', GuideError);
             end;
           if not FormsOnly
           then WalkComponents(Form.Name, Form.Name, Form, Items, Visited, PathRoot, Seen);

@@ -1,7 +1,7 @@
 ﻿unit Autopilot.Bridge.Vcl;
 
 {=============================================================================================================
-   2026.11.15
+   2026.11.17
    www.GabrielMoraru.com
 --------------------------------------------------------------------------------------------------------------
    Public bridge interface for VCL target projects (Windows only)
@@ -13,6 +13,7 @@
    - call_method runs the app commands registered with Autopilot.Bridge.Commands (RTL only, shared with the FMX twin)
    - list_tree: a form with a published string property AutopilotGuide gets its text as the field guide of the form's node
    - list_tree: optional filters form (one form's nodes) and formsOnly (only the form nodes), for a large app such as the Delphi IDE
+   - list_tree: optional x, y with form: the control at that pixel of the form's screenshot
    - screenshot: a whole form, or one control cropped out of it (path), optionally scaled down (maxWidth); a minimized form keeps its labels and other controls without a window
    - TColor and TAlphaColor coercion, one-level dotted propName, parent-inheritance auto-flip (VCL-only), opt-in click mode='message' (the click runs after the answer, on every class that has a click path)
    - How Autopilot works and how to use it with an AI: the book "Delphi in All Its Glory" Part 5, "AI-Assisted Development for Delphi", chapter "We Need a Hero - Enter Autopilot for Delphi".
@@ -50,7 +51,7 @@ implementation
 {$IFDEF AUTOPILOT}
 uses
   Winapi.Windows, Winapi.Messages,
-  System.SysUtils, System.SyncObjs, System.JSON, System.Rtti, System.TypInfo,
+  System.SysUtils, System.SyncObjs, System.JSON, System.Rtti, System.TypInfo, System.Types,
   System.NetEncoding, System.UITypes, System.UIConsts,
   Vcl.Forms, Vcl.Controls, Vcl.StdCtrls, Vcl.ExtCtrls, Vcl.Graphics, Vcl.Imaging.PngImage, Vcl.Menus, Vcl.CheckLst,
   Autopilot.Bridge.Core, Autopilot.Bridge.Log, Autopilot.Bridge.NamedPipe, Autopilot.Bridge.NativeDialogs, Autopilot.Bridge.Worker, Autopilot.Bridge.Commands;
@@ -1869,8 +1870,192 @@ begin
 end;
 
 
+{ The node list_tree gives a form: the component fields, 'parent' for a form embedded in another form's panel, and 'guide' or 'guideError'.
+  The caller owns the result. }
+function BuildFormNode(AForm: TCustomForm): TJSONObject;
+var
+  Guide, GuideError: String;
+begin
+  Result := BuildComponentNode(AForm.Name, AForm.Name, AForm);
+  try
+    AddReparentedField(Result, AForm, NIL);
+    if TryGetFormGuide(AForm, Guide, GuideError)
+    then Result.AddPair('guide', Guide)
+    else
+      if GuideError <> ''
+      then Result.AddPair('guideError', GuideError);
+  except
+    FreeAndNil(Result);
+    raise;
+  end;
+end;
+
+
+{ # list_tree x, y: the control at a point }
+
+const
+  MaxHitDepth = 256;   // stops the walk on a corrupt Parent chain; real forms nest far less
+
+{ TRUE when list_tree lists AComp at the path it gives it (OwnerPathFor) and that path leads back to AComp.
+  FALSE for a control that no form owns (made with Create(NIL), or an internal part of another control): its path would lead nowhere. }
+function PathLeadsBackTo(AComp: TComponent): Boolean;
+var
+  Path: String;
+  Matches: TList;
+begin
+  Path := OwnerPathFor(AComp);
+  if Path = '' then EXIT(FALSE);
+  Matches := TList.Create;
+  try
+    Result := FindComponentByPath(Path, Matches) = AComp;
+  finally
+    FreeAndNil(Matches);
+  end;
+end;
+
+
+{ The client rectangle of AWin, read without creating a window: Win32 GetClientRect when AWin has one, else its bounds.
+  A form gives ClientWidth x ClientHeight, the restored size when it is minimized (TCustomForm.GetClientRect), the size screenshot gives too. }
+function ClientRectOf(AWin: TWinControl): TRect;
+begin
+  if not AWin.HandleAllocated then EXIT(Rect(0, 0, AWin.Width, AWin.Height));
+  if AWin is TCustomForm then EXIT(Rect(0, 0, AWin.ClientWidth, AWin.ClientHeight));
+  Winapi.Windows.GetClientRect(AWin.Handle, Result);
+end;
+
+
+{ The child of AWin that shows at APt (client coordinates of AWin), NIL when none: the last child in Controls[] that is visible, whose bounds hold the point and whose CM_HITTEST says yes.
+  Controls[] lists the controls without a window first, so the walk from the end tests the windowed children first, the topmost first, as TWinControl.ControlAtPos does.
+  Own loop, not ControlAtPos: ControlAtPos reads ClientRect of each child, and TWinControl.GetClientRect calls Handle, which creates the window of a hidden child; it also tests the client size instead of the bounds, so a point on the border of an edit box would fall through to the parent. }
+function ChildAtPoint(AWin: TWinControl; const APt: TPoint): TControl;
+var
+  i: Integer;
+  C: TControl;
+begin
+  for i := AWin.ControlCount - 1 downto 0 do
+    begin
+      C := AWin.Controls[i];
+      if not C.Visible then Continue;
+      if not C.BoundsRect.Contains(APt) then Continue;
+      if C.Perform(CM_HITTEST, 0, PointToLParam(Point(APt.X - C.Left, APt.Y - C.Top))) = 0 then Continue;
+      EXIT(C);
+    end;
+  Result := NIL;
+end;
+
+
+{ The control of AForm that shows at APt (client coordinates of AForm), walked one level at a time.
+  Never ControlAtPos with AllLevels: it searches inside every windowed child before it tests that child, so it finds controls on a hidden tab page or in a hidden panel (Footguns.md).
+  The point goes one level down through MapWindowPoints, the inverse of the mapping screenshot path uses, so a border or a scrolled box counts; without both windows, Left and Top only.
+  A point on the border of a container (outside its client rectangle) gives the container.
+  Then the hit climbs through Parent until list_tree lists it at a path that leads back to it, at the latest to AForm. }
+function ControlAtPoint(AForm: TCustomForm; const APt: TPoint): TControl;
+var
+  Win: TWinControl;
+  Pt: TPoint;
+  Hit: TControl;
+  Depth: Integer;
+begin
+  Assert(GetCurrentThreadId = MainThreadID, 'ControlAtPoint: VCL touched off the main thread');
+  Result := AForm;
+  Win := AForm;
+  Pt := APt;
+  for Depth := 1 to MaxHitDepth do
+    begin
+      if not ClientRectOf(Win).Contains(Pt) then Break;
+      Hit := ChildAtPoint(Win, Pt);
+      if Hit = NIL then Break;
+      Result := Hit;
+      if not (Hit is TWinControl) then Break;
+      if Win.HandleAllocated and TWinControl(Hit).HandleAllocated
+      then MapWindowPoints(Win.Handle, TWinControl(Hit).Handle, Pt, 1)
+      else Pt := Point(Pt.X - Hit.Left, Pt.Y - Hit.Top);
+      Win := TWinControl(Hit);
+    end;
+
+  while (Result <> AForm) and (Result.Parent <> NIL) and not PathLeadsBackTo(Result) do
+    Result := Result.Parent;
+end;
+
+
+{ list_tree with x and y: the node of the control at that point of the first form named AFormName, as the full tree lists it.
+  The node of a control is built like WalkComponents builds it (the form field is the nearest form in its owner chain), so it is byte-identical to the full tree; a form gets its form node.
+  formsOnly and the path filter (APathRoot) still apply: the hit is dropped when they would drop it.
+  The answer carries x and y too: an older bridge ignores them and returns the whole form, so the MCP tool tells the two answers apart by them. }
+function HandleListTreeAt(const AReq: TBridgeRequest; const AFormName: String; AFormsOnly: Boolean; APathRoot: TComponent; AX, AY: Integer): TBridgeResponse;
+var
+  i: Integer;
+  Form: TCustomForm;
+  Hit: TControl;
+  Path: String;
+  Node, Wrap: TJSONObject;
+  Items: TJSONArray;
+  Seen: TList;
+  Kept: Boolean;
+begin
+  Assert(GetCurrentThreadId = MainThreadID, 'HandleListTreeAt must run on the main thread');
+  Result := Default(TBridgeResponse);
+  Result.Id := AReq.Id;
+
+  Form := NIL;
+  for i := 0 to Screen.FormCount - 1 do
+    if SameText(Screen.Forms[i].Name, AFormName) then
+      begin
+        Form := Screen.Forms[i];
+        Break;
+      end;
+  Assert(Form <> NIL, 'HandleListTreeAt: CheckListTreeFormFilter let an unknown form through');
+  if not Form.HandleAllocated then
+    begin
+      Result.Ok := FALSE;
+      Result.ErrorCode := ErrUnsupportedAction;
+      Result.ErrorMessage := 'list_tree: ' + Form.Name + ' has no window yet (it was never shown), so no control shows at a point';
+      EXIT;
+    end;
+  if not Rect(0, 0, Form.ClientWidth, Form.ClientHeight).Contains(Point(AX, AY)) then
+    begin
+      Result.Ok := FALSE;
+      Result.ErrorCode := ErrNotFound;
+      Result.ErrorMessage := ListTreePointOutsideText(Form.Name, AX, AY, Form.ClientWidth, Form.ClientHeight);
+      EXIT;
+    end;
+
+  Hit := ControlAtPoint(Form, Point(AX, AY));
+  Seen := TList.Create;
+  try
+    Kept := ((not AFormsOnly) or (Hit is TCustomForm)) and KeptByPathFilter(Hit, APathRoot, Seen);
+  finally
+    FreeAndNil(Seen);
+  end;
+
+  Wrap := TJSONObject.Create;
+  try
+    Items := TJSONArray.Create;
+    Wrap.AddPair('components', Items);   // Wrap owns Items from here
+    if Kept then
+      if Hit is TCustomForm
+      then Items.AddElement(BuildFormNode(TCustomForm(Hit)))
+      else
+        begin
+          Path := OwnerPathFor(Hit);
+          Node := BuildComponentNode(Copy(Path, 1, Pos('.', Path) - 1), Path, Hit);
+          Items.AddElement(Node);   // Items owns Node from here
+          AddReparentedField(Node, Hit, Hit.Owner);
+        end;
+    Wrap.AddPair('x', TJSONNumber.Create(AX));
+    Wrap.AddPair('y', TJSONNumber.Create(AY));
+  except
+    FreeAndNil(Wrap);
+    raise;
+  end;
+  Result.Ok := TRUE;
+  Result.ResultJson := Wrap;
+end;
+
+
 { Optional args: form (only the nodes of the forms with that name, case-insensitive), formsOnly (only the form nodes) and path (only the node at that path and what lies under it, LiesUnder).
   The filters combine: a node is listed only when every filter given keeps it.
+  x and y (with form): only the control at that point, HandleListTreeAt.
   Without them the answer is the whole tree, as it always was. }
 function HandleListTree(const AReq: TBridgeRequest): TBridgeResponse;
 var
@@ -1881,15 +2066,16 @@ var
   Visited: TList;
   i: Integer;
   Form: TCustomForm;
-  Guide, GuideError: String;
   FormFilter, PathFilter, ArgError: String;
-  FormsOnly: Boolean;
+  FormsOnly, HasPoint: Boolean;
+  X, Y: Integer;
 begin
   Assert(GetCurrentThreadId = MainThreadID, 'HandleListTree must run on the main thread');
   Result := Default(TBridgeResponse);
   Result.Id := AReq.Id;
 
-  if not TryParseListTreeArgs(AReq.Args, FormFilter, FormsOnly, PathFilter, ArgError) then
+  if not TryParseListTreeArgs(AReq.Args, FormFilter, FormsOnly, PathFilter, ArgError)
+  or not TryParseListTreePointArgs(AReq.Args, FormFilter, HasPoint, X, Y, ArgError) then
     begin
       Result.Ok := FALSE;
       Result.ErrorCode := ErrInvalidRequest;
@@ -1911,6 +2097,7 @@ begin
       PathRoot := ResolvePathOrFail(PathFilter, Result);
       if PathRoot = NIL then EXIT;
     end;
+  if HasPoint then EXIT(HandleListTreeAt(AReq, FormFilter, FormsOnly, PathRoot, X, Y));
   Result.Ok := TRUE;
 
   Seen := TList.Create;
@@ -1932,14 +2119,8 @@ begin
           Visited.Add(Form);
           if KeptByPathFilter(Form, PathRoot, Seen) then
             begin
-              FormNode := BuildComponentNode(Form.Name, Form.Name, Form);
+              FormNode := BuildFormNode(Form);
               Items.AddElement(FormNode);
-              AddReparentedField(FormNode, Form, NIL);   // a form embedded in another form's panel
-              if TryGetFormGuide(Form, Guide, GuideError)
-              then FormNode.AddPair('guide', Guide)
-              else
-                if GuideError <> ''
-                then FormNode.AddPair('guideError', GuideError);
             end;
           if not FormsOnly
           then WalkComponents(Form.Name, Form.Name, Form, Items, Visited, PathRoot, Seen);

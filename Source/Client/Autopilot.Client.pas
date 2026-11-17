@@ -1,7 +1,7 @@
 unit Autopilot.Client;
 
 {=============================================================================================================
-   2026.10.13
+   2026.11.17
    www.GabrielMoraru.com
 --------------------------------------------------------------------------------------------------------------
    - Delphi client for the Autopilot bridge: a DUnitX test (or a DUnit test, or a console program) drives a running VCL or FMX app with no AI.
@@ -83,6 +83,7 @@ type
     function  RequestString(const ACmd: String; AArgs: TJSONObject; const AField: String; AListDialogsWhenBlocked: Boolean): String;
     function  OpenDialogsNote: String;
     function  DialogIsOpen(AHwnd: Int64): Boolean;
+    function  dismissWithFileName(const AButton: String; ATimeoutMs: Cardinal; const AFileName: String): Boolean;
     function  WaitForDiscovery(const ADiscoveryFile, AExePath: String; ATimeoutMs: Cardinal): String;
     function  WaitForEnd(ATimeoutMs: Cardinal): Boolean;
     function  Kill: String;
@@ -150,9 +151,13 @@ type
     { Clicks a button of a native dialog (MessageBox, ShowMessage, MessageDlg, a file dialog): Button is a role ('ok', 'cancel', 'yes', 'no', 'retry', 'abort', 'ignore', 'close'), a button caption or a control id.
       Waits for the dialog: while the bridge answers that no dialog is open (reason 'no_dialog'), it asks again every 50 ms until TimeoutMs has passed.
       Needed after ClickAsync, which returns before the click runs, so the dialog the click opens may not exist yet (measured: 1 ms after ClickAsync it did not).
-      TRUE only when the dialog is gone: the bridge found the button's own window and sent its click (BN_CLICKED), or, after a blind WM_COMMAND, the dialog left the list within 1000 ms.
-      FALSE when no dialog appeared within TimeoutMs, at once when the open dialog has no such button or the click was not delivered, and when the dialog stayed. }
-    function  DismissDialog(const Button: String; TimeoutMs: Cardinal = ClientDialogTimeoutMs): Boolean;
+      TRUE only when the dialog is gone: the bridge found the button's own window and sent its click (BN_CLICKED).
+      A bridge older than 3.8.0 may answer a blind WM_COMMAND by id instead; then TRUE only when the dialog left the list within 1000 ms.
+      FALSE when no dialog appeared within TimeoutMs, at once when the open dialog has no such button or the click was not delivered, and when the dialog stayed.
+      FileName: typed into the File name box of an Open or Save dialog first; the button is clicked only when the box reads back exactly this text, else FALSE and nothing is clicked.
+      Button '' with a FileName only fills the box (TRUE when it holds the name).
+      A bridge older than 3.8.0 ignores fileName: then this raises EAutopilotError (ErrProtocolMismatch) and clicks nothing. }
+    function  DismissDialog(const Button: String; TimeoutMs: Cardinal = ClientDialogTimeoutMs; const FileName: String = ''): Boolean;
     { Saves a PNG of a form ('frmMain') or of one control ('frmMain.pnlTop'). Path '' = the main form. }
     procedure Screenshot(const Path, PngFileName: String);
     { Polls get_text every ClientPollIntervalMs until the text equals Expected (TRUE) or TimeoutMs passes (FALSE).
@@ -1378,7 +1383,7 @@ begin
 end;
 
 
-function TAutopilotApp.DismissDialog(const Button: String; TimeoutMs: Cardinal): Boolean;
+function TAutopilotApp.DismissDialog(const Button: String; TimeoutMs: Cardinal; const FileName: String): Boolean;
 var
   Args, R: TJSONObject;
   Clicked: Boolean;
@@ -1386,6 +1391,8 @@ var
   DialogHwnd: Int64;
   Deadline: UInt64;
 begin
+  if FileName <> ''
+  then EXIT(dismissWithFileName(Button, TimeoutMs, FileName));
   if Trim(Button) = ''
   then raise EArgumentException.Create('Autopilot.DismissDialog: Button is empty; pass a role (ok, cancel, yes, no, retry, abort, ignore, close), ' + 'a button caption or a control id');
 
@@ -1419,6 +1426,58 @@ begin
     Sleep(50);
   until GetTickCount64 >= Deadline;
   Result := FALSE;
+end;
+
+
+{ fileName in two requests, so a bridge older than 3.8.0 never clicks Save with the wrong name: it ignores fileName and would click the button at once.
+  Request 1 sends fileName alone. A 3.8.0 bridge fills the box and answers fileNameSet; an older one answers no fileNameSet, and then nothing is clicked and this raises.
+  Request 2 (only with a button, and only when the box holds the name) sends fileName, the button and the dialogHwnd of request 1, so the name is set and read back again and the click goes to that same dialog. }
+function TAutopilotApp.dismissWithFileName(const AButton: String; ATimeoutMs: Cardinal; const AFileName: String): Boolean;
+var
+  Args, R: TJSONObject;
+  NameSet: TJSONValue;
+  IsSet, Clicked: Boolean;
+  Reason: String;
+  DialogHwnd: Int64;
+  Deadline: UInt64;
+begin
+  { # Wait for the dialog, as for a click: while the answer says no_dialog }
+  Deadline := GetTickCount64 + ATimeoutMs;
+  repeat
+    Args := TJSONObject.Create;
+    Args.AddPair('fileName', AFileName);
+    R := Request('dismiss_dialog', Args, 0, FALSE);
+    try
+      NameSet := R.GetValue('fileNameSet');
+      if not (NameSet is TJSONBool)
+      then raise EAutopilotError.CreateCode(ErrProtocolMismatch, 'Autopilot.DismissDialog: the bridge in the app is older than 3.8.0 and ignores fileName, so no button was clicked. ' + 'Update the bridge units of the app to 3.8.0 or newer and rebuild it');
+      IsSet  := TJSONBool(NameSet).AsBoolean;
+      Reason := JsonStr(R, 'reason');   // when not set: 'no_dialog', or why the box could not take the name
+      DialogHwnd := 0;
+      TryJsonInt64(R.GetValue('dialogHwnd'), DialogHwnd);
+    finally
+      FreeAndNil(R);
+    end;
+    if IsSet then Break;
+    if Reason <> 'no_dialog' then EXIT(FALSE);   // a dialog is open, but its box cannot take the name: nothing was clicked
+    if GetTickCount64 >= Deadline then EXIT(FALSE);
+    Sleep(DialogPollMs);
+  until FALSE;
+  if Trim(AButton) = '' then EXIT(TRUE);   // only fill the box
+
+  { # Click, on the same dialog }
+  Args := TJSONObject.Create;
+  Args.AddPair('fileName', AFileName);
+  Args.AddPair('button', AButton);
+  if DialogHwnd <> 0
+  then Args.AddPair('hwnd', TJSONNumber.Create(DialogHwnd));
+  R := Request('dismiss_dialog', Args, 0, FALSE);
+  try
+    Clicked := JsonBool(R, 'clicked');
+  finally
+    FreeAndNil(R);
+  end;
+  Result := Clicked;
 end;
 
 
