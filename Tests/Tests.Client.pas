@@ -48,6 +48,9 @@ type
     [Test] procedure Test_DismissDialog_BlindClickDialogStays_ReturnsFalse;
     [Test] procedure Test_DismissDialog_DialogAppearsLate_IsDismissed;
     [Test] procedure Test_DismissDialog_ButtonNotFound_ReturnsFalseAtOnce;
+    [Test] procedure Test_DismissDialog_FileName_OlderBridge_RaisesAndClicksNothing;
+    [Test] procedure Test_DismissDialog_FileName_SetsTheNameThenClicksThatDialog;
+    [Test] procedure Test_DismissDialog_FileName_Refused_ReturnsFalseAndClicksNothing;
   end;
 
   [TestFixture]
@@ -75,6 +78,7 @@ type
     [Test] procedure Test_Call_ReturnsTheResultObject;
     [Test] procedure Test_WrongPath_RaisesNotFound;
     [Test] procedure Test_DismissDialog_NoDialogOpen_ReturnsFalse;
+    [Test] procedure Test_DismissDialog_FileNameNoDialogOpen_ReturnsFalse;
     [Test] procedure Test_MainThreadCallToOwnBridge_RaisesAtOnce;
     [Test] procedure Test_BackToBackCommands_PayNoRetrySleep;
   end;
@@ -1091,6 +1095,122 @@ begin
 end;
 
 
+{ A bridge older than 3.8.0 ignores fileName and would click Save at once with whatever the box holds.
+  So the first request carries fileName alone; an answer without fileNameSet is such a bridge, and DismissDialog raises before it ever sends the button. }
+procedure TClientTransportTests.Test_DismissDialog_FileName_OlderBridge_RaisesAndClicksNothing;
+var
+  Fake : TFakeBridge;
+  App  : TAutopilotApp;
+  Count: Integer;
+  First: String;
+begin
+  First := '';
+  Fake := TFakeBridge.Create(NewPipeName,
+    [Session('"ok":true,"result":{"dialogs":[{"hwnd":780,"caption":"Save As","text":"","buttons":[]}],"supported":true,"platform":"windows"}')], 0, 0);
+  try
+    Assert.IsTrue(Fake.WaitReady, 'the fake bridge did not start');
+    App := TAutopilotAppAccess.CreateForPipe(Fake.PipeName, 0);
+    try
+      Assert.WillRaise(
+        procedure
+        begin
+          App.DismissDialog('save', ClientDialogTimeoutMs, 'out.txt');
+        end, EAutopilotError, 'an answer without fileNameSet comes from a bridge that ignores fileName');
+    finally
+      FreeAndNil(App);
+    end;
+    Fake.Shutdown;
+    Count := Fake.Requests.Count;
+    if Count > 0
+    then First := Fake.Requests[0];
+  finally
+    Fake.Shutdown;
+    FreeAndNil(Fake);
+  end;
+  Assert.AreEqual(1, Count, 'one request only: the button must never be sent to such a bridge');
+  Assert.IsTrue(Pos('"fileName":"out.txt"', First) > 0, 'the first request carries fileName: ' + First);
+  Assert.IsTrue(Pos('"button"', First) = 0, 'the first request carries no button: ' + First);
+end;
+
+
+{ Call 1 fills the box (fileNameSet true, dialogHwnd 781); call 2 sends fileName, the button and hwnd 781, so the click goes to the dialog whose box holds the name }
+procedure TClientTransportTests.Test_DismissDialog_FileName_SetsTheNameThenClicksThatDialog;
+var
+  Fake : TFakeBridge;
+  App  : TAutopilotApp;
+  Gone : Boolean;
+  Count: Integer;
+  First, Second: String;
+begin
+  First  := '';
+  Second := '';
+  Fake := TFakeBridge.Create(NewPipeName,
+    [Session('"ok":true,"result":{"dialogs":[{"hwnd":781,"caption":"Save As","text":"","buttons":[]}],"supported":true,"platform":"windows",' +
+             '"fileNameSet":true,"dialogHwnd":781}'),
+     Session('"ok":true,"result":{"dialogs":[{"hwnd":781,"caption":"Save As","text":"","buttons":[]}],"supported":true,"platform":"windows",' +
+             '"fileNameSet":true,"clicked":true,"clickedId":1,"clickedCaption":"Save","dialogHwnd":781,"via":"BN_CLICKED"}')], 0, 0);
+  try
+    Assert.IsTrue(Fake.WaitReady, 'the fake bridge did not start');
+    App := TAutopilotAppAccess.CreateForPipe(Fake.PipeName, 0);
+    try
+      Gone := App.DismissDialog('save', ClientDialogTimeoutMs, 'out.txt');
+    finally
+      FreeAndNil(App);
+    end;
+    Fake.Shutdown;
+    Count := Fake.Requests.Count;
+    if Count > 0
+    then First := Fake.Requests[0];
+    if Count > 1
+    then Second := Fake.Requests[1];
+  finally
+    Fake.Shutdown;
+    FreeAndNil(Fake);
+  end;
+  Assert.AreEqual(Want(TRUE), Gone, 'the name was set and Save was clicked');
+  Assert.AreEqual(2, Count, 'call 1 fills the box, call 2 clicks');
+  Assert.IsTrue((Pos('"fileName":"out.txt"', First) > 0) and (Pos('"button"', First) = 0), 'call 1 carries fileName and no button: ' + First);
+  Assert.IsTrue(Pos('"fileName":"out.txt"', Second) > 0, 'call 2 carries fileName: ' + Second);
+  Assert.IsTrue(Pos('"button":"save"', Second) > 0, 'call 2 carries the button: ' + Second);
+  Assert.IsTrue(Pos('"hwnd":781', Second) > 0, 'call 2 goes to the dialog of call 1: ' + Second);
+end;
+
+
+{ The bridge refused the name (no File name box): nothing was clicked, so DismissDialog answers FALSE at once and sends no second call }
+procedure TClientTransportTests.Test_DismissDialog_FileName_Refused_ReturnsFalseAndClicksNothing;
+var
+  Fake : TFakeBridge;
+  App  : TAutopilotApp;
+  Gone : Boolean;
+  Count: Integer;
+  First: String;
+begin
+  First := '';
+  Fake := TFakeBridge.Create(NewPipeName,
+    [Session('"ok":true,"result":{"dialogs":[{"hwnd":782,"caption":"Native Dialog","text":"Save?","buttons":[]}],"supported":true,"platform":"windows",' +
+             '"fileNameSet":false,"dialogHwnd":782,"reason":"no_file_name_box"}')], 0, 0);
+  try
+    Assert.IsTrue(Fake.WaitReady, 'the fake bridge did not start');
+    App := TAutopilotAppAccess.CreateForPipe(Fake.PipeName, 0);
+    try
+      Gone := App.DismissDialog('save', ClientDialogTimeoutMs, 'out.txt');
+    finally
+      FreeAndNil(App);
+    end;
+    Fake.Shutdown;
+    Count := Fake.Requests.Count;
+    if Count > 0
+    then First := Fake.Requests[0];
+  finally
+    Fake.Shutdown;
+    FreeAndNil(Fake);
+  end;
+  Assert.AreEqual(Want(FALSE), Gone, 'the name was refused');
+  Assert.AreEqual(1, Count, 'no second call: the button must not be clicked');
+  Assert.IsTrue((Pos('"fileName":"out.txt"', First) > 0) and (Pos('"button"', First) = 0), 'the one request carries fileName and no button: ' + First);
+end;
+
+
 { The fixture forms -------------------------------------------------------- }
 
 type
@@ -1605,6 +1725,37 @@ begin
   Assert.AreEqual(Want(FALSE), Gone, 'no native dialog is open in this process');
   Assert.IsTrue(Elapsed >= 380, 'gave up after ' + UIntToStr(Elapsed) + ' ms: it must wait TimeoutMs (400 ms) for a dialog to appear');
   Assert.IsTrue(Elapsed < 2000, 'gave up after ' + UIntToStr(Elapsed) + ' ms: long after TimeoutMs (400 ms)');
+end;
+
+
+{ The real bridge answers fileNameSet:false + reason no_dialog when no dialog is open: DismissDialog must wait TimeoutMs and answer FALSE, not raise as for an older bridge }
+procedure TClientBridgeTests.Test_DismissDialog_FileNameNoDialogOpen_ReturnsFalse;
+var
+  App : TAutopilotApp;
+  Gone: Boolean;
+  Raised: String;
+  Elapsed: UInt64;
+begin
+  App     := FApp;
+  Gone    := TRUE;
+  Raised  := '';
+  Elapsed := 0;
+  RunOnWorkerAndPump(
+    procedure
+    var T0: UInt64;
+    begin
+      T0 := GetTickCount64;
+      try
+        Gone := App.DismissDialog('save', 400, 'x.txt');
+      except
+        on E: EAutopilotError do
+          Raised := E.Message;   // asserted below: the test must fail with the message, not end the worker
+      end;
+      Elapsed := GetTickCount64 - T0;
+    end, 15000);
+  Assert.AreEqual('', Raised, 'the bridge of this suite knows fileName, so DismissDialog must not raise');
+  Assert.AreEqual(Want(FALSE), Gone, 'no native dialog is open in this process');
+  Assert.IsTrue(Elapsed >= 380, 'gave up after ' + UIntToStr(Elapsed) + ' ms: it must wait TimeoutMs (400 ms) for a dialog to appear');
 end;
 
 

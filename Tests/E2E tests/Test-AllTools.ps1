@@ -659,6 +659,48 @@ try {
 
     $lt7 = Tool 'list_tree' @{ pid = $script:TargetPid; path = "$($M.Form).noSuchControlE2E" }
     Case 'list_tree path=unknown: -32001' ($lt7.IsError -and ($lt7.Code -eq -32001) -and ($lt7.Msg -clike '*noSuchControlE2E*')) 'isError, code -32001, the message names the path' (Describe $lt7)
+
+    # { x, y with form: the control at that pixel of the form's screenshot. The points come from read_property, never from constants.
+    #   The label lies two levels down, on the panel; an FMX TLabel has HitTest = FALSE, which the walk of the bridge must not skip. }
+    $LeftProp = if ($IsVcl) { 'Left' } else { 'Position.X' }
+    $TopProp  = if ($IsVcl) { 'Top' }  else { 'Position.Y' }
+    $num = @{}
+    foreach ($pp in @(@($M.Button, $LeftProp), @($M.Button, $TopProp), @($M.Button, 'Width'), @($M.Button, 'Height'),
+                      @($M.Panel, $LeftProp), @($M.Panel, $TopProp),
+                      @($M.InPanel, $LeftProp), @($M.InPanel, $TopProp), @($M.InPanel, 'Width'), @($M.InPanel, 'Height'),
+                      @($M.Form, 'ClientWidth'), @($M.Form, 'ClientHeight'))) {
+      $v = [double]::NaN
+      $r = ReadProp $pp[0] $pp[1]
+      if ((IsOk $r) -and [double]::TryParse([string]$r.J.result.value, [Globalization.NumberStyles]::Float, [Globalization.CultureInfo]::InvariantCulture, [ref]$v)) { $num["$($pp[0]).$($pp[1])"] = $v }
+    }
+    Case 'read_property: the 12 numbers the x, y cases need' ($num.Count -eq 12) '12 numbers' "$($num.Count) read: $(@($num.Keys) -join ',')"
+    if ($num.Count -eq 12) {
+      $bx = [int][math]::Floor($num["$($M.Button).$LeftProp"] + $num["$($M.Button).Width"] / 2)
+      $by = [int][math]::Floor($num["$($M.Button).$TopProp"] + $num["$($M.Button).Height"] / 2)
+      $lt8 = Tool 'list_tree' @{ pid = $script:TargetPid; form = $M.Form; x = $bx; y = $by }
+      $c8 = @($lt8.J.result.components)
+      $u = @($comps | Where-Object { $_.path -ceq $M.Button })
+      $same = ($c8.Count -eq 1) -and ($u.Count -eq 1) -and (($u[0] | ConvertTo-Json -Compress -Depth 5) -ceq ($c8[0] | ConvertTo-Json -Compress -Depth 5))
+      $ok = (IsOk $lt8) -and $same -and ($lt8.J.result.x -eq $bx) -and ($lt8.J.result.y -eq $by)
+      Case "list_tree x=$bx y=${by}: the button at that point, node as in the full tree" $ok "1 node $($M.Button), unchanged, result.x=$bx, result.y=$by" (Short (Describe $lt8))
+
+      $lx = [int][math]::Floor($num["$($M.Panel).$LeftProp"] + $num["$($M.InPanel).$LeftProp"] + $num["$($M.InPanel).Width"] / 2)
+      $ly = [int][math]::Floor($num["$($M.Panel).$TopProp"] + $num["$($M.InPanel).$TopProp"] + $num["$($M.InPanel).Height"] / 2)
+      $lt9 = Tool 'list_tree' @{ pid = $script:TargetPid; form = $M.Form; x = $lx; y = $ly }
+      $c9 = @($lt9.J.result.components)
+      Case "list_tree x=$lx y=${ly}: the label on the panel" ((IsOk $lt9) -and ($c9.Count -eq 1) -and ($c9[0].path -ceq $M.InPanel)) "1 node $($M.InPanel)" (Short (Describe $lt9))
+
+      $cw = [int][math]::Round($num["$($M.Form).ClientWidth"])
+      $lt10 = Tool 'list_tree' @{ pid = $script:TargetPid; form = $M.Form; x = $cw; y = 0 }
+      Case "list_tree x=$cw (the client width) y=0: -32001" ($lt10.IsError -and ($lt10.Code -eq -32001) -and ($lt10.Msg -clike '*outside the client area*')) 'isError, code -32001, "outside the client area"' (Describe $lt10)
+    }
+
+    $lt11 = Tool 'list_tree' @{ pid = $script:TargetPid; form = $M.Form; x = 5 }
+    Case 'list_tree x without y: isError' ($lt11.IsError -and ($lt11.Text -clike '*together*')) 'isError, "x and y must be given together"' (Describe $lt11)
+    $lt13 = Tool 'list_tree' @{ pid = $script:TargetPid; form = $M.Form; x = 1.5; y = 5 }
+    Case 'list_tree x=1.5: isError' $lt13.IsError 'isError (x must be a whole number)' (Describe $lt13)
+    $lt12 = Tool 'list_tree' @{ pid = $script:TargetPid; x = 5; y = 5 }
+    Case 'list_tree x, y without form: -32600' ($lt12.IsError -and ($lt12.Code -eq -32600) -and ($lt12.Msg -clike '*need args.form*')) 'isError, code -32600, the message asks for form' (Describe $lt12)
   }
 
   Section 'click' {

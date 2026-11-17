@@ -1,12 +1,13 @@
 unit Tests.Bridge.ListTreeFilter;
 
 {=============================================================================================================
-   2026.11.14
+   2026.11.17
    www.GabrielMoraru.com
 --------------------------------------------------------------------------------------------------------------
    - DUnitX tests for the optional arguments of list_tree (VCL bridge):
        form      - only the nodes of the form with that name (case-insensitive): the form node and every component listed under it.
        formsOnly - only the form nodes.
+       x, y      - only the control at that point of the form's client area (TListTreeAtTests).
    - A form that matches no form answers -32001, and the message names the forms that exist.
    - Without the arguments (or with form "" / formsOnly false) the answer is the same as before.
    - The expected nodes are taken from the unfiltered answer of the same bridge, so a filtered answer must be a byte-exact subset of it.
@@ -48,13 +49,41 @@ type
     [Test] procedure Test_ListTree_Path_UnknownOrBadType_IsRefused;
   end;
 
+  { list_tree x, y: the control at a point of the form's client area (the pixel of an unscaled, uncropped screenshot).
+    Every expected point is computed from the controls through Win32 MapWindowPoints, never from constants.
+    Every returned path is sent back to read_property Tag: each control of the form has its own Tag, so the round trip shows the path leads to that very control. }
+  [TestFixture]
+  TListTreeAtTests = class
+  private
+    FPipeName   : String;
+    FPipeCounter: Integer;
+    FForm       : TForm;
+    function CallListTree(const AArgsJson: String): TJSONObject;
+    function ReadTag(const APath: String): String;
+    procedure CheckHit(const AWhat: String; AX, AY: Integer; const AExpectedPath: String; AExpectedTag: Integer);
+  public
+    [SetupFixture]    procedure SetupFixture;
+    [Setup]           procedure Setup;
+    [TearDown]        procedure TearDown;
+    [TearDownFixture] procedure TearDownFixture;
+
+    [Test] procedure Test_ListTreeAt_TwoTabSheets_ReturnsTheControlOnTheActivePage;
+    [Test] procedure Test_ListTreeAt_LabelInPanel_ReturnsTheLabel;
+    [Test] procedure Test_ListTreeAt_UnownedControl_ClimbsToTheNearestListedParent;
+    [Test] procedure Test_ListTreeAt_FormBackground_ReturnsTheFormNode;
+    [Test] procedure Test_ListTreeAt_CombinesWithFormsOnlyAndPath;
+    [Test] procedure Test_ListTreeAt_MinimizedForm_ReturnsTheSameControl;
+    [Test] procedure Test_ListTreeAt_OutsideTheClientArea_Returns32001;
+    [Test] procedure Test_ListTreeAt_BadArguments_ReturnInvalidRequest;
+  end;
+
 
 implementation
 
 uses
   Winapi.Windows,   // GetCurrentProcessId for the pipe name
-  System.SysUtils, System.Classes, System.Generics.Collections,
-  Vcl.StdCtrls, Vcl.ExtCtrls,
+  System.SysUtils, System.Classes, System.Types, System.Generics.Collections,
+  Vcl.Controls, Vcl.StdCtrls, Vcl.ExtCtrls, Vcl.ComCtrls,
   Autopilot.Bridge.Core, Autopilot.Bridge.Vcl,
   Bridge.TestClient, Bridge.Tests;
 
@@ -240,6 +269,37 @@ begin
   V := ARoot.GetValue('error');
   if V is TJSONObject
   then Result := StrField(V, 'message');
+end;
+
+
+{ Sends ACmd with the arguments AArgsJson ('' = no arguments) to the bridge on APipeName and returns the whole answer (the caller frees it). }
+function CallCommand(const APipeName, ACmd, AArgsJson: String): TJSONObject;
+var
+  Root: TJSONObject;
+begin
+  Root := NIL;
+  RunOnWorkerAndPump(
+    procedure
+    var
+      Client: TBridgeTestClient;
+      Args: TJSONObject;
+    begin
+      if AArgsJson = ''
+      then Args := NIL
+      else Args := TJSONObject.ParseJSONValue(AArgsJson) as TJSONObject;   // Call owns Args from here
+      Client := TBridgeTestClient.Create;
+      try
+        if not Client.ConnectAndHandshake(APipeName, 2000) then
+          begin
+            FreeAndNil(Args);
+            Assert.Fail('connect to ' + APipeName + ' failed');
+          end;
+        Root := Client.Call(1, ACmd, Args);
+      finally
+        FreeAndNil(Client);
+      end;
+    end, 5000);
+  Result := Root;
 end;
 
 
@@ -576,7 +636,322 @@ begin
 end;
 
 
+{ TListTreeAtTests ------------------------------------------------------- }
+
+const
+  AtFormName = 'AtForm';
+
+type
+  { pgc holds two tab sheets with a button at the same place (btnOne, btnTwo).
+    pnlHost owns lblInPanel and shows btnUnowned, a button that no component owns, so list_tree never lists it.
+    Each control has its own Tag (the form 1), for the read_property round trip. }
+  TAtForm = class(TForm)
+  public
+    Pgc       : TPageControl;
+    TsOne     : TTabSheet;
+    TsTwo     : TTabSheet;
+    BtnOne    : TButton;
+    BtnTwo    : TButton;
+    PnlHost   : TPanel;
+    LblInPanel: TLabel;
+    BtnUnowned: TButton;
+    constructor Create(AOwner: TComponent); override;
+  end;
+
+
+constructor TAtForm.Create(AOwner: TComponent);
+begin
+  inherited CreateNew(AOwner);
+  Name         := AtFormName;
+  Caption      := 'At';
+  Tag          := 1;
+  Position     := poDesigned;
+  SetBounds(40, 40, 420, 260);
+
+  Pgc := TPageControl.Create(Self);
+  Pgc.Name   := 'pgc';
+  Pgc.Tag    := 2;
+  Pgc.Parent := Self;
+  Pgc.SetBounds(10, 10, 200, 150);
+  TsOne := TTabSheet.Create(Self);
+  TsOne.Name        := 'tsOne';
+  TsOne.Tag         := 3;
+  TsOne.PageControl := Pgc;
+  TsTwo := TTabSheet.Create(Self);
+  TsTwo.Name        := 'tsTwo';
+  TsTwo.Tag         := 4;
+  TsTwo.PageControl := Pgc;
+  BtnOne := TButton.Create(Self);
+  BtnOne.Name   := 'btnOne';
+  BtnOne.Tag    := 5;
+  BtnOne.Parent := TsOne;
+  BtnOne.SetBounds(20, 20, 80, 25);
+  BtnTwo := TButton.Create(Self);
+  BtnTwo.Name   := 'btnTwo';
+  BtnTwo.Tag    := 6;
+  BtnTwo.Parent := TsTwo;
+  BtnTwo.SetBounds(20, 20, 80, 25);   // the same place as btnOne, on the other page
+  Pgc.ActivePage := TsTwo;
+
+  PnlHost := TPanel.Create(Self);
+  PnlHost.Name   := 'pnlHost';
+  PnlHost.Tag    := 7;
+  PnlHost.Parent := Self;
+  PnlHost.SetBounds(230, 10, 160, 150);
+  LblInPanel := TLabel.Create(PnlHost);   // owned by the panel: AtForm.pnlHost.lblInPanel
+  LblInPanel.Name     := 'lblInPanel';
+  LblInPanel.Tag      := 8;
+  LblInPanel.AutoSize := FALSE;
+  LblInPanel.Parent   := PnlHost;
+  LblInPanel.SetBounds(10, 10, 100, 20);
+  BtnUnowned := TButton.Create(NIL);      // the panel frees it: a TWinControl frees its child controls
+  BtnUnowned.Name   := 'btnUnowned';
+  BtnUnowned.Tag    := 9;
+  BtnUnowned.Parent := PnlHost;
+  BtnUnowned.SetBounds(10, 60, 100, 25);
+end;
+
+
+// The middle of ACtrl in the client coordinates of AForm, mapped by Win32 from the client coordinates of its parent.
+function MiddleInForm(AForm: TForm; ACtrl: TControl): TPoint;
+begin
+  Assert.IsTrue(AForm.HandleAllocated and ACtrl.Parent.HandleAllocated, 'fixture: the form and the parent of ' + ACtrl.Name + ' must have a window');
+  Result := Point(ACtrl.Left + ACtrl.Width div 2, ACtrl.Top + ACtrl.Height div 2);
+  MapWindowPoints(ACtrl.Parent.Handle, AForm.Handle, Result, 1);
+end;
+
+
+function PointArgs(AX, AY: Integer; const AExtra: String = ''): String;
+begin
+  Result := '{"form":"' + AtFormName + '","x":' + IntToStr(AX) + ',"y":' + IntToStr(AY) + AExtra + '}';
+end;
+
+
+procedure TListTreeAtTests.SetupFixture;
+begin
+  FPipeCounter := 0;
+  FForm := TAtForm.Create(NIL);
+  FForm.Visible := TRUE;   // ShowWindow alone would show only the form's own window, not the child windows (Tests.Bridge.ScreenshotNative)
+end;
+
+
+procedure TListTreeAtTests.Setup;
+begin
+  Inc(FPipeCounter);
+  FPipeName := '\\.\pipe\AutopilotTestListTreeAt.' + IntToStr(GetCurrentProcessId) + '.' + IntToStr(FPipeCounter);
+  StartBridgeOnPipe(FPipeName);
+end;
+
+
+procedure TListTreeAtTests.TearDown;
+begin
+  StopBridge;
+end;
+
+
+procedure TListTreeAtTests.TearDownFixture;
+begin
+  FreeAndNil(FForm);
+end;
+
+
+function TListTreeAtTests.CallListTree(const AArgsJson: String): TJSONObject;
+begin
+  Result := CallCommand(FPipeName, 'list_tree', AArgsJson);
+end;
+
+
+// The value read_property gives for the Tag of APath; fails the test when the path does not resolve.
+function TListTreeAtTests.ReadTag(const APath: String): String;
+var
+  Root, R: TJSONObject;
+begin
+  Root := CallCommand(FPipeName, 'read_property', '{"path":"' + APath + '","propName":"Tag"}');
+  try
+    R := GetOkResult(Root);
+    if R = NIL
+    then Assert.Fail('read_property Tag of ' + APath + ' failed: ' + Root.ToJSON);
+    Result := StrField(R, 'value');
+  finally
+    FreeAndNil(Root);
+  end;
+end;
+
+
+{ list_tree at AX, AY must answer exactly one node, at AExpectedPath, byte-identical to the node with that path in the form=AtForm answer, with the point in the answer's x and y.
+  The path must lead back to the control whose Tag is AExpectedTag. }
+procedure TListTreeAtTests.CheckHit(const AWhat: String; AX, AY: Integer; const AExpectedPath: String; AExpectedTag: Integer);
+var
+  Root, Full, R: TJSONObject;
+  Comps, FullComps: TJSONArray;
+  i: Integer;
+  Expected: String;
+begin
+  Full := CallListTree('{"form":"' + AtFormName + '"}');
+  Root := CallListTree(PointArgs(AX, AY));
+  try
+    FullComps := ComponentsOf(Full, AWhat + ', the full answer');
+    Expected := '';
+    for i := 0 to FullComps.Count - 1 do
+      if StrField(FullComps.Items[i], 'path') = AExpectedPath
+      then Expected := FullComps.Items[i].ToJSON;
+    Assert.AreNotEqual('', Expected, AWhat + ': fixture: the full answer must list ' + AExpectedPath);
+
+    Comps := ComponentsOf(Root, AWhat);
+    Assert.AreEqual(1, Comps.Count, AWhat + ': the answer must hold exactly one node: ' + Root.ToJSON);
+    Assert.AreEqual(Expected, Comps.Items[0].ToJSON, AWhat + ': the node must be the one the full answer lists at ' + AExpectedPath);
+    R := GetOkResult(Root);
+    Assert.AreEqual(IntToStr(AX), R.GetValue('x').Value, AWhat + ': the answer must carry x');
+    Assert.AreEqual(IntToStr(AY), R.GetValue('y').Value, AWhat + ': the answer must carry y');
+  finally
+    FreeAndNil(Root);
+    FreeAndNil(Full);
+  end;
+  Assert.AreEqual(IntToStr(AExpectedTag), ReadTag(AExpectedPath), AWhat + ': the path must lead back to the control with Tag ' + IntToStr(AExpectedTag));
+end;
+
+
+{ ControlAtPos with AllLevels would also find btnOne on the hidden page; the walk goes one level at a time, so only the active page counts. }
+procedure TListTreeAtTests.Test_ListTreeAt_TwoTabSheets_ReturnsTheControlOnTheActivePage;
+var
+  F: TAtForm;
+  P: TPoint;
+begin
+  F := TAtForm(FForm);
+  P := MiddleInForm(F, F.BtnTwo);
+  // The inactive page has no window yet, so MiddleInForm cannot map btnOne: both buttons and both pages must have the same bounds instead.
+  Assert.IsTrue(F.BtnOne.BoundsRect = F.BtnTwo.BoundsRect, 'fixture: both buttons must have the same bounds');
+  Assert.IsTrue(F.TsOne.BoundsRect = F.TsTwo.BoundsRect, 'fixture: both pages must have the same bounds');
+  CheckHit('tsTwo active', P.X, P.Y, AtFormName + '.btnTwo', 6);
+  F.Pgc.ActivePage := F.TsOne;
+  try
+    CheckHit('tsOne active', P.X, P.Y, AtFormName + '.btnOne', 5);
+  finally
+    F.Pgc.ActivePage := F.TsTwo;
+  end;
+end;
+
+
+procedure TListTreeAtTests.Test_ListTreeAt_LabelInPanel_ReturnsTheLabel;
+var
+  P: TPoint;
+begin
+  P := MiddleInForm(FForm, TAtForm(FForm).LblInPanel);
+  CheckHit('the label', P.X, P.Y, AtFormName + '.pnlHost.lblInPanel', 8);
+end;
+
+
+{ btnUnowned is not in list_tree (no form owns it), so its path would not lead anywhere: the answer climbs to the panel that shows it. }
+procedure TListTreeAtTests.Test_ListTreeAt_UnownedControl_ClimbsToTheNearestListedParent;
+var
+  P: TPoint;
+begin
+  P := MiddleInForm(FForm, TAtForm(FForm).BtnUnowned);
+  CheckHit('the unowned button', P.X, P.Y, AtFormName + '.pnlHost', 7);
+end;
+
+
+procedure TListTreeAtTests.Test_ListTreeAt_FormBackground_ReturnsTheFormNode;
+begin
+  CheckHit('the form background', 5, FForm.ClientHeight - 5, AtFormName, 1);
+end;
+
+
+{ The filters combine by intersection: formsOnly keeps the hit only when it is the form, path only when it lies under that control. }
+procedure TListTreeAtTests.Test_ListTreeAt_CombinesWithFormsOnlyAndPath;
+var
+  P: TPoint;
+  Root: TJSONObject;
+begin
+  P := MiddleInForm(FForm, TAtForm(FForm).LblInPanel);
+
+  Root := CallListTree(PointArgs(P.X, P.Y, ',"formsOnly":true'));
+  try
+    Assert.AreEqual(0, ComponentsOf(Root, 'formsOnly').Count, 'formsOnly on a label must answer no node: ' + Root.ToJSON);
+  finally
+    FreeAndNil(Root);
+  end;
+
+  Root := CallListTree(PointArgs(P.X, P.Y, ',"path":"' + AtFormName + '.pnlHost"'));
+  try
+    Assert.AreEqual(1, ComponentsOf(Root, 'path pnlHost').Count, 'the label lies under pnlHost: ' + Root.ToJSON);
+    Assert.AreEqual(AtFormName + '.pnlHost.lblInPanel', StrField(ComponentsOf(Root, 'path pnlHost').Items[0], 'path'));
+  finally
+    FreeAndNil(Root);
+  end;
+
+  Root := CallListTree(PointArgs(P.X, P.Y, ',"path":"' + AtFormName + '.pgc"'));
+  try
+    Assert.AreEqual(0, ComponentsOf(Root, 'path pgc').Count, 'the label does not lie under pgc: ' + Root.ToJSON);
+  finally
+    FreeAndNil(Root);
+  end;
+end;
+
+
+{ A minimized form keeps its restored client size in VCL (TCustomForm.GetClientRect), while Win32 GetClientRect answers 0 x 0: the point must still find the control. }
+procedure TListTreeAtTests.Test_ListTreeAt_MinimizedForm_ReturnsTheSameControl;
+var
+  P, PLabel: TPoint;
+begin
+  P      := MiddleInForm(FForm, TAtForm(FForm).BtnTwo);
+  PLabel := MiddleInForm(FForm, TAtForm(FForm).LblInPanel);
+  ShowWindow(FForm.Handle, SW_SHOWMINNOACTIVE);
+  try
+    Assert.IsTrue(IsIconic(FForm.Handle), 'fixture: the form must be minimized');
+    CheckHit('minimized, btnTwo', P.X, P.Y, AtFormName + '.btnTwo', 6);
+    CheckHit('minimized, the label', PLabel.X, PLabel.Y, AtFormName + '.pnlHost.lblInPanel', 8);
+  finally
+    ShowWindow(FForm.Handle, SW_SHOWNOACTIVATE);
+  end;
+end;
+
+
+procedure TListTreeAtTests.Test_ListTreeAt_OutsideTheClientArea_Returns32001;
+var
+  Root: TJSONObject;
+  Args: TArray<String>;
+  i: Integer;
+begin
+  Args := [PointArgs(FForm.ClientWidth, 0), PointArgs(0, FForm.ClientHeight), PointArgs(-1, 5)];
+  for i := 0 to High(Args) do
+    begin
+      Root := CallListTree(Args[i]);
+      try
+        Assert.AreEqual(ErrNotFound, GetErrorCode(Root), Args[i] + ' must answer -32001: ' + Root.ToJSON);
+        Assert.IsTrue(ErrorMessageOf(Root).Contains(IntToStr(FForm.ClientWidth) + ' x ' + IntToStr(FForm.ClientHeight)), 'the message must give the client size: ' + Root.ToJSON);
+      finally
+        FreeAndNil(Root);
+      end;
+    end;
+end;
+
+
+procedure TListTreeAtTests.Test_ListTreeAt_BadArguments_ReturnInvalidRequest;
+var
+  Root: TJSONObject;
+  Args: TArray<String>;
+  i: Integer;
+begin
+  Args := ['{"form":"' + AtFormName + '","x":5}',
+           '{"form":"' + AtFormName + '","y":5}',
+           '{"form":"' + AtFormName + '","x":"5","y":5}',
+           '{"form":"' + AtFormName + '","x":5,"y":2.5}',
+           '{"x":5,"y":5}'];
+  for i := 0 to High(Args) do
+    begin
+      Root := CallListTree(Args[i]);
+      try
+        Assert.AreEqual(ErrInvalidRequest, GetErrorCode(Root), Args[i] + ' must answer -32600: ' + Root.ToJSON);
+      finally
+        FreeAndNil(Root);
+      end;
+    end;
+end;
+
+
 initialization
   TDUnitX.RegisterTestFixture(TListTreeFilterTests);
+  TDUnitX.RegisterTestFixture(TListTreeAtTests);
 
 end.

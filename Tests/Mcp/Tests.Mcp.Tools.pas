@@ -35,6 +35,9 @@ type
     [Test] procedure Test_Screenshot_ForwardsPathAndMaxWidthOnlyWhenGiven;
     [Test] procedure Test_ListTree_ForwardsFormAndFormsOnlyOnlyWhenGiven;
     [Test] procedure Test_ListTree_ForwardsPathOnlyWhenGiven;
+    [Test] procedure Test_ListTree_ForwardsXAndYOnlyWhenBothGiven;
+    [Test] procedure Test_ListTree_XY_AnswerWithoutX_IsError;
+    [Test] procedure Test_ListTree_XWithoutY_IsError;
     [Test] procedure Test_SetCheckedAndReadProperty_ForwardIndexOnlyWhenGiven;
     [Test] procedure Test_CallMethod_ForwardsNameArgsAndTimeout;
     [Test] procedure Test_CallMethod_BadArguments_IsErrorNamingTheParameter;
@@ -626,6 +629,87 @@ begin
   finally
     FreeAndNil(Args);
   end;
+end;
+
+
+/// Calls list_tree with AArgsJson (pid added) against a fake target that answers AAnswer. Returns the tool's text;
+/// AIsErr is the isError flag.
+function ListTreeAgainst(const AAnswer, AArgsJson: String; OUT AIsErr: Boolean): String;
+var
+  Fake: TFakePipeBridge;
+  Discovery: TPrivateDiscovery;
+begin
+  Fake := TFakePipeBridge.Create(AAnswer);
+  try
+    Fake.WaitUntilReady;
+    Discovery := TPrivateDiscovery.Create(Fake.PipeName);
+    try
+      Result := CallTool('list_tree', '{"pid":' + IntToStr(GetCurrentProcessId) + AArgsJson + '}', AIsErr);
+    finally
+      FreeAndNil(Discovery);
+    end;
+  finally
+    FreeAndNil(Fake);
+  end;
+end;
+
+
+/// x and y reach the bridge only when both are given (0 is a valid coordinate), so a call without them sends the
+/// request every older server sent.
+procedure TMcpToolTests.Test_ListTree_ForwardsXAndYOnlyWhenBothGiven;
+var
+  Args: TJSONObject;
+begin
+  Args := SentListTreeArgs(',"form":"frmFake","x":10,"y":0');
+  try
+    Assert.IsTrue(Args.GetValue('x') is TJSONNumber, 'x not forwarded: ' + Args.ToJSON);
+    Assert.AreEqual(10, TJSONNumber(Args.GetValue('x')).AsInt, 'x');
+    Assert.IsTrue(Args.GetValue('y') is TJSONNumber, 'y = 0 not forwarded: ' + Args.ToJSON);
+    Assert.AreEqual(0, TJSONNumber(Args.GetValue('y')).AsInt, 'y');
+  finally
+    FreeAndNil(Args);
+  end;
+
+  Args := SentListTreeArgs(',"form":"frmFake"');
+  try
+    Assert.IsNull(Args.GetValue('x'), 'x may not be sent when it is not given: ' + Args.ToJSON);
+    Assert.IsNull(Args.GetValue('y'), 'y may not be sent when it is not given: ' + Args.ToJSON);
+  finally
+    FreeAndNil(Args);
+  end;
+end;
+
+
+{ An older bridge ignores x and y and returns the whole form: without the answer field x the tool must
+  answer isError instead of passing on a tree the AI would read as the hit. The answer of a new bridge passes. }
+procedure TMcpToolTests.Test_ListTree_XY_AnswerWithoutX_IsError;
+var
+  IsErr: Boolean;
+  Text: String;
+begin
+  Text := ListTreeAgainst('{"id":1,"ok":true,"result":{"components":[{"form":"frmFake","name":"frmFake","path":"frmFake","class":"TForm"}]}}',
+                          ',"form":"frmFake","x":10,"y":20', IsErr);
+  Assert.IsTrue(IsErr, 'an answer without x must be isError: ' + Text);
+  Assert.IsTrue(Text.Contains('older than this MCP server'), 'the error must say the bridge is older than the MCP server: ' + Text);
+
+  Text := ListTreeAgainst('{"id":1,"ok":true,"result":{"components":[],"x":10,"y":20}}',
+                          ',"form":"frmFake","x":10,"y":20', IsErr);
+  Assert.IsFalse(IsErr, 'the answer of a bridge that knows x and y must pass: ' + Text);
+end;
+
+
+/// x without y (or y without x) is refused by the tool itself.
+procedure TMcpToolTests.Test_ListTree_XWithoutY_IsError;
+var
+  IsErr: Boolean;
+  Text: String;
+begin
+  Text := ListTreeAgainst('{"id":1,"ok":true,"result":{"components":[],"x":10,"y":20}}', ',"form":"frmFake","x":10', IsErr);
+  Assert.IsTrue(IsErr, 'x without y must be isError: ' + Text);
+  Assert.IsTrue(Text.Contains('together'), 'the tool itself must refuse it, not an unknown-parameter error: ' + Text);
+  Text := ListTreeAgainst('{"id":1,"ok":true,"result":{"components":[],"x":10,"y":20}}', ',"form":"frmFake","y":10', IsErr);
+  Assert.IsTrue(IsErr, 'y without x must be isError: ' + Text);
+  Assert.IsTrue(Text.Contains('together'), 'the tool itself must refuse it, not an unknown-parameter error: ' + Text);
 end;
 
 
