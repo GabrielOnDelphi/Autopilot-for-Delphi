@@ -21,6 +21,7 @@
    Use it instead of guessing names again.
 6. **`screenshot` is a fallback, not a check.** To check a result, `get_text` returns the exact string in a few ms with no image tokens: ~1000× cheaper.
    Keep `screenshot` for layout and visual bugs you cannot read structurally, and then pass `path` (only that control) and `maxWidth` (for example 800) to cut the image tokens.
+   To learn which control you see at a pixel of an unscaled, uncropped form screenshot, call `list_tree(form=<name>, x=<column>, y=<row>)`: it returns that one control's node and path.
 7. **`set_property` skips a write that would not change the value (write-side elision).** The answer carries `elided: true|false`; `true` means the value was already correct and `OnChange` did NOT fire.
 8. **On Claude Code, hand a script of 5 or more sequential tool calls to a subagent** ("Subagent dispatch" below).
 

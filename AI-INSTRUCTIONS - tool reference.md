@@ -29,7 +29,7 @@ When `count` is 0 the answer also carries `hint`: the next step (start the app, 
 
 ### `list_tree`
 
-`list_tree(pid?, form?, formsOnly?, path?)`
+`list_tree(pid?, form?, formsOnly?, path?, x?, y?)`
 
 Lists all forms and their components, as an array at `result.components`.
 
@@ -47,6 +47,19 @@ The bridge filters, so the rest of the tree never leaves the application.
   Each node is the same as in the whole tree, `path` field included, so a control owned by the form but shown on the panel keeps its path `Form.Control`.
   The path of a form gives what `form` gives for it. An empty string means no filter.
   Needs bridge 3.8.0 or later: an older bridge ignores it and returns the whole tree (or the `form` / `formsOnly` answer).
+- `x`, `y` (whole numbers, both or none, only with `form`) - only the control at this pixel of the form: "what is this thing I see in the screenshot?".
+  The point is a pixel of an unscaled, uncropped `screenshot` of that form (no `path`, no `maxWidth`): client coordinates, `0, 0` = the top left corner of the client area.
+  When several forms carry the name, the first one in `Screen.Forms` is used.
+  The answer is `{"components":[node], "x":X, "y":Y}`: one node, the same as in the whole tree, and the point echoed back.
+  The node is the topmost visible control at the point, so a control on a hidden tab page is never the answer.
+  A disabled control and an FMX control with `HitTest = false` (an FMX `TLabel` by default) are found too: the answer names what is drawn at the point, not what a mouse click there would reach.
+  When the control at the point is one that `list_tree` never lists (a control owned by nobody, the content of an FMX tab item), the answer is its nearest visual parent that `list_tree` lists; empty form background gives the form node.
+  A control of a form embedded in a panel of this form gives that embedded form's own node (its own `form` and `path`).
+  A point outside the client area answers `-32001`, and the message gives the client size.
+  `x` or `y` alone, or without `form`, is refused (`isError: true`; the bridge answers `-32600`); so is a number that is not whole.
+  A VCL form that was never shown has no window and answers `-32005`; a minimized VCL form is measured at its restored size.
+  On FMX one screenshot pixel is one device-independent pixel (the screenshot is `ClientWidth` x `ClientHeight` of the form). This is not measured on a screen scale above 100%.
+  Needs a bridge of the same version as the MCP server: an older bridge ignores `x` and `y` and returns the whole form, so the tool answers `isError: true` instead of passing that on.
 - The filters combine: a node is listed only when every filter given keeps it, so `path` with `formsOnly` lists nothing unless `path` names a form.
 - A `form` given as a number is read as its text.
   A `formsOnly` that is not `true` or `false` answers an `isError: true` result whose text names the argument.
