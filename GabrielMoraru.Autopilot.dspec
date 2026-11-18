@@ -1,0 +1,30 @@
+min dpm client version: 1.0
+
+metadata:
+  id: GabrielMoraru.Autopilot
+  version: 3.8.0
+  description: Lets an AI assistant (Claude Code and other MCP clients) drive your running VCL or FMX application - click controls, set and read text, read and write published properties, dismiss dialogs, take screenshots. Source only - define AUTOPILOT in your Debug configuration to switch the bridge on.
+  authors:
+    - Gabriel Moraru
+  projectUrl: https://gabrielmoraru.com/autopilot
+  repositoryUrl: https://github.com/GabrielOnDelphi/Autopilot-for-Delphi
+  repositoryType: git
+  tags:
+    - automation
+    - testing
+    - ai
+    - mcp
+  frameworks:
+    - VCL
+    - FMX
+
+targetPlatforms:
+  - compiler from: 10.3
+    compiler to: 13.0
+    platforms: [Win32, Win64, Android, Android64]
+    template: default
+
+templates:
+  - name: default
+    source:
+      - src: ./Source/Bridge/*.pas
