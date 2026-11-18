@@ -469,6 +469,12 @@ $fv = (Get-Item -LiteralPath $ServerExe).VersionInfo
 Log "=== Test-AllTools - $Framework - $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') ==="
 Log "MCP server : $ServerExe (FileVersion $($fv.FileVersion), LastWriteTime $((Get-Item -LiteralPath $ServerExe).LastWriteTime.ToString('yyyy-MM-dd HH:mm:ss')))"
 Log "Target app : $ExePath (LastWriteTime $((Get-Item -LiteralPath $ExePath).LastWriteTime.ToString('yyyy-MM-dd HH:mm:ss')))"
+# TComponent.Tag is a NativeInt: the bridge answers kind 'integer' on Win32 and 'int64' on Win64. Read the PE header's Machine field to know which one to expect.
+$peBytes = [IO.File]::ReadAllBytes((Get-Item -LiteralPath $ExePath).FullName)
+$peOfs   = [BitConverter]::ToInt32($peBytes, 0x3C)
+$peMachine = [BitConverter]::ToUInt16($peBytes, $peOfs + 4)
+switch ($peMachine) { 0x014C { $TagKind = 'integer' } 0x8664 { $TagKind = 'int64' } default { throw ("Target app has an unknown PE Machine 0x{0:X4}" -f $peMachine) } }
+Log "Target bits: PE Machine 0x$('{0:X4}' -f $peMachine), so Tag kind expected = $TagKind"
 if ($ProveFail) { Log 'MODE       : -ProveFail (the default-click case expects the wrong dispatchedVia on purpose)' }
 
 try {
@@ -814,7 +820,7 @@ try {
     $r = SetProp $M.Panel 'Tag' '42'
     Case 'set_property: integer Tag=42' ((IsOk $r) -and ($r.J.result.elided -eq $false)) 'ok, elided=false' (Describe $r)
     $r = ReadProp $M.Panel 'Tag'
-    Case 'read_property: integer Tag' ((IsOk $r) -and ([string]$r.J.result.value -eq '42') -and ($r.J.result.kind -eq 'integer')) "value '42', kind integer" (Describe $r)
+    Case 'read_property: integer Tag' ((IsOk $r) -and ([string]$r.J.result.value -eq '42') -and ($r.J.result.kind -eq $TagKind)) "value '42', kind $TagKind" (Describe $r)
     $r = SetProp $M.Panel 'Tag' '42'
     Case 'set_property: same value again is elided' ((IsOk $r) -and ($r.J.result.elided -eq $true)) 'ok, elided=true' (Describe $r)
     Case 'set_property: oldValue is the value before the write' ((IsOk $r) -and ([string]$r.J.result.oldValue -eq '42')) "oldValue '42'" (Describe $r)
