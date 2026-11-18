@@ -1,7 +1,7 @@
 ﻿unit Autopilot.Mcp.ToolBase;
 
 {=============================================================================================================
-   2026.11.02
+   2026.11.17
    www.GabrielMoraru.com
 --------------------------------------------------------------------------------------------------------------
    - Shared logic for all Autopilot MCP tools.
@@ -36,8 +36,15 @@ function FindBridgeFolder(const AExeFolder: String): String;
 
 { How to link the bridge into a Delphi app.
   Sent in every attach answer (field "setup") and inside BridgeWiringRecipe - the moments the AI needs it - instead of in the server instructions, which Claude Code loads into every session (Autopilot.Mcp.JsonRpc.ServerInstructions).
-  Step 1 names ABridgeFolder when it is not empty, so the AI does not have to work out where the bridge is. }
-function BridgeWiringStepsFor(const ABridgeFolder: String): String;
+  Step 1 names ABridgeFolder when it is not empty, so the AI does not have to work out where the bridge is.
+  AGetItEntry (from FindGetItBridgeEntry) wins over ABridgeFolder: the Library Path already reaches every project, so step 1 then asks for no folder, which would be a second copy of the bridge.
+  Every variant also says that a project with the DPM package GabrielMoraru.Autopilot needs no folder: the MCP server cannot see the project, so the AI checks the .dproj. }
+function BridgeWiringStepsFor(const ABridgeFolder: String; const AGetItEntry: String = ''): String;
+
+{ The entry of ALibraryPath (a ';'-separated Delphi Library Path) that a GetIt install of the bridge added:
+  the first entry that contains 'CatalogRepository' (GetIt's install folder, $(BDSCatalogRepository)) and ends in Source\Bridge, with or without a trailing backslash.
+  Returns the entry as written (macros not expanded), or '' when there is none. }
+function FindGetItBridgeEntry(const ALibraryPath: String): String;
 
 // BridgeWiringStepsFor the bridge folder found next to this EXE.
 function BridgeWiringSteps: String;
@@ -66,6 +73,9 @@ function RunCommandOnTarget(APid: Cardinal; ARequest: TJSONObject; ATimeoutMs: C
 
 implementation
 
+uses
+  System.Classes, System.Win.Registry;
+
 const
   BridgeProbeUnit = 'Autopilot.Bridge.Vcl.pas';
   // In search order: the EXE in Source\McpServer\ (the ZIP packages), then the EXE in the build folder Source\McpServer\Win32_<config>\ (a build of the cloned repository).
@@ -87,20 +97,77 @@ begin
 end;
 
 
-function BridgeWiringStepsFor(const ABridgeFolder: String): String;
+function FindGetItBridgeEntry(const ALibraryPath: String): String;
+var
+  Entry, Trimmed: String;
+begin
+  for Entry in ALibraryPath.Split([';']) do
+    begin
+      Trimmed := ExcludeTrailingPathDelimiter(Trim(Entry));
+      if  (Pos('CATALOGREPOSITORY', UpperCase(Trimmed)) > 0)
+      and SameText(Copy(Trimmed, Length(Trimmed) - Length('\Source\Bridge') + 1, MaxInt), '\Source\Bridge')
+      then EXIT(Trim(Entry));
+    end;
+  Result := '';
+end;
+
+
+{ The GetIt entry of the bridge in the Win32 Library Path of any Delphi version on this PC, or ''.
+  Reads HKCU\Software\Embarcadero\BDS\<version>\Library\Win32, value 'Search Path' (where GetIt's AddOptionPath writes). }
+function FindGetItBridgeEntryInRegistry: String;
+const
+  BdsKey = 'Software\Embarcadero\BDS';
+var
+  Reg: TRegistry;
+  Versions: TStringList;
+  Version: String;
+begin
+  Result := '';
+  Reg := TRegistry.Create(KEY_READ);
+  Versions := TStringList.Create;
+  try
+    Reg.RootKey := HKEY_CURRENT_USER;
+    if not Reg.OpenKeyReadOnly(BdsKey) then EXIT;
+    Reg.GetKeyNames(Versions);
+    Reg.CloseKey;
+    for Version in Versions do
+      if Reg.OpenKeyReadOnly(BdsKey + '\' + Version + '\Library\Win32') then
+        try
+          if Reg.ValueExists('Search Path') then
+            begin
+              Result := FindGetItBridgeEntry(Reg.ReadString('Search Path'));
+              if Result <> '' then EXIT;
+            end;
+        finally
+          Reg.CloseKey;
+        end;
+  finally
+    FreeAndNil(Versions);
+    FreeAndNil(Reg);
+  end;
+end;
+
+
+function BridgeWiringStepsFor(const ABridgeFolder: String; const AGetItEntry: String): String;
+const
+  UsesClause = 'add Autopilot.Bridge.Vcl (VCL apps) or Autopilot.Bridge.Fmx (FMX apps) to the .dpr uses clause.';
 var
   Where: String;
 begin
+  if AGetItEntry <> ''
+  then Where := 'The bridge is already on the IDE Library Path through GetIt (entry ' + AGetItEntry + '), so every project finds it: ' + 'add no folder to the project search path, only '
+  else
   if ABridgeFolder <> ''
-  then Where := 'Put the folder ' + ABridgeFolder + ' (the Autopilot bridge source) on the project unit search path, '
-  else Where := 'Put the folder that holds ' + BridgeProbeUnit + ' (the Source\Bridge folder of the Autopilot package; ' + 'the bridge source is public on GitHub: https://github.com/GabrielOnDelphi/Autopilot-for-Delphi) on the project unit search path, ';
-  Result := 'To link the bridge into a Delphi app:' + sLineBreak + '  1. ' + Where + 'and add Autopilot.Bridge.Vcl (VCL apps) or Autopilot.Bridge.Fmx (FMX apps) to the .dpr uses clause.' + sLineBreak + '  2. Call StartBridge in the .dpr, after the main form is created and before Application.Run.' + sLineBreak + '  3. Add AUTOPILOT to the conditional defines of the DEBUG build configuration only. Without that ' + 'define StartBridge compiles to an empty procedure, so a Release build carries no automation at all.' + sLineBreak + '  4. Rebuild and run the app.';
+  then Where := 'Put the folder ' + ABridgeFolder + ' (the Autopilot bridge source) on the project unit search path, and '
+  else Where := 'Put the folder that holds ' + BridgeProbeUnit + ' (the Source\Bridge folder of the Autopilot package; ' + 'the bridge source is public on GitHub: https://github.com/GabrielOnDelphi/Autopilot-for-Delphi) on the project unit search path, and ';
+  Result := 'To link the bridge into a Delphi app:' + sLineBreak + '  1. ' + Where + UsesClause + sLineBreak
+          + '     DPM: if the .dproj already names the package GabrielMoraru.Autopilot, the bridge is on its search path through $(DPMSearch): ' + 'add no folder, only the uses clause.' + sLineBreak + '  2. Call StartBridge in the .dpr, after the main form is created and before Application.Run.' + sLineBreak + '  3. Add AUTOPILOT to the conditional defines of the DEBUG build configuration only. Without that ' + 'define StartBridge compiles to an empty procedure, so a Release build carries no automation at all.' + sLineBreak + '  4. Rebuild and run the app.';
 end;
 
 
 function BridgeWiringSteps: String;
 begin
-  Result := BridgeWiringStepsFor(FindBridgeFolder(ExtractFilePath(ParamStr(0))));
+  Result := BridgeWiringStepsFor(FindBridgeFolder(ExtractFilePath(ParamStr(0))), FindGetItBridgeEntryInRegistry);
 end;
 
 
