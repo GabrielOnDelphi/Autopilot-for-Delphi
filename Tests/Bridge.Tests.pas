@@ -3864,6 +3864,7 @@ begin
   Present  := False;
   Ok       := False;
   Assert.AreEqual(Single(8), Single(GFixtureForm.Btn.Font.Size), 0.001, 'fixture precondition');
+  Assert.IsTrue(GFixtureForm.Btn.ParentFont, 'precondition: Btn.ParentFont must be True for this test');
   RunOnWorkerAndPump(
     procedure
     var
@@ -3892,6 +3893,8 @@ begin
   Assert.IsTrue(Ok, 'set_property should return ok');
   Assert.IsTrue(Present, 'elided field must be present');
   Assert.IsTrue(Elided, 'dotted Font.Size-equal write should be elided');
+  // The elided write skips SetValue, so the VCL's own ParentFont flip never runs: only the bridge's TurnOffParentInheritFor does it.
+  Assert.IsFalse(GFixtureForm.Btn.ParentFont, 'an elided Font.Size write must still turn ParentFont off');
 end;
 
 

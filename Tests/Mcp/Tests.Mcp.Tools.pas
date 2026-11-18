@@ -30,6 +30,9 @@ type
     [Test] procedure Test_FindBridgeFolder_PackageLayout;
     [Test] procedure Test_FindBridgeFolder_BuildFolderLayout;
     [Test] procedure Test_WiringSteps_NameTheBridgeFolder;
+    [Test] procedure Test_FindGetItBridgeEntry_PicksOnlyTheCatalogBridgeFolder;
+    [Test] procedure Test_WiringSteps_GetItInstall_AddsNoSecondCopy;
+    [Test] procedure Test_WiringSteps_SayDpmNeedsNoFolder;
     [Test] procedure Test_Screenshot_ReturnsImageBlockThenTextBlock;
     [Test] procedure Test_Screenshot_FailedCapture_StaysOneTextBlock;
     [Test] procedure Test_Screenshot_ForwardsPathAndMaxWidthOnlyWhenGiven;
@@ -384,6 +387,56 @@ begin
   Assert.IsFalse(Steps.ToLower.Contains('repository'), 'the steps must not mention a repository: ' + Steps);
   Assert.IsFalse(Steps.Contains('release package'), 'the steps must not mention the retired release package: ' + Steps);
   Assert.IsTrue(Steps.Contains('StartBridge'), 'the StartBridge step is missing: ' + Steps);
+end;
+
+
+/// The entry is the one a real GetIt install wrote (measured on Delphi 13: AddOptionPath of the
+/// GetIt entry AutopilotForDelphi, registry value Library\Win32\Search Path).
+procedure TMcpToolTests.Test_FindGetItBridgeEntry_PicksOnlyTheCatalogBridgeFolder;
+const
+  GetItEntry = '$(BDSCatalogRepository)\AutopilotForDelphi\Autopilot-for-Delphi-3.8.0\Source\Bridge\';
+begin
+  Assert.AreEqual(GetItEntry, FindGetItBridgeEntry('$(BDSLIB)\$(Platform)\release;' + GetItEntry + ';$(BDS)\source\DUnitX'), 'entry in the middle');
+  Assert.AreEqual(GetItEntry, FindGetItBridgeEntry(GetItEntry), 'the only entry');
+  Assert.AreEqual('$(BDSCatalogRepository)\AutopilotForDelphi\Autopilot-for-Delphi-3.9.0\Source\Bridge', FindGetItBridgeEntry('c:\x;$(BDSCatalogRepository)\AutopilotForDelphi\Autopilot-for-Delphi-3.9.0\Source\Bridge'), 'no trailing backslash, other version');
+  Assert.AreEqual('', FindGetItBridgeEntry(''), 'empty Library Path');
+  Assert.AreEqual('', FindGetItBridgeEntry('C:\Projects\Autopilot\Source\Bridge;$(BDS)\lib'), 'a bridge folder that GetIt did not install');
+  Assert.AreEqual('', FindGetItBridgeEntry('$(BDSCatalogRepository)\SomeOther\Source;$(BDSCatalogRepository)\X\Source\Bridges'), 'catalog entries of other packages');
+end;
+
+
+/// The Library Path reaches every project, so with a GetIt install the AI must add no folder,
+/// not even the one found beside the MCP server: that would put a second copy of the bridge on the paths.
+procedure TMcpToolTests.Test_WiringSteps_GetItInstall_AddsNoSecondCopy;
+const
+  GetItEntry = '$(BDSCatalogRepository)\AutopilotForDelphi\Autopilot-for-Delphi-3.8.0\Source\Bridge\';
+var
+  Steps: String;
+begin
+  Steps := BridgeWiringStepsFor('C:\Tools\Autopilot\Bridge', GetItEntry);
+  Assert.IsTrue(Steps.Contains(GetItEntry), 'step 1 does not name the GetIt Library Path entry: ' + Steps);
+  Assert.IsTrue(Steps.Contains('GetIt'), 'step 1 does not say the bridge came through GetIt: ' + Steps);
+  Assert.IsFalse(Steps.Contains('Put the folder'), 'step 1 still asks for a folder on the search path: ' + Steps);
+  Assert.IsTrue(Steps.Contains('Autopilot.Bridge.Vcl'), 'the uses clause part of step 1 is missing: ' + Steps);
+  Assert.IsTrue(Steps.Contains('StartBridge'), 'the StartBridge step is missing: ' + Steps);
+  Assert.IsTrue(Steps.Contains('AUTOPILOT'), 'the define step is missing: ' + Steps);
+end;
+
+
+/// The MCP server cannot see the project, so every variant says how to spot a DPM install
+/// (dpm install writes the package id into the .dproj and puts the bridge on $(DPMSearch)).
+procedure TMcpToolTests.Test_WiringSteps_SayDpmNeedsNoFolder;
+var
+  Variants: TArray<String>;
+  Steps: String;
+begin
+  Variants := [BridgeWiringStepsFor('C:\Tools\Autopilot\Bridge'), BridgeWiringStepsFor(''),
+               BridgeWiringStepsFor('', '$(BDSCatalogRepository)\AutopilotForDelphi\Autopilot-for-Delphi-3.8.0\Source\Bridge\')];
+  for Steps in Variants do
+    begin
+      Assert.IsTrue(Steps.Contains('GabrielMoraru.Autopilot'), 'the DPM package id is missing: ' + Steps);
+      Assert.IsTrue(Steps.Contains('$(DPMSearch)'), 'the DPM search path is missing: ' + Steps);
+    end;
 end;
 
 

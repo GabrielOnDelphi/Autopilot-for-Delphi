@@ -199,6 +199,8 @@ var
 begin
   Js := TJSONObject.Create;
   try
+    // The required Path is given, so only the unknown key can make it raise (without Path the missing-required check raised the same class).
+    Js.AddPair('path', 'x');
     Js.AddPair('nonsense', TJSONNumber.Create(1));
     Assert.WillRaise(
       procedure
@@ -210,6 +212,7 @@ begin
   finally
     Js.Free;
   end;
+  Assert.Contains(FillErrorOf(TFakeParams, '{"path":"x","nonsense":1}'), '"nonsense"', FALSE, 'the message must name the unknown key');
 end;
 
 
