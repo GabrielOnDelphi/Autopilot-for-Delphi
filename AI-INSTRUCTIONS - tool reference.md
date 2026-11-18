@@ -25,6 +25,8 @@ Call `attach` only:
 
 Answer: `{targets:[{pid, pipe}], count, setup}`; `setup` is always there.
 Step 1 of `setup` names the full path of the bridge source folder when the server finds it near its own EXE; use that path as given.
+When the bridge was installed through GetIt (its folder is on the Delphi Library Path), step 1 says so and asks for no folder, only the uses clause.
+A project whose `.dproj` names the DPM package `GabrielMoraru.Autopilot` already has the bridge on its search path through `$(DPMSearch)`: add no folder there either.
 When `count` is 0 the answer also carries `hint`: the next step (start the app, or link the bridge in).
 
 ### `list_tree`
