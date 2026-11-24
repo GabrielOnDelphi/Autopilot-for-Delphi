@@ -79,6 +79,8 @@ Each node carries:
 - `class` - the Delphi class name.
 - `text` (optional) - `Caption`/`Text`/`Lines.Text` where readable.
   Missing on a class with no text property, where `Text`/`Caption` is not a string (some third-party components), or where the getter raised.
+  Missing on a VCL `TEdgeBrowser` (and every class derived from `TCustomEdgeBrowser`): its `Text` runs a script in the web page and waits until the page answers, so `list_tree` does not read it. Read the page text with `get_text` on that one control.
+  An application built with an older bridge still lists the page text there.
 - `hint` (optional) - the tooltip text the programmer wrote for the control, menu item or action: often the only description of what a control does, so read it before guessing from the name.
   Present only when it is not empty and differs from `text`.
   Raw value: a VCL hint may hold `short|long`.
@@ -201,6 +203,11 @@ Errors: `-32001 not_found`, `-32003 control_disabled` (a disabled action), `-320
 
 Reads `Caption` / `Text` / `Lines.Text` via RTTI and returns the exact string, embedded `#10` newlines included.
 Use it, NOT `screenshot`, to check that a click produced the expected state.
+
+On a VCL `TEdgeBrowser` it returns the text of the web page (`document.body.innerText`), the whole page.
+The application waits until the page answers: while the page runs a long script, the call answers `-32004 main_thread_blocked`. Do not send it again; it ends when the page is free.
+`wait_for` on a `TEdgeBrowser` reads the page the same way at every poll, and goes on polling after a `-32004`.
+Autopilot cannot click inside the page or run a script there.
 
 ### `set_text`
 
@@ -377,6 +384,8 @@ Lists and dismisses the native OS dialogs that the component tools cannot see.
 - **No `button`:** lists the dialogs that are open.
   Answer: `{dialogs:[{hwnd, class, caption, text, buttons:[{id, caption, enabled}]}], supported, platform}`.
   `text` is the message of the dialog; for a Task Dialog (a default `ShowMessage`/`MessageDlg`) it holds the main instruction and the content, read through Windows accessibility (bridge 3.8.0 or later; an older bridge gives an empty `text` there).
+  `buttons` holds only the buttons a person can see: a hidden button is not listed, and `button` never matches it.
+  An older bridge also lists the hidden buttons, for example the disabled `Help` (id 1038) of an Open or Save dialog.
 - **With `button`:** dismisses one dialog.
   `button` is a button caption (exact, case-insensitive), a role (`ok`/`cancel`/`yes`/`no`/`retry`/`abort`/`ignore`/`close`/`help`/`tryagain`/`continue`, matched by the button's control id), a caption substring, or a numeric control id.
   It must name exactly one button of the dialog: the bridge never clicks a button it guessed.
