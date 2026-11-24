@@ -1,7 +1,7 @@
 ﻿unit Autopilot.Bridge.Core;
 
 {=============================================================================================================
-   2026.11.14
+   2026.11.21
    www.GabrielMoraru.com
 --------------------------------------------------------------------------------------------------------------
    - Shared protocol types and wire-framing helpers for the Autopilot bridge (all platforms)
@@ -179,6 +179,11 @@ type
     At most AllowedNamesCap names, then ', ... (<N> in all)'.
     '' when there are no names to list: a set of Byte or Char, an enumeration whose base type has a negative MinValue (GetEnumName answers 'True'/'False' there). }
   function AllowedNamesText(ATypeInfo: PTypeInfo): String;
+
+  { TRUE when AClass is Vcl.Edge.TCustomEdgeBrowser or inherits from it (TEdgeBrowser).
+    Its public Text runs 'document.body.innerText' in the page and waits on the main thread until the page answers (Vcl.Edge.pas, TCustomEdgeBrowser.GetText and ExecuteScript), so list_tree does not read it.
+    The test compares class names along ClassParent, so the bridge does not link Vcl.Edge and the WebView2 units into an app that has no browser. }
+  function IsEdgeBrowserClass(AClass: TClass): Boolean;
 
 const
   AllowedNamesCap = 50;
@@ -592,6 +597,17 @@ begin
       Result := Result + GetEnumName(ATypeInfo, I);
     end;
   Result := '; allowed: ' + Result;
+end;
+
+
+function IsEdgeBrowserClass(AClass: TClass): Boolean;
+begin
+  while AClass <> NIL do
+    begin
+      if AClass.ClassNameIs('TCustomEdgeBrowser') then EXIT(TRUE);
+      AClass := AClass.ClassParent;
+    end;
+  Result := FALSE;
 end;
 
 

@@ -1,7 +1,7 @@
 ﻿unit Autopilot.Bridge.NativeDialogs;
 
 {=============================================================================================================
-   2026.11.15
+   2026.11.19
    www.GabrielMoraru.com
 --------------------------------------------------------------------------------------------------------------
    - Native Win32 dialog escape hatch: reaches MessageBox / Task Dialog / common dialogs with no TComponent
@@ -22,6 +22,7 @@ function NativeDialogsSupported: Boolean;
 { Enumerate native (non-component) top-level dialog windows of THIS process.
   AExclude = window handles to skip (the framework's own form windows + the app window), so the framework's TForm/TfmxForm windows are not mistaken for OS dialogs.
   Returns a JSON array (caller owns it); each node is ( hwnd, class, caption, text, buttons:[(id,caption,enabled)] ).
+  buttons holds the VISIBLE Button windows only: a hidden one is never listed, and never matched by ClickNativeDialogButton or SetNativeDialogFileName.
   Empty array when no dialog is up, or always on non-Windows. }
 function EnumerateNativeDialogs(const AExclude: array of NativeUInt): TJSONArray;
 
@@ -133,7 +134,12 @@ begin
   Ctx := PChildCtx(AParam);
   Cls := ClassNameOf(AWnd);
   if SameText(Cls, 'Button')
-  then Ctx.Buttons.Add(AWnd)
+  then
+    begin
+      { A hidden button is one a person cannot click, so it is neither listed nor matched. A Vista Open/Save dialog holds such buttons: Help (id 1038, disabled) and, on Save, a caption-less id 0. }
+      if IsWindowVisible(AWnd)
+      then Ctx.Buttons.Add(AWnd);
+    end
   else
     if SameText(Cls, 'Static')
     then Ctx.Statics.Add(AWnd)
@@ -149,6 +155,7 @@ procedure CollectChildren(ADlg: HWND; AButtons, AStatics: TList<HWND>; AEdits: T
 var
   Ctx: TChildCtx;
 begin
+  { AButtons gets the VISIBLE Button windows only; AStatics every Static window. }
   Ctx.Buttons := AButtons;
   Ctx.Statics := AStatics;
   Ctx.Edits   := AEdits;
@@ -180,7 +187,8 @@ begin
 end;
 
 
-{ A native dialog = a visible top-level window of this process, not one of OUR windows, that either uses the system dialog class '#32770' (MessageBox / common dialogs) or owns at least one child Button (Task Dialog / custom dialog). }
+{ A native dialog = a visible top-level window of this process, not one of OUR windows, that either uses the system dialog class '#32770' (MessageBox / common dialogs) or owns at least one visible child Button (Task Dialog / custom dialog).
+  AButtonCount counts the visible buttons only, so a window of another class whose buttons are all hidden is not a dialog. }
 function LooksLikeDialog(AWnd: HWND; AButtonCount: Integer): Boolean;
 begin
   Result := SameText(ClassNameOf(AWnd), '#32770') or (AButtonCount > 0);

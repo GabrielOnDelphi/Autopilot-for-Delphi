@@ -1784,7 +1784,8 @@ begin
   Result.AddPair('class', AComp.ClassName);
   if IsSynthetic
   then Result.AddPair('synthetic', TJSONBool.Create(TRUE));
-  if not TryGetTextProperty(AComp, S)
+  { A TEdgeBrowser's Text runs a script in the page and waits until the page answers: the node gets no 'text', get_text reads it on request. }
+  if IsEdgeBrowserClass(AComp.ClassType) or not TryGetTextProperty(AComp, S)
   then S := ''
   else Result.AddPair('text', S);
   // 'hint' only when it says something 'text' does not: every extra field costs the AI tokens on every list_tree call.
