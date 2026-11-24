@@ -2103,7 +2103,7 @@ object frmMain: TfrmMain
   object lblIncrement: TLabel
     Left = 224
     Top = 176
-    Width = 113
+    Width = 6
     Height = 15
     Hint = 'lblIncrement'
     Caption = '0'
@@ -2168,6 +2168,16 @@ object frmMain: TfrmMain
     Hint = 
       'Test fixture: tmrDelayed writes here one second after btnDelayed' +
       ' is clicked'
+    Caption = '-'
+  end
+  object lblDialogResult: TLabel
+    Left = 8
+    Top = 542
+    Width = 5
+    Height = 15
+    Hint = 
+      'Test fixture: btnMsgDlg, btnOpenFile and btnSaveFile write the r' +
+      'esult of their dialog here'
     Caption = '-'
   end
   object btnIncrement: TButton
@@ -2248,22 +2258,12 @@ object frmMain: TfrmMain
     TabOrder = 6
     OnClick = btnDelayedClick
   end
-  object lblDialogResult: TLabel
-    Left = 8
-    Top = 542
-    Width = 5
-    Height = 15
-    Hint =
-      'Test fixture: btnMsgDlg, btnOpenFile and btnSaveFile write the ' +
-      'result of their dialog here'
-    Caption = '-'
-  end
   object btnMsgDlg: TButton
     Left = 8
     Top = 506
     Width = 140
     Height = 30
-    Hint =
+    Hint = 
       'Test fixture: opens MessageDlg with Yes, No and Abort (a Task Di' +
       'alog) and writes the button it returned to lblDialogResult'
     Caption = 'MessageDlg'
@@ -2275,7 +2275,7 @@ object frmMain: TfrmMain
     Top = 506
     Width = 140
     Height = 30
-    Hint =
+    Hint = 
       'Test fixture: opens an Open file dialog and writes the chosen fi' +
       'le name to lblDialogResult (opens no file)'
     Caption = 'Open file dialog'
@@ -2287,7 +2287,7 @@ object frmMain: TfrmMain
     Top = 506
     Width = 152
     Height = 30
-    Hint =
+    Hint = 
       'Test fixture: opens a Save file dialog and writes the chosen fil' +
       'e name to lblDialogResult (writes no file)'
     Caption = 'Save file dialog'
@@ -2348,7 +2348,9 @@ object frmMain: TfrmMain
     Top = 140
     object mnuPopupDialog: TMenuItem
       Caption = 'Open the native dialog'
-      Hint = 'Test fixture: a popup menu item that opens the same native dialog as btnDialog'
+      Hint = 
+        'Test fixture: a popup menu item that opens the same native dialo' +
+        'g as btnDialog'
       OnClick = btnDialogClick
     end
   end
