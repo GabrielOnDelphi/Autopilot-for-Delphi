@@ -1,7 +1,7 @@
 ﻿unit Tests.Bridge.NativeDialogs;
 
 {=============================================================================================================
-   2026.11.15
+   2026.11.19
    www.GabrielMoraru.com
 --------------------------------------------------------------------------------------------------------------
    - DUnitX tests for the native-dialog escape hatch (Autopilot.Bridge.NativeDialogs).
@@ -71,6 +71,16 @@ type
     { A dialog with no File name box: the name is refused, nothing is clicked, the box stays up. }
     [Test] procedure Test_MessageBox_FileName_IsRefused_NothingClicked;
     [Test] procedure Test_NoDialogUp_FileNameReturnsNoDialog;
+
+    { The hidden buttons of a Vista Open/Save dialog (Help id 1038; on Save also a caption-less id 0) cannot be clicked by a person, so they are neither listed nor matched. }
+    [Test]
+    [TestCase('Save', 'Save')]
+    [TestCase('Open', 'Open')]
+    procedure Test_FileDialog_HiddenButtons_AreNotListed(const AKind: String);
+    [Test]
+    [TestCase('Save', 'Save')]
+    [TestCase('Open', 'Open')]
+    procedure Test_FileDialog_HiddenButtons_AreNotClicked_CancelStillIs(const AKind: String);
   end;
 
 
@@ -257,23 +267,25 @@ end;
 
 
 type
-  { Owns a Vista Save dialog (IFileSaveDialog, the dialog TSaveDialog shows when the app is themed) on its own STA thread.
+  { Owns a Vista file dialog on its own STA thread: the Save dialog (IFileSaveDialog, the dialog TSaveDialog shows when the app is themed), or with AOpen the Open dialog (IFileOpenDialog, the one of TOpenDialog).
     Returned = the HRESULT of Show; ResultPath = the file system path of GetResult when Show succeeded. Same lifetime rules as TMsgBoxThread. }
-  TFileSaveDlgThread = class(TThread)
+  TFileDlgThread = class(TThread)
   public
     Title     : String;
+    OpenDialog: Boolean;
     Returned  : HRESULT;
     ResultPath: String;
     Done      : TEvent;
-    constructor Create(const ATitle: String);
+    constructor Create(const ATitle: String; AOpen: Boolean = FALSE);
     destructor Destroy; override;
     procedure Execute; override;
   end;
 
 
-constructor TFileSaveDlgThread.Create(const ATitle: String);
+constructor TFileDlgThread.Create(const ATitle: String; AOpen: Boolean = FALSE);
 begin
   Title      := ATitle;
+  OpenDialog := AOpen;
   Returned   := E_FAIL;
   ResultPath := '';
   Done       := TEvent.Create(nil, True, False, '');
@@ -281,17 +293,17 @@ begin
 end;
 
 
-destructor TFileSaveDlgThread.Destroy;
+destructor TFileDlgThread.Destroy;
 begin
   inherited;
   FreeAndNil(Done);
 end;
 
 
-procedure TFileSaveDlgThread.Execute;
+procedure TFileDlgThread.Execute;
 var
   Hr: HRESULT;
-  Dlg: IFileSaveDialog;
+  Dlg: IFileDialog;
   Item: IShellItem;
   P: LPWSTR;
 begin
@@ -299,7 +311,9 @@ begin
   try
     Dlg := NIL;
     Item := NIL;
-    Returned := CoCreateInstance(CLSID_FileSaveDialog, NIL, CLSCTX_INPROC_SERVER, IFileSaveDialog, Dlg);
+    if OpenDialog
+    then Returned := CoCreateInstance(CLSID_FileOpenDialog, NIL, CLSCTX_INPROC_SERVER, IFileDialog, Dlg)
+    else Returned := CoCreateInstance(CLSID_FileSaveDialog, NIL, CLSCTX_INPROC_SERVER, IFileDialog, Dlg);
     if Succeeded(Returned) then
       begin
         Dlg.SetTitle(PChar(Title));
@@ -391,6 +405,94 @@ begin
     Result := L.DelimitedText;
   finally
     FreeAndNil(L);
+  end;
+end;
+
+
+function ButtonEnumProc(AWnd: HWND; AParam: LPARAM): BOOL; stdcall;
+var
+  Buf: array[0..255] of Char;
+  S: String;
+begin
+  SetString(S, Buf, GetClassName(AWnd, Buf, Length(Buf)));
+  if SameText(S, 'Button')
+  then TList<HWND>(AParam).Add(AWnd);
+  Result := TRUE;
+end;
+
+
+{ The ids of AIds, sorted and comma-joined, so two id lists compare as two strings. }
+function JoinSortedIds(AIds: TList<Integer>): String;
+var
+  i: Integer;
+begin
+  AIds.Sort;
+  Result := '';
+  for i := 0 to AIds.Count - 1 do
+    begin
+      if Result <> ''
+      then Result := Result + ',';
+      Result := Result + IntToStr(AIds[i]);
+    end;
+end;
+
+
+{ The control ids of every Button window under ADlg, read from Win32 apart from the code under test (EnumChildWindows walks all descendants).
+  AVisible holds the visible ones, AHidden the hidden ones; each sorted and comma-joined. }
+procedure ButtonIdsOf(ADlg: HWND; OUT AVisible, AHidden: String);
+var
+  Wnds: TList<HWND>;
+  Vis, Hid: TList<Integer>;
+  W: HWND;
+begin
+  Wnds := TList<HWND>.Create;
+  Vis  := TList<Integer>.Create;
+  Hid  := TList<Integer>.Create;
+  try
+    EnumChildWindows(ADlg, @ButtonEnumProc, LPARAM(Wnds));
+    for W in Wnds do
+      if IsWindowVisible(W)
+      then Vis.Add(GetDlgCtrlID(W))
+      else Hid.Add(GetDlgCtrlID(W));
+    AVisible := JoinSortedIds(Vis);
+    AHidden  := JoinSortedIds(Hid);
+  finally
+    FreeAndNil(Hid);
+    FreeAndNil(Vis);
+    FreeAndNil(Wnds);
+  end;
+end;
+
+
+{ The button ids that EnumerateNativeDialogs lists for the dialog whose caption is ACaption, sorted and comma-joined; '<no dialog>' when none matches. }
+function ListedButtonIds(const ACaption: String): String;
+var
+  NoExclude: TArray<NativeUInt>;
+  Arr, Btns: TJSONArray;
+  Ids: TList<Integer>;
+  i, k: Integer;
+  Node: TJSONObject;
+begin
+  Result := '<no dialog>';
+  NoExclude := nil;
+  Ids := TList<Integer>.Create;
+  try
+    Arr := EnumerateNativeDialogs(NoExclude);
+    try
+      for i := 0 to Arr.Count - 1 do
+        begin
+          Node := Arr.Items[i] AS TJSONObject;
+          if not SameText(Node.GetValue<String>('caption'), ACaption) then Continue;
+          Btns := Node.GetValue('buttons') AS TJSONArray;
+          for k := 0 to Btns.Count - 1 do
+            Ids.Add((Btns.Items[k] AS TJSONObject).GetValue<Integer>('id'));
+          EXIT(JoinSortedIds(Ids));
+        end;
+    finally
+      FreeAndNil(Arr);
+    end;
+  finally
+    FreeAndNil(Ids);
   end;
 end;
 
@@ -798,7 +900,7 @@ end;
 
 procedure TNativeDialogTests.Test_FileSaveDialog_FileNameAndSave_ReturnsThatName;
 var
-  Th: TFileSaveDlgThread;
+  Th: TFileDlgThread;
   Dlg, Resolved: NativeUInt;
   ClickedId: Integer;
   ClickedCap, Reason, Via, Name: String;
@@ -808,7 +910,7 @@ begin
   Junk := nil;
   Dlg := 0;
   Name := NewTempFileName('SAVE');
-  Th := TFileSaveDlgThread.Create('AP_TEST_D3_SAVE_DIALOG');
+  Th := TFileDlgThread.Create('AP_TEST_D3_SAVE_DIALOG');
   try
     Dlg := WaitForDialog(Th.Title, Th.Done);
     Assert.IsTrue(Dlg <> 0, 'the Save dialog was not found (Show returned $' + IntToHex(Th.Returned, 8) + ')');
@@ -828,7 +930,7 @@ end;
 
 procedure TNativeDialogTests.Test_FileSaveDialog_FileNameOnly_LeavesTheDialogUp_ThenSaveReturnsThatName;
 var
-  Th: TFileSaveDlgThread;
+  Th: TFileDlgThread;
   Dlg, Resolved: NativeUInt;
   ClickedId: Integer;
   ClickedCap, Reason, Via, Name: String;
@@ -838,7 +940,7 @@ begin
   Junk := nil;
   Dlg := 0;
   Name := NewTempFileName('ONLY');
-  Th := TFileSaveDlgThread.Create('AP_TEST_D3_NAME_ONLY_DIALOG');
+  Th := TFileDlgThread.Create('AP_TEST_D3_NAME_ONLY_DIALOG');
   try
     Dlg := WaitForDialog(Th.Title, Th.Done);
     Assert.IsTrue(Dlg <> 0, 'the Save dialog was not found (Show returned $' + IntToHex(Th.Returned, 8) + ')');
@@ -897,6 +999,70 @@ begin
   Assert.IsFalse(SetNativeDialogFileName(NoExclude, 0, 'x.txt', 'ok', NameSet, ClickedId, ClickedCap, Resolved, Reason, Via), 'must fail when no dialog is up');
   Assert.IsFalse(NameSet, 'fileNameSet must be FALSE');
   Assert.AreEqual('no_dialog', Reason, 'expected reason no_dialog');
+end;
+
+
+procedure TNativeDialogTests.Test_FileDialog_HiddenButtons_AreNotListed(const AKind: String);
+var
+  Th: TFileDlgThread;
+  Dlg: NativeUInt;
+  Visible, Hidden: String;
+begin
+  Dlg := 0;
+  Th := TFileDlgThread.Create('AP_TEST_HIDDEN_LIST_' + AKind, SameText(AKind, 'Open'));
+  try
+    Dlg := WaitForDialog(Th.Title, Th.Done);
+    Assert.IsTrue(Dlg <> 0, 'the ' + AKind + ' dialog was not found (Show returned $' + IntToHex(Th.Returned, 8) + ')');
+    ButtonIdsOf(HWND(Dlg), Visible, Hidden);
+    Assert.IsTrue(Hidden <> '', 'the ' + AKind + ' dialog holds no hidden Button window, so this test proves nothing; descendants: ' + DescendantClasses(HWND(Dlg)));
+    Assert.AreEqual(Visible, ListedButtonIds(Th.Title), 'the list must hold exactly the visible buttons of the ' + AKind + ' dialog (hidden ids: ' + Hidden + ')');
+  finally
+    FinishByCancel(Th, Th.Done, Dlg);
+  end;
+end;
+
+
+procedure TNativeDialogTests.Test_FileDialog_HiddenButtons_AreNotClicked_CancelStillIs(const AKind: String);
+var
+  Th: TFileDlgThread;
+  Dlg, Resolved: NativeUInt;
+  ClickedId: Integer;
+  ClickedCap, Reason, Via, Visible, Hidden, Sel: String;
+  Selectors: TArray<String>;
+  Clicked: Boolean;
+  Junk: TArray<NativeUInt>;
+begin
+  Junk := nil;
+  Dlg := 0;
+  Th := TFileDlgThread.Create('AP_TEST_HIDDEN_CLICK_' + AKind, SameText(AKind, 'Open'));
+  try
+    Dlg := WaitForDialog(Th.Title, Th.Done);
+    Assert.IsTrue(Dlg <> 0, 'the ' + AKind + ' dialog was not found (Show returned $' + IntToHex(Th.Returned, 8) + ')');
+    ButtonIdsOf(HWND(Dlg), Visible, Hidden);
+    Assert.IsTrue(Pos(',1038,', ',' + Hidden + ',') > 0, 'the ' + AKind + ' dialog holds no hidden Help button (id 1038), so this test proves nothing; hidden ids: ' + Hidden + '; visible ids: ' + Visible);
+
+    { # The hidden buttons }
+    { The hidden Help button by caption and by id, then on Save the hidden caption-less id 0.
+      Id 0 comes last: where hidden buttons are matched, 'Help' and '1038' stop at button_disabled and send nothing, while id 0 sends a real click to a hidden button. }
+    Selectors := ['Help', '1038'];
+    if not SameText(AKind, 'Open')
+    then Selectors := Selectors + ['0'];
+    for Sel in Selectors do
+      begin
+        Clicked := ClickNativeDialogButton(Junk, Dlg, Sel, ClickedId, ClickedCap, Resolved, Reason, Via);
+        Assert.AreEqual('button_not_found', Reason, 'selector ' + Sel + ' must name no button of the ' + AKind + ' dialog: a hidden button is not one a person can click (clicked ' + BoolToStr(Clicked, TRUE) + ', clickedId ' + IntToStr(ClickedId) + ')');
+        Assert.IsFalse(Clicked, 'selector ' + Sel + ' answered clicked=true');
+        Assert.IsTrue(Th.Done.WaitFor(300) <> wrSignaled, 'the ' + AKind + ' dialog closed after selector ' + Sel + ' (Show returned $' + IntToHex(Th.Returned, 8) + ')');
+      end;
+
+    { # A visible button still resolves }
+    Clicked := ClickNativeDialogButton(Junk, Dlg, 'cancel', ClickedId, ClickedCap, Resolved, Reason, Via);
+    Assert.IsTrue(Clicked, 'the click on cancel failed (' + Reason + ')');
+    Assert.IsTrue(Th.Done.WaitFor(3000) = wrSignaled, 'the ' + AKind + ' dialog did not close after the click on ' + ClickedCap);
+    Assert.AreEqual(HResultFromWin32(ERROR_CANCELLED), Th.Returned, 'Show must answer "cancelled" after the click on Cancel');
+  finally
+    FinishByCancel(Th, Th.Done, Dlg);
+  end;
 end;
 
 

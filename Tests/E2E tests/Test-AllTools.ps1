@@ -1176,7 +1176,7 @@ try {
     }
   }
 
-  # The Vista Open/Save dialogs (IFileDialog) under the one-match rule: the dialog holds hidden buttons too (Help id 1038; the Save dialog an id-0 button with no caption), so 'ok' and 'cancel' work only while no hidden button shares id 1 or 2.
+  # The Vista Open/Save dialogs (IFileDialog) under the one-match rule: the dialog holds hidden buttons too (Help id 1038; the Save dialog an id-0 button with no caption). A bridge after 3.8.0 neither lists nor matches them; up to 3.8.0 'ok' and 'cancel' work only while no hidden button shares id 1 or 2.
   # Each round checks what the dialog returned to the app (the demo writes it into a label), never only clicked:true.
   if ($M.Contains('SaveButton')) {
     Section 'dismiss_dialog on the Open and Save file dialogs' {

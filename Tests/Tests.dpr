@@ -54,7 +54,8 @@ USES
   Tests.Bridge.ListTreeFilter in 'Tests.Bridge.ListTreeFilter.pas',
   Tests.Bridge.CheckListBox in 'Tests.Bridge.CheckListBox.pas',
   Tests.Bridge.ClickMessage   in 'Tests.Bridge.ClickMessage.pas',
-  Tests.Bridge.CallMethod     in 'Tests.Bridge.CallMethod.pas';
+  Tests.Bridge.CallMethod     in 'Tests.Bridge.CallMethod.pas',
+  Tests.Bridge.WebBrowser     in 'Tests.Bridge.WebBrowser.pas';
 
 VAR
   Runner       : ITestRunner;
