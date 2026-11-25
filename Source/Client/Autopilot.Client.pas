@@ -103,7 +103,7 @@ type
 
     { Connects to a running app.
       Pid = 0 takes the only running target.
-      Raises ETargetNotRunning when no target (or none with that pid) runs, and when Pid = 0 while several run (the message lists their pids). }
+      Raises ETargetNotRunning when no target (or none with that pid) runs, and when Pid = 0 while several run (the message gives one line per target: pid, EXE name, visible window captions). }
     class function Attach(Pid: Cardinal = 0): TAutopilotApp;
 
     { Never raises.
@@ -177,6 +177,7 @@ implementation
 
 uses
   Winapi.Messages,   // WM_CLOSE, WM_GETTEXT, WM_GETTEXTLENGTH
+  Winapi.TlHelp32,   // the EXE name of a target, for the error when several targets run
   System.Types, System.IOUtils, System.Generics.Collections, System.NetEncoding, System.Diagnostics,
   Autopilot.Bridge.Log;
 
@@ -368,6 +369,87 @@ begin
     Result := Acc.ToArray;
   finally
     FreeAndNil(Acc);
+  end;
+end;
+
+
+{ Names of a target ---------------------------------------------------------
+  A copy of FillTargetNames (Source\McpServer\Common\Autopilot.Mcp.PipeClient.pas) and SeveralTargetsMessage (Autopilot.Mcp.ToolBase.pas): the two can drift. }
+
+type
+  TCaptionScan = record
+    Pid : DWORD;
+    List: TStringList;
+  end;
+  PCaptionScan = ^TCaptionScan;
+
+
+{ EnumWindows callback: the caption of each visible top-level window of Scan.Pid, without duplicates, at most 5.
+  GetWindowText sends no message to another process, so a frozen app cannot block the caller
+  (https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getwindowtextw, section "Remarks"). }
+function CollectCaption(AWnd: HWND; AParam: LPARAM): BOOL; stdcall;
+var
+  Scan: PCaptionScan;
+  WndPid: DWORD;
+  Buf: array[0..255] of Char;
+  N: Integer;
+  S: String;
+begin
+  Result := TRUE;   // go on with the next window
+  Scan := PCaptionScan(AParam);
+  WndPid := 0;
+  GetWindowThreadProcessId(AWnd, WndPid);
+  if (WndPid <> Scan.Pid) or not IsWindowVisible(AWnd) then EXIT;
+  N := GetWindowText(AWnd, Buf, Length(Buf));
+  SetString(S, Buf, N);
+  S := Trim(S);
+  if (S = '') or (Scan.List.IndexOf(S) >= 0) then EXIT;
+  Scan.List.Add(S);
+  Result := Scan.List.Count < 5;   // FALSE stops EnumWindows
+end;
+
+
+{ 'pid 123: App.exe, windows "Main", "About"': how Attach names a target when several run.
+  szExeFile of the process snapshot is the EXE file name without its folder (https://learn.microsoft.com/en-us/windows/win32/api/tlhelp32/ns-tlhelp32-processentry32w). }
+function TargetLine(APid: Cardinal): String;
+var
+  Snap: THandle;
+  Entry: TProcessEntry32;
+  Exe: String;
+  Scan: TCaptionScan;
+  i: Integer;
+begin
+  Exe := '';
+  Snap := CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+  if Snap <> INVALID_HANDLE_VALUE then
+    try
+      Entry := Default(TProcessEntry32);
+      Entry.dwSize := SizeOf(Entry);
+      if Process32First(Snap, Entry) then
+        repeat
+          if Entry.th32ProcessID = APid
+          then Exe := PChar(@Entry.szExeFile[0]);
+        until (Exe <> '') or not Process32Next(Snap, Entry);
+    finally
+      CloseHandle(Snap);
+    end;
+  if Exe = ''
+  then Exe := 'EXE name unknown';
+  Result := 'pid ' + UIntToStr(APid) + ': ' + Exe;
+
+  Scan.Pid  := APid;
+  Scan.List := TStringList.Create;
+  try
+    EnumWindows(@CollectCaption, LPARAM(@Scan));
+    if Scan.List.Count = 0
+    then Result := Result + ', no visible window'
+    else
+      for i := 0 to Scan.List.Count - 1 do
+        if i = 0
+        then Result := Result + ', windows "' + Scan.List[i] + '"'
+        else Result := Result + ', "' + Scan.List[i] + '"';
+  finally
+    FreeAndNil(Scan.List);
   end;
 end;
 
@@ -908,7 +990,7 @@ class function TAutopilotApp.Attach(Pid: Cardinal): TAutopilotApp;
 var
   Targets: TArray<TTargetEntry>;
   i, Chosen: Integer;
-  Pids: String;
+  Lines: String;
 begin
   Targets := ListTargets;
   Chosen := -1;
@@ -927,14 +1009,10 @@ begin
       then raise ETargetNotRunning.Create('Autopilot.Attach: no Autopilot target is running (' + DiscoveryFolderPath + ' holds no live entry)');
       if Length(Targets) > 1 then
         begin
-          Pids := '';
+          Lines := '';
           for i := 0 to High(Targets) do
-            begin
-              if Pids <> ''
-              then Pids := Pids + ', ';
-              Pids := Pids + UIntToStr(Targets[i].Pid);
-            end;
-          raise ETargetNotRunning.Create('Autopilot.Attach: ' + IntToStr(Length(Targets)) + ' Autopilot targets are running (pids ' + Pids + '); pass the pid of the app to Attach');
+            Lines := Lines + sLineBreak + TargetLine(Targets[i].Pid);
+          raise ETargetNotRunning.Create('Autopilot.Attach: ' + IntToStr(Length(Targets)) + ' Autopilot targets are running; pass the pid of the app to Attach:' + Lines);
         end;
       Chosen := 0;
     end;
