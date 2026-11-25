@@ -12,6 +12,7 @@ object frmMain: TfrmMain
   Font.Style = []
   Menu = mnuMain
   Position = poScreenCenter
+  OnClose = FormClose
   TextHeight = 15
   object imgLogo: TImage
     AlignWithMargins = True

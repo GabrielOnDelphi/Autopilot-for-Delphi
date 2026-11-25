@@ -1,7 +1,7 @@
 ﻿unit FormMain;
 
 {=============================================================================================================
-   2026.11.15
+   2026.11.25
    www.GabrielMoraru.com
 --------------------------------------------------------------------------------------------------------------
    - VCL demo form for the Autopilot bridge.
@@ -13,6 +13,7 @@
      a MessageDlg (btnMsgDlg, a Task Dialog) and an Open and a Save file dialog (btnOpenFile, btnSaveFile), whose results go to lblDialogResult, for dismiss_dialog.
    - AutopilotGuide (AUTOPILOT builds only): the guide text that list_tree shows on the frmMain node.
    - registerAutopilotCommands (called by the constructor): two app commands for the MCP tool call_method (demo.setName, demo.increment).
+   - The form remembers its position (Left, Top) in Autopilot.PushBtnsDemo.ini, beside the exe (loadFormPosition, saveFormPosition).
 =============================================================================================================}
 
 interface
@@ -76,12 +77,15 @@ type
     procedure mnuAboutClick        (Sender: TObject);
     procedure mnuCheckUpdatesClick (Sender: TObject);
     procedure tmrDelayedTimer      (Sender: TObject);
+    procedure FormClose            (Sender: TObject; var Action: TCloseAction);
   private
     FCounter: Integer;
     FActionRuns: Integer;
     FDelayedRuns: Integer;
     FSaveRuns: Integer;
     procedure registerAutopilotCommands;
+    procedure loadFormPosition;
+    procedure saveFormPosition;
   public
     constructor Create(AOwner: TComponent); override;
     destructor Destroy; override;
@@ -103,19 +107,93 @@ implementation
 {$R *.dfm}
 
 uses
-  Winapi.ShellAPI, System.JSON, Autopilot.Bridge.Core, Autopilot.Bridge.Commands;
+  Winapi.ShellAPI, System.Types, System.JSON, System.IniFiles, Autopilot.Bridge.Core, Autopilot.Bridge.Commands, Autopilot.Bridge.Log;
 
 
 const
-  CmdSetName   = 'demo.setName';
-  CmdIncrement = 'demo.increment';
+  CmdSetName      = 'demo.setName';
+  CmdIncrement    = 'demo.increment';
+  PositionSection = 'MainForm';
+  NoValue         = Low(Integer);
 
 
 { Registered in the constructor, as in the FMX demo (where the .dpr cannot do it: FMX creates the form only in Application.Run). }
 constructor TfrmMain.Create(AOwner: TComponent);
 begin
   inherited Create(AOwner);
+  loadFormPosition;
   registerAutopilotCommands;
+end;
+
+
+{ The INI file lies beside the exe, not in AppData.
+  A program started by an app that is an MSIX package (example: the Claude desktop app) may get its new AppData folders
+  and its HKCU writes redirected into a private copy of the package, so a person who starts the same exe by hand would not see them.
+  The exe's own folder is not redirected, so every start reads the same file. }
+function positionFileName: string;
+begin
+  Result:= ChangeFileExt(Application.ExeName, '.ini');
+end;
+
+
+{ Restores the position that saveFormPosition wrote. The size stays the DFM's.
+  No file, a missing value, or a caption bar on no monitor (a monitor was removed): the form keeps the DFM's poScreenCenter. }
+procedure TfrmMain.loadFormPosition;
+var
+  Ini: TIniFile;
+  SavedLeft, SavedTop: Integer;
+  CaptionPoint: TPoint;
+begin
+  if not FileExists(positionFileName) then EXIT;
+
+  Ini:= TIniFile.Create(positionFileName);
+  try
+    SavedLeft:= Ini.ReadInteger(PositionSection, 'Left', NoValue);
+    SavedTop := Ini.ReadInteger(PositionSection, 'Top',  NoValue);
+  finally
+    FreeAndNil(Ini);
+  end;
+
+  if (SavedLeft = NoValue) or (SavedTop = NoValue) then EXIT;
+
+  // The middle of the caption bar must lie on a monitor, so the user can still drag the window.
+  CaptionPoint:= Point(SavedLeft + Width div 2, SavedTop + GetSystemMetrics(SM_CYCAPTION) div 2);
+  if Screen.MonitorFromPoint(CaptionPoint, mdNull) = NIL then EXIT;
+
+  Position      := poDesigned;
+  DefaultMonitor:= dmDesktop;     // SetWindowToMonitor must not move the form to another monitor
+  SetBounds(SavedLeft, SavedTop, Width, Height);
+end;
+
+
+{ Saves only the position of a normal window: a minimized window lies at -32000 (TAutopilotApp.Start starts the demo minimized),
+  and a maximized one lies at the monitor's corner.
+  A folder the user cannot write to (Program Files) gives an EIniFileException: logged, and the form still closes. }
+procedure TfrmMain.saveFormPosition;
+var
+  Ini: TIniFile;
+begin
+  if WindowState <> wsNormal then EXIT;
+  if HandleAllocated and IsIconic(Handle) then EXIT;
+
+  Ini:= TIniFile.Create(positionFileName);
+  try
+    try
+      Ini.WriteInteger(PositionSection, 'Left', Left);
+      Ini.WriteInteger(PositionSection, 'Top',  Top);
+    except
+      on E: EIniFileException do
+        BridgeLogWarn('demo', 'The window position was not saved: ' + E.Message);
+    end;
+  finally
+    FreeAndNil(Ini);
+  end;
+end;
+
+
+procedure TfrmMain.FormClose(Sender: TObject; var Action: TCloseAction);
+begin
+  saveFormPosition;
 end;
 
 
