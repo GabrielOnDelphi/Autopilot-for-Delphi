@@ -2089,6 +2089,9 @@ begin
   Assert.AreEqual(Want('ETargetNotRunning'), R.Cls, R.Msg);
   Assert.Contains(R.Msg, IntToStr(GetCurrentProcessId), 'the message names this process');
   Assert.Contains(R.Msg, UIntToStr(OtherPid), 'the message names the other target');
+  // Each target is named by its EXE too, so the caller can tell which pid is which app
+  Assert.Contains(R.Msg.ToLower, ('pid ' + IntToStr(GetCurrentProcessId) + ': ' + ExtractFileName(ParamStr(0))).ToLower, 'this process is not named with its EXE');
+  Assert.Contains(R.Msg.ToLower, 'pid ' + UIntToStr(OtherPid) + ': cmd.exe', 'the other target is not named with its EXE');
 end;
 
 
