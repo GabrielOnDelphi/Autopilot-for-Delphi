@@ -25,6 +25,9 @@ type
 
     [Test] procedure Test_ListTree_UnknownPid_Returns32099WithRecipe;
     [Test] procedure Test_Attach_UnknownPid_ReturnsHintAndSetup;
+    [Test] procedure Test_Attach_OwnPid_NamesExeAndCaption;
+    [Test] procedure Test_SeveralTargets_ErrorNamesEachTarget;
+    [Test] procedure Test_SeveralTargetsMessage_ListsCaptionsAndUnknownExe;
     [Test] procedure Test_WaitFor_UnknownPid_FailsFast;
     [Test] procedure Test_ToolsListAndInstructions_AllAscii;
     [Test] procedure Test_FindBridgeFolder_PackageLayout;
@@ -266,6 +269,137 @@ begin
   if Running = 0
   then Assert.IsTrue(Hint.Contains('"setup"'), 'hint does not point at the setup steps: ' + Hint)
   else Assert.IsTrue(Hint.Contains('attach without pid'), 'hint does not point at the running targets: ' + Hint);
+end;
+
+
+/// A visible top-level window of this process with the caption ACaption. It is placed off-screen, never activated
+/// and kept off the taskbar, so the test takes no keyboard focus. The caller destroys it.
+function CreateProbeWindow(const ACaption: String): HWND;
+begin
+  Result := CreateWindowEx(WS_EX_TOOLWINDOW or WS_EX_NOACTIVATE, 'STATIC', PChar(ACaption), WS_POPUP,
+                           -32000, -32000, 10, 10, 0, 0, HInstance, NIL);
+  if Result = 0 then RaiseLastOSError;
+  ShowWindow(Result, SW_SHOWNOACTIVATE);
+end;
+
+
+/// With several targets running, the AI can tell them apart only by name: each attach entry carries the EXE file
+/// name and the captions of the visible windows of its process.
+procedure TMcpToolTests.Test_Attach_OwnPid_NamesExeAndCaption;
+var
+  Probe: HWND;
+  Discovery: TPrivateDiscovery;
+  Caption, Text: String;
+  IsErr, Found: Boolean;
+  V: TJSONValue;
+  Target: TJSONObject;
+  Captions: TJSONArray;
+  i: Integer;
+begin
+  Caption := 'Autopilot probe ' + TGUID.NewGuid.ToString;
+  Probe := CreateProbeWindow(Caption);
+  try
+    Discovery := TPrivateDiscovery.Create('\\.\pipe\AutopilotTestNobody.' + IntToStr(GetCurrentProcessId));   // attach opens no pipe
+    try
+      Text := CallTool('attach', '{"pid":' + IntToStr(GetCurrentProcessId) + '}', IsErr);
+    finally
+      FreeAndNil(Discovery);
+    end;
+  finally
+    DestroyWindow(Probe);
+  end;
+
+  Assert.IsFalse(IsErr, 'attach must not fail: ' + Text);
+  V := TJSONObject.ParseJSONValue(Text);
+  try
+    Assert.IsTrue(V is TJSONObject, 'attach answer is not a JSON object: ' + Text);
+    Assert.AreEqual(1, (TJSONObject(V).GetValue('count') as TJSONNumber).AsInt, 'count: ' + Text);
+    Target := (TJSONObject(V).GetValue('targets') as TJSONArray).Items[0] as TJSONObject;
+    Assert.IsTrue(Target.GetValue('exe') is TJSONString, 'exe missing: ' + Text);
+    Assert.AreEqual(ExtractFileName(ParamStr(0)).ToLower, Target.GetValue('exe').Value.ToLower, 'exe: ' + Text);
+    Assert.IsTrue(Target.GetValue('captions') is TJSONArray, 'captions missing: ' + Text);
+    Captions := TJSONArray(Target.GetValue('captions'));
+    Found := FALSE;
+    for i := 0 to Captions.Count - 1 do
+      if Captions.Items[i].Value = Caption
+      then Found := TRUE;
+    Assert.IsTrue(Found, 'the caption of the probe window is missing: ' + Text);
+  finally
+    FreeAndNil(V);
+  end;
+end;
+
+
+/// A tool called without pid while two targets run answers an error that names each target (pid, EXE, windows),
+/// so the AI can call again with the right pid instead of guessing. The old text named only the count.
+procedure TMcpToolTests.Test_SeveralTargets_ErrorNamesEachTarget;
+var
+  Discovery: TPrivateDiscovery;
+  Job: THandle;
+  Limits: TJobObjectExtendedLimitInformation;
+  SI: TStartupInfo;
+  PI: TProcessInformation;
+  CmdExe, CmdLine, Text: String;
+  IsErr: Boolean;
+begin
+  { Target 1: this process. Target 2: a suspended cmd.exe with no window, in a job that ends it with this process
+    (the same pair as Tests.Client.Test_Attach_ZeroWithTwoTargets_RaisesNamingBoth). }
+  Job := CreateJobObject(NIL, NIL);
+  Limits := Default(TJobObjectExtendedLimitInformation);
+  Limits.BasicLimitInformation.LimitFlags := JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+  SetInformationJobObject(Job, JobObjectExtendedLimitInformation, @Limits, SizeOf(Limits));
+  CmdExe := System.SysUtils.GetEnvironmentVariable('ComSpec');
+  if CmdExe = ''
+  then CmdExe := 'C:\Windows\System32\cmd.exe';
+  CmdLine := '"' + CmdExe + '" /c exit 0';
+  UniqueString(CmdLine);
+  SI := Default(TStartupInfo);
+  SI.cb := SizeOf(SI);
+  PI := Default(TProcessInformation);
+  if not CreateProcess(PChar(CmdExe), PChar(CmdLine), NIL, NIL, FALSE, CREATE_SUSPENDED or CREATE_NO_WINDOW, NIL, NIL, SI, PI)
+  then RaiseLastOSError;
+  try
+    AssignProcessToJobObject(Job, PI.hProcess);
+    Discovery := TPrivateDiscovery.Create('\\.\pipe\AutopilotTestNobody.' + IntToStr(GetCurrentProcessId));
+    try
+      TFile.WriteAllText(TPath.Combine(DiscoveryFolderPath, UIntToStr(PI.dwProcessId) + '.pipe'),
+                         '\\.\pipe\AutopilotTestNobody.' + UIntToStr(PI.dwProcessId), TEncoding.ASCII);
+      Text := CallTool('get_text', '{"path":"frmMain.lblStatus"}', IsErr);
+    finally
+      FreeAndNil(Discovery);
+    end;
+  finally
+    TerminateProcess(PI.hProcess, 0);
+    CloseHandle(PI.hThread);
+    CloseHandle(PI.hProcess);
+    CloseHandle(Job);
+  end;
+
+  Assert.IsTrue(IsErr, 'isError must be TRUE: ' + Text);
+  Assert.IsTrue(Text.Contains('2 Autopilot targets are running'), 'the count is missing: ' + Text);
+  Assert.IsTrue(Text.Contains('"pid"'), 'the message does not say to pass "pid": ' + Text);
+  Assert.IsTrue(Text.ToLower.Contains(('pid ' + IntToStr(GetCurrentProcessId) + ': ' + ExtractFileName(ParamStr(0))).ToLower),
+                'this process is not named with its EXE: ' + Text);
+  Assert.IsTrue(Text.ToLower.Contains('pid ' + UIntToStr(PI.dwProcessId) + ': cmd.exe, no visible window'),
+                'the cmd.exe target is not named, or a window was reported for it: ' + Text);
+end;
+
+
+/// The text for a target whose EXE name was not found, and for one with several windows.
+procedure TMcpToolTests.Test_SeveralTargetsMessage_ListsCaptionsAndUnknownExe;
+var
+  Targets: TTargetList;
+  Msg: String;
+begin
+  SetLength(Targets, 2);
+  Targets[0].Pid      := 11;
+  Targets[0].Exe      := 'MiniCalc.exe';
+  Targets[0].Captions := ['Mini Calc', 'About'];
+  Targets[1].Pid      := 22;
+  Msg := SeveralTargetsMessage(Targets);
+  Assert.IsTrue(Msg.StartsWith('2 Autopilot targets are running.'), 'the count is missing: ' + Msg);
+  Assert.IsTrue(Msg.Contains('pid 11: MiniCalc.exe, windows "Mini Calc", "About"'), 'target 1: ' + Msg);
+  Assert.IsTrue(Msg.Contains('pid 22: EXE name unknown, no visible window'), 'target 2: ' + Msg);
 end;
 
 
