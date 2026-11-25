@@ -54,8 +54,11 @@ function BridgeWiringRecipe: String;
 
 { Resolve the target pipe.
   If APid > 0, pick that PID; otherwise expect exactly one active target.
-  Raises ETargetNotRunning if no target (or none with APid) runs; a plain Exception if several run. }
+  Raises ETargetNotRunning if no target (or none with APid) runs; a plain Exception if several run, whose text is SeveralTargetsMessage. }
 function ResolveTargetPipe(APid: Cardinal; out APipeName: String): Boolean;
+
+{ The text of the error when several targets run and no pid was given: one line per target with its pid, EXE name and window captions (FillTargetNames), so the AI can pass the right pid at once. }
+function SeveralTargetsMessage(const ATargets: TTargetList): String;
 
 { Build a request envelope: (id, cmd, args, timeoutMs?).
   AArgs is consumed (we hand it to the JSON tree; caller no longer owns it).
@@ -196,10 +199,42 @@ begin
     end;
   if Length(Targets) = 0
   then raise ETargetNotRunning.Create('No Autopilot target is running.');
-  if Length(Targets) > 1
-  then raise Exception.CreateFmt('%d targets active; call attach(pid) first to pick one.', [Length(Targets)]);
+  if Length(Targets) > 1 then
+    begin
+      FillTargetNames(Targets);
+      raise Exception.Create(SeveralTargetsMessage(Targets));
+    end;
   APipeName := Targets[0].PipeName;
   Result := TRUE;
+end;
+
+
+function SeveralTargetsMessage(const ATargets: TTargetList): String;
+var
+  i, c: Integer;
+  Line: String;
+begin
+  Result := IntToStr(Length(ATargets)) + ' Autopilot targets are running. Call this tool again with "pid" set to the one you want:';
+  for i := 0 to High(ATargets) do
+    begin
+      Line := 'pid ' + UIntToStr(ATargets[i].Pid) + ': ';
+      if ATargets[i].Exe = ''
+      then Line := Line + 'EXE name unknown'
+      else Line := Line + ATargets[i].Exe;
+      if Length(ATargets[i].Captions) = 0
+      then Line := Line + ', no visible window'
+      else
+        begin
+          Line := Line + ', windows';
+          for c := 0 to High(ATargets[i].Captions) do
+            begin
+              if c > 0
+              then Line := Line + ',';
+              Line := Line + ' "' + ATargets[i].Captions[c] + '"';
+            end;
+        end;
+      Result := Result + sLineBreak + Line;
+    end;
 end;
 
 
