@@ -23,15 +23,22 @@ type
   TTargetEntry = record
     Pid       : Cardinal;
     PipeName  : String;
-    Exe       : String;       // filled by GetExeFromPid; empty if not yet looked up
+    Exe       : String;           // EXE file name of the process (no folder); filled only by FillTargetNames
+    Captions  : TArray<String>;   // captions of the visible top-level windows of the process; filled only by FillTargetNames
   end;
 
   TTargetList = TArray<TTargetEntry>;
 
 
 { Enumerate the discovery folder.
-  Stale entries (target process is gone) are filtered out. }
+  Stale entries (target process is gone) are filtered out.
+  Leaves Exe and Captions empty: it runs on every tool call, the names are needed only to tell several targets apart. }
 function ListTargets: TTargetList;
+
+{ Fill Exe and Captions of each entry, so the AI can tell several targets apart.
+  Sends no message to a target: GetWindowText reads the caption of another process's window without asking that process, so a frozen target cannot block the single-threaded MCP server.
+  Source: https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getwindowtextw, section "Remarks". }
+procedure FillTargetNames(var ATargets: TTargetList);
 
 // Convenience: read the discovery folder path.
 function DiscoveryFolderPath: String;
@@ -45,6 +52,7 @@ function CallTarget(const APipeName: String; ARequestJson: TJSONObject; ATimeout
 implementation
 
 uses
+  Winapi.TlHelp32,
   System.Types, System.IOUtils, System.Generics.Collections,
   Autopilot.Bridge.Log;
 
@@ -129,6 +137,91 @@ begin
   finally
     FreeAndNil(Acc);
   end;
+end;
+
+
+{ Names of a target ---------------------------------------------------------- }
+
+const
+  MaxCaptionsPerTarget = 5;   // enough to recognize an app; a program with many open windows does not flood the answer
+
+type
+  TCaptionScan = record
+    Pid : DWORD;
+    List: TStringList;
+  end;
+  PCaptionScan = ^TCaptionScan;
+
+
+{ EnumWindows callback: collects the caption of each visible top-level window of Scan.Pid, without duplicates.
+  No window is chosen as "the main one": from outside the process nothing reliably tells which form is the main form.
+  Example: every FMX form is owned by the zero-size application window, whose caption is the application title (DefineParentWnd and CreateAppHandle in c:\Delphi\Delphi 13\source\fmx\FMX.Platform.Win.pas). }
+function CollectCaption(AWnd: HWND; AParam: LPARAM): BOOL; stdcall;
+var
+  Scan: PCaptionScan;
+  WndPid: DWORD;
+  Buf: array[0..255] of Char;
+  N: Integer;
+  S: String;
+begin
+  Result := TRUE;   // go on with the next window
+  Scan := PCaptionScan(AParam);
+  WndPid := 0;
+  GetWindowThreadProcessId(AWnd, WndPid);
+  if (WndPid <> Scan.Pid) or not IsWindowVisible(AWnd) then EXIT;
+  N := GetWindowText(AWnd, Buf, Length(Buf));   // never blocks on another process: see FillTargetNames in the interface
+  SetString(S, Buf, N);
+  S := Trim(S);
+  if (S = '') or (Scan.List.IndexOf(S) >= 0) then EXIT;
+  Scan.List.Add(S);
+  Result := Scan.List.Count < MaxCaptionsPerTarget;   // FALSE stops EnumWindows
+end;
+
+
+function CaptionsOfPid(APid: Cardinal): TArray<String>;
+var
+  Scan: TCaptionScan;
+begin
+  Scan.Pid  := APid;
+  Scan.List := TStringList.Create;
+  try
+    EnumWindows(@CollectCaption, LPARAM(@Scan));
+    Result := Scan.List.ToStringArray;
+  finally
+    FreeAndNil(Scan.List);
+  end;
+end;
+
+
+procedure FillTargetNames(var ATargets: TTargetList);
+var
+  Snap: THandle;
+  Entry: TProcessEntry32;
+  i: Integer;
+begin
+  if Length(ATargets) = 0 then EXIT;
+
+  // One process snapshot for all targets. szExeFile is the EXE file name, without the folder.
+  // Source: https://learn.microsoft.com/en-us/windows/win32/api/tlhelp32/ns-tlhelp32-processentry32w
+  Snap := CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+  if Snap = INVALID_HANDLE_VALUE
+  then BridgeLogWarn('discovery', 'no process snapshot, the EXE names stay empty: ' + SysErrorMessage(GetLastError))
+  else
+    try
+      Entry := Default(TProcessEntry32);
+      Entry.dwSize := SizeOf(Entry);
+      if Process32First(Snap, Entry) then
+        repeat
+          for i := 0 to High(ATargets) do
+            if ATargets[i].Pid = Entry.th32ProcessID
+            then ATargets[i].Exe := PChar(@Entry.szExeFile[0]);
+        until not Process32Next(Snap, Entry);
+    finally
+      CloseHandle(Snap);
+    end;
+
+  for i := 0 to High(ATargets) do
+    ATargets[i].Captions := CaptionsOfPid(ATargets[i].Pid);
 end;
 
 
