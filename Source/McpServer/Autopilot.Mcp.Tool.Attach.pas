@@ -5,7 +5,7 @@ unit Autopilot.Mcp.Tool.Attach;
    www.GabrielMoraru.com
 --------------------------------------------------------------------------------------------------------------
    - MCP tool: attach
-   - Lists active Autopilot targets discovered via %TEMP%\Autopilot\active\.
+   - Lists active Autopilot targets discovered via %TEMP%\Autopilot\active\, each with its EXE name and the captions of its visible windows.
    - Optional pid: also verifies the named pid is alive and pipe is reachable.
    - Runs in Autopilot.Mcp.exe (Windows PC-side MCP server); target may be any platform.
 =============================================================================================================}
@@ -69,27 +69,32 @@ function TAttachTool.ExecuteWithParams(const Params: TAttachParams): String;
 var
   Targets: TTargetList;
   Root: TJSONObject;
-  Arr: TJSONArray;
+  Arr, Captions: TJSONArray;
   Item: TJSONObject;
-  i: Integer;
+  i, c: Integer;
   Filter: Cardinal;
 begin
   Targets := ListTargets;
+  FillTargetNames(Targets);   // exe + captions: how the AI tells several targets apart
   Filter := Cardinal(Params.Pid);
 
-  Arr := TJSONArray.Create;
-  for i := 0 to High(Targets) do
-    if (Filter = 0) or (Targets[i].Pid = Filter) then
-      begin
-        Item := TJSONObject.Create;
-        Item.AddPair('pid', TJSONNumber.Create(Targets[i].Pid));
-        Item.AddPair('pipe', Targets[i].PipeName);
-        Arr.AddElement(Item);
-      end;
-
-  Root := TJSONObject.Create;
+  Root := TJSONObject.Create;   // owns every node added below, so an exception leaks none
   try
+    Arr := TJSONArray.Create;
     Root.AddPair('targets', Arr);
+    for i := 0 to High(Targets) do
+      if (Filter = 0) or (Targets[i].Pid = Filter) then
+        begin
+          Item := TJSONObject.Create;
+          Arr.AddElement(Item);
+          Item.AddPair('pid', TJSONNumber.Create(Targets[i].Pid));
+          Item.AddPair('pipe', Targets[i].PipeName);
+          Item.AddPair('exe', Targets[i].Exe);
+          Captions := TJSONArray.Create;
+          Item.AddPair('captions', Captions);
+          for c := 0 to High(Targets[i].Captions) do
+            Captions.Add(Targets[i].Captions[c]);
+        end;
     Root.AddPair('count', TJSONNumber.Create(Arr.Count));
     if Arr.Count = 0
     then Root.AddPair('hint', EmptyListHint(Filter, Length(Targets)));
