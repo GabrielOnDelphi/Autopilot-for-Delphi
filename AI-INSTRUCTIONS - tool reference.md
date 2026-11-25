@@ -6,6 +6,8 @@
 
 The tool names appear in your tool list as `mcp__autopilot__<name>`.
 Every tool takes an optional `pid`, needed only when several Delphi targets run; with one target the tools attach to it on their own.
+A tool called without `pid` while several targets run answers `isError: true` with one line per target: its pid, its EXE file name and the captions of its visible windows (example: `pid 1234: MiniCalc.exe, windows "Mini Calc"`).
+Call the same tool again with the `pid` of the target you want.
 
 Six tools change nothing in the target app: `attach`, `list_tree`, `get_text`, `read_property`, `wait_for` and `screenshot`.
 Since MCP server 3.8.0 their `tools/list` entries carry the MCP annotation `"readOnlyHint": true`, so a host may send several of their calls at once.
@@ -23,7 +25,10 @@ Call `attach` only:
 - when several targets run and you must choose one by PID;
 - when the user asks you to wire Autopilot into a project: its `setup` field holds the steps.
 
-Answer: `{targets:[{pid, pipe}], count, setup}`; `setup` is always there.
+Answer: `{targets:[{pid, pipe, exe, captions}], count, setup}`; `setup` is always there.
+`exe` is the EXE file name of the target process, without its folder (empty when Windows does not report it).
+`captions` lists the captions of the visible top-level windows of the process, at most 5, without duplicates: the main form, other open forms, and for FMX also the application title.
+Nothing marks which caption belongs to the main form.
 Step 1 of `setup` names the full path of the bridge source folder when the server finds it near its own EXE; use that path as given.
 When the bridge was installed through GetIt (its folder is on the Delphi Library Path), step 1 says so and asks for no folder, only the uses clause.
 A project whose `.dproj` names the DPM package `GabrielMoraru.Autopilot` already has the bridge on its search path through `$(DPMSearch)`: add no folder there either.
